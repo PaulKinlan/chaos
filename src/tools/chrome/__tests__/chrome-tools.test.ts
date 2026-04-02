@@ -9,6 +9,8 @@ import { getChromeTools } from '../index.js';
 
 // ── Mock chrome.* APIs ──
 
+const mockStorageData: Record<string, unknown> = {};
+
 const mockChrome = {
   tabs: {
     query: vi.fn(),
@@ -35,6 +37,14 @@ const mockChrome = {
   },
   permissions: {
     contains: vi.fn(async () => true),
+  },
+  storage: {
+    local: {
+      get: vi.fn(async (key: string) => ({ [key]: mockStorageData[key] })),
+      set: vi.fn(async (obj: Record<string, unknown>) => {
+        Object.assign(mockStorageData, obj);
+      }),
+    },
   },
 };
 
@@ -445,14 +455,19 @@ describe('history_search', () => {
 });
 
 describe('alarm_set', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    for (const key of Object.keys(mockStorageData)) {
+      delete mockStorageData[key];
+    }
+  });
 
   it('sets an alarm with agentId prefix', async () => {
     mockChrome.alarms.create.mockResolvedValue(undefined);
 
     const tools = await getChromeTools(AGENT_ID);
     const result = await tools.alarm_set.execute!(
-      { name: 'check-mail', delayInMinutes: 5, periodInMinutes: undefined },
+      { name: 'check-mail', delayInMinutes: 5, periodInMinutes: undefined, prompt: undefined, description: undefined },
       { toolCallId: 'test', messages: [] },
     );
 
@@ -468,7 +483,7 @@ describe('alarm_set', () => {
 
     const tools = await getChromeTools(AGENT_ID);
     await tools.alarm_set.execute!(
-      { name: 'default', delayInMinutes: undefined, periodInMinutes: undefined },
+      { name: 'default', delayInMinutes: undefined, periodInMinutes: undefined, prompt: undefined, description: undefined },
       { toolCallId: 'test', messages: [] },
     );
 

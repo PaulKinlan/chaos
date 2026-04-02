@@ -13,7 +13,7 @@
 
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys } from './storage/types.js';
+import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys, ScheduledTask } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
@@ -719,6 +719,9 @@ async function loadAgentDetail(agentId: string): Promise<void> {
     meta: AgentMeta;
   }>({ type: 'getAgentDetail', agentId });
 
+  const tasksResult = await sendMsg<{ tasks: ScheduledTask[] }>({ type: 'getScheduledTasks' });
+  const scheduledTasks = (tasksResult.tasks || []).filter((t) => t.agentId === agentId);
+
   const meta = result.meta;
   const claudeMd = result.claudeMd || '(empty)';
   const journal = result.journal || [];
@@ -748,6 +751,22 @@ async function loadAgentDetail(agentId: string): Promise<void> {
           .join('')
       : '<p style="color:#64748b;font-size:13px;">No bookmarks.</p>';
 
+  const scheduledTasksHtml =
+    scheduledTasks.length > 0
+      ? scheduledTasks
+          .map(
+            (t) => `<div class="journal-entry" style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div>
+                <div class="journal-entry-time">${escapeHtml(t.description)} (${t.schedule.type}${t.schedule.periodInMinutes ? `, every ${t.schedule.periodInMinutes}m` : ''})</div>
+                <div class="journal-entry-text" style="font-size:12px;color:#94a3b8;">Prompt: ${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
+                ${t.lastRunAt ? `<div class="journal-entry-text" style="font-size:11px;color:#64748b;">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) : ''}</div>` : ''}
+              </div>
+              <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}" style="flex-shrink:0;margin-left:8px;">Cancel</button>
+            </div>`,
+          )
+          .join('')
+      : '<p style="color:#64748b;font-size:13px;">No scheduled tasks.</p>';
+
   detail.innerHTML = `
     <div class="agent-detail-inner">
       <div class="agent-detail-header">
@@ -765,6 +784,10 @@ async function loadAgentDetail(agentId: string): Promise<void> {
       <div class="agent-detail-section">
         <h4>CLAUDE.md</h4>
         <div class="claude-md-content">${escapeHtml(claudeMd)}</div>
+      </div>
+      <div class="agent-detail-section">
+        <h4>Scheduled Tasks</h4>
+        <div class="scheduled-tasks-list">${scheduledTasksHtml}</div>
       </div>
       <div class="agent-detail-section">
         <h4>Recent Activity</h4>
@@ -802,6 +825,15 @@ async function loadAgentDetail(agentId: string): Promise<void> {
         await loadAgents();
       },
     );
+  });
+
+  // Cancel scheduled task buttons
+  detail.querySelectorAll('[data-cancel-task]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const alarmId = (btn as HTMLButtonElement).dataset.cancelTask!;
+      await sendMsg({ type: 'cancelScheduledTask', alarmId });
+      await loadAgentDetail(meta.id);
+    });
   });
 }
 

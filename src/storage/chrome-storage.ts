@@ -5,7 +5,7 @@
  * - API keys live in chrome.storage.local (never synced).
  */
 
-import type { AgentMeta, Settings, ApiKeys } from './types.js';
+import type { AgentMeta, Settings, ApiKeys, ScheduledTask } from './types.js';
 
 // ── Keys ──
 
@@ -13,6 +13,7 @@ const KEYS = {
   AGENT_LIST: 'chaos:agents',
   SETTINGS: 'chaos:settings',
   API_KEYS: 'chaos:apiKeys',
+  SCHEDULED_TASKS: 'chaos:scheduledTasks',
 } as const;
 
 // ── Defaults ──
@@ -54,4 +55,38 @@ export async function getApiKeys(): Promise<ApiKeys> {
 
 export async function setApiKeys(keys: ApiKeys): Promise<void> {
   await chrome.storage.local.set({ [KEYS.API_KEYS]: keys });
+}
+
+// ── Scheduled tasks (local storage) ──
+
+export async function getScheduledTasks(): Promise<ScheduledTask[]> {
+  const result = await chrome.storage.local.get(KEYS.SCHEDULED_TASKS);
+  return (result[KEYS.SCHEDULED_TASKS] as ScheduledTask[] | undefined) ?? [];
+}
+
+export async function setScheduledTasks(tasks: ScheduledTask[]): Promise<void> {
+  await chrome.storage.local.set({ [KEYS.SCHEDULED_TASKS]: tasks });
+}
+
+export async function addScheduledTask(task: ScheduledTask): Promise<void> {
+  const tasks = await getScheduledTasks();
+  // Replace if same alarmId already exists
+  const filtered = tasks.filter((t) => t.alarmId !== task.alarmId);
+  filtered.push(task);
+  await setScheduledTasks(filtered);
+}
+
+export async function removeScheduledTask(alarmId: string): Promise<void> {
+  const tasks = await getScheduledTasks();
+  await setScheduledTasks(tasks.filter((t) => t.alarmId !== alarmId));
+}
+
+export async function updateScheduledTaskRun(alarmId: string, result: string): Promise<void> {
+  const tasks = await getScheduledTasks();
+  const task = tasks.find((t) => t.alarmId === alarmId);
+  if (task) {
+    task.lastRunAt = new Date().toISOString();
+    task.lastResult = result.slice(0, 500);
+    await setScheduledTasks(tasks);
+  }
 }

@@ -17,7 +17,13 @@ import {
   updateAgentMeta,
 } from './agents/manager.js';
 import { runAgentLoop } from './agents/loop.js';
-import { getApiKeys, setApiKeys } from './storage/chrome-storage.js';
+import {
+  getApiKeys,
+  setApiKeys,
+  getScheduledTasks,
+  updateScheduledTaskRun,
+  removeScheduledTask,
+} from './storage/chrome-storage.js';
 import { getMessages } from './storage/shared.js';
 import { getTaskState } from './storage/shared.js';
 import { listArtifacts } from './storage/shared.js';
@@ -725,6 +731,19 @@ async function handleOneShotMessage(
       }
     }
 
+    case 'getScheduledTasks': {
+      const { getScheduledTasks: getTasks } = await import('./storage/chrome-storage.js');
+      const scheduledTasks = await getTasks();
+      return { tasks: scheduledTasks };
+    }
+
+    case 'cancelScheduledTask': {
+      const alarmId = msg.alarmId as string;
+      await chrome.alarms.clear(alarmId);
+      await removeScheduledTask(alarmId);
+      return { cancelled: true };
+    }
+
     case 'openDashboard': {
       const url = chrome.runtime.getURL('app.html');
       // Check if a new tab page is already open and focus it
@@ -769,20 +788,46 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   // Ignore keepalive alarm — it only exists to prevent SW termination
   if (alarm.name === 'chaos-keepalive') return;
 
-  // Alarm names follow the pattern: chaos-agent-{agentId}
-  if (!alarm.name.startsWith('chaos-agent-')) return;
-
-  const agentId = alarm.name.replace('chaos-agent-', '');
-  console.log(`Alarm fired for agent: ${agentId}`);
+  console.log(`Alarm fired: ${alarm.name}`);
 
   try {
-    await runAgentLoop({
-      agentId,
-      userMessage:
-        'You were woken up by a scheduled alarm. Check your TODO list and pending messages, then do any work that needs doing.',
-    });
+    // Look up a scheduled task for this alarm
+    const tasks = await getScheduledTasks();
+    const task = tasks.find((t) => t.alarmId === alarm.name);
+
+    if (task) {
+      // Run a full agent loop with the stored prompt
+      const result = await runAgentLoop({
+        agentId: task.agentId,
+        userMessage: task.prompt,
+      });
+
+      // Update the task with run info
+      await updateScheduledTaskRun(task.alarmId, result || '(no output)');
+
+      // If this was a one-shot alarm, clean up the task
+      if (task.schedule.type === 'once') {
+        await removeScheduledTask(task.alarmId);
+      }
+
+      console.log(`Scheduled task completed for alarm: ${alarm.name}`);
+    } else {
+      // Legacy fallback: alarm names following the pattern agentId:name
+      // Extract agentId from the alarm name (before the first colon)
+      const colonIdx = alarm.name.indexOf(':');
+      if (colonIdx > 0) {
+        const agentId = alarm.name.slice(0, colonIdx);
+        await runAgentLoop({
+          agentId,
+          userMessage:
+            'You were woken up by a scheduled alarm. Check your TODO list and pending messages, then do any work that needs doing.',
+        });
+      } else {
+        console.warn(`Unknown alarm with no scheduled task: ${alarm.name}`);
+      }
+    }
   } catch (err) {
-    console.error(`Alarm handler failed for agent ${agentId}:`, err);
+    console.error(`Alarm handler failed for ${alarm.name}:`, err);
   }
 });
 

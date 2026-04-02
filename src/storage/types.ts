@@ -116,3 +116,20 @@ export interface Embedding {
   text: string;
   vector: number[];
 }
+
+// ── Scheduled tasks (alarm-driven agent work) ──
+
+export interface ScheduledTask {
+  alarmId: string;        // Chrome alarm name (namespaced: agentId:taskName)
+  agentId: string;
+  prompt: string;         // The natural language prompt to execute
+  description: string;    // Human-readable description for the UI
+  createdAt: string;      // ISO timestamp
+  lastRunAt?: string;     // ISO timestamp of last execution
+  lastResult?: string;    // Summary of last execution result
+  schedule: {
+    type: 'once' | 'recurring';
+    delayInMinutes?: number;    // For one-shot
+    periodInMinutes?: number;   // For recurring
+  };
+}
