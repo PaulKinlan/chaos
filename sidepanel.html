@@ -5,22 +5,540 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CHAOS</title>
   <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: system-ui, -apple-system, sans-serif;
-      margin: 0;
-      padding: 16px;
-      background: #0a0a0a;
+      background: #0d0d0d;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      font-size: 14px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #222;
+      background: #111;
+      flex-shrink: 0;
+    }
+
+    .header h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #8b5cf6;
+      letter-spacing: 1px;
+    }
+
+    .header select {
+      flex: 1;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .header select:focus {
+      border-color: #8b5cf6;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    .icon-btn {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #999;
+      cursor: pointer;
+      padding: 5px 8px;
+      font-size: 14px;
+      transition: all 0.15s;
+    }
+
+    .icon-btn:hover {
+      color: #e0e0e0;
+      border-color: #555;
+      background: #1a1a1a;
+    }
+
+    /* ── Setup prompt ── */
+    .setup-prompt {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 32px 20px;
+      text-align: center;
+      flex: 1;
+    }
+
+    .setup-prompt.visible {
+      display: flex;
+    }
+
+    .setup-prompt p {
+      color: #888;
+      line-height: 1.5;
+    }
+
+    .setup-prompt button {
+      background: #8b5cf6;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 20px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .setup-prompt button:hover {
+      background: #7c3aed;
+    }
+
+    /* ── Page context bar ── */
+    .page-context {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #1a1523;
+      border-bottom: 1px solid #2d2040;
+      font-size: 12px;
+      color: #c4b5fd;
+      flex-shrink: 0;
+    }
+
+    .page-context.visible {
+      display: flex;
+    }
+
+    .page-context span {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .page-context .dismiss {
+      cursor: pointer;
+      color: #8b5cf6;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    /* ── Messages area ── */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .message {
+      max-width: 95%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      line-height: 1.5;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: #2d1b69;
+      color: #e8e0f0;
+      border-bottom-right-radius: 3px;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background: #1a1a1a;
+      color: #d4d4d4;
+      border-bottom-left-radius: 3px;
+    }
+
+    .message.assistant p {
+      margin: 0 0 8px 0;
+    }
+
+    .message.assistant p:last-child {
+      margin-bottom: 0;
+    }
+
+    .message.assistant pre {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 10px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+
+    .message.assistant code {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 12px;
+    }
+
+    .message.assistant :not(pre) > code {
+      background: #222;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    .message.assistant ul, .message.assistant ol {
+      padding-left: 20px;
+      margin: 6px 0;
+    }
+
+    .message.assistant blockquote {
+      border-left: 3px solid #8b5cf6;
+      padding-left: 10px;
+      margin: 8px 0;
+      color: #aaa;
+    }
+
+    .message.assistant a {
+      color: #8b5cf6;
+      text-decoration: none;
+    }
+
+    .message.assistant a:hover {
+      text-decoration: underline;
+    }
+
+    .message.system {
+      align-self: center;
+      background: none;
+      color: #666;
+      font-size: 12px;
+      font-style: italic;
+      padding: 4px;
+    }
+
+    /* Typing indicator */
+    .typing-indicator {
+      display: none;
+      align-self: flex-start;
+      padding: 10px 14px;
+    }
+
+    .typing-indicator.visible {
+      display: flex;
+    }
+
+    .typing-indicator span {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      background: #555;
+      border-radius: 50%;
+      margin-right: 4px;
+      animation: bounce 1.2s infinite;
+    }
+
+    .typing-indicator span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-indicator span:nth-child(3) {
+      animation-delay: 0.4s;
+      margin-right: 0;
+    }
+
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-6px); }
+    }
+
+    /* ── Input area ── */
+    .input-area {
+      display: flex;
+      gap: 8px;
+      padding: 10px 12px;
+      border-top: 1px solid #222;
+      background: #111;
+      flex-shrink: 0;
+    }
+
+    .input-area textarea {
+      flex: 1;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 13px;
+      resize: none;
+      outline: none;
+      max-height: 120px;
+      min-height: 36px;
+    }
+
+    .input-area textarea:focus {
+      border-color: #8b5cf6;
+    }
+
+    .input-area textarea::placeholder {
+      color: #555;
+    }
+
+    .input-area button {
+      background: #8b5cf6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      align-self: flex-end;
+      transition: background 0.15s;
+    }
+
+    .input-area button:hover {
+      background: #7c3aed;
+    }
+
+    .input-area button:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+    }
+
+    /* ── Settings modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.visible {
+      display: flex;
+    }
+
+    .modal {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 20px;
+      width: 90%;
+      max-width: 360px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal h2 {
+      font-size: 16px;
+      margin-bottom: 16px;
       color: #e0e0e0;
     }
-    h1 {
-      font-size: 1.5rem;
-      margin: 0;
+
+    .modal label {
+      display: block;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 4px;
+      margin-top: 12px;
+    }
+
+    .modal label:first-of-type {
+      margin-top: 0;
+    }
+
+    .modal input[type="password"],
+    .modal input[type="text"] {
+      width: 100%;
+      background: #0d0d0d;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: monospace;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .modal input:focus {
+      border-color: #8b5cf6;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 20px;
+      justify-content: flex-end;
+    }
+
+    .modal-actions button {
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: #8b5cf6;
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #7c3aed;
+    }
+
+    .btn-secondary {
+      background: #333;
+      color: #ccc;
+    }
+
+    .btn-secondary:hover {
+      background: #444;
+    }
+
+    /* ── Create agent modal ── */
+    .modal select {
+      width: 100%;
+      background: #0d0d0d;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .modal select:focus {
+      border-color: #8b5cf6;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #333;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #444;
     }
   </style>
 </head>
 <body>
-  <h1>CHAOS</h1>
-  <div id="app"></div>
+  <!-- Header -->
+  <div class="header">
+    <h1>CHAOS</h1>
+    <select id="agent-select">
+      <option value="">Select agent...</option>
+    </select>
+    <div class="header-actions">
+      <button class="icon-btn" id="btn-read-page" title="Read this page">&#128196;</button>
+      <button class="icon-btn" id="btn-new-agent" title="Create agent">+</button>
+      <button class="icon-btn" id="btn-settings" title="Settings">&#9881;</button>
+    </div>
+  </div>
+
+  <!-- Setup prompt (shown when no API key is configured) -->
+  <div class="setup-prompt" id="setup-prompt">
+    <p><strong>Welcome to CHAOS</strong></p>
+    <p>To get started, add an API key for at least one AI provider.</p>
+    <button id="btn-open-settings">Open Settings</button>
+  </div>
+
+  <!-- Page context bar -->
+  <div class="page-context" id="page-context">
+    <span id="page-context-text"></span>
+    <span class="dismiss" id="btn-dismiss-context">&times;</span>
+  </div>
+
+  <!-- Messages area -->
+  <div class="messages" id="messages"></div>
+
+  <!-- Typing indicator -->
+  <div class="typing-indicator" id="typing-indicator">
+    <span></span><span></span><span></span>
+  </div>
+
+  <!-- Input area -->
+  <div class="input-area">
+    <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
+    <button id="btn-send">&#9654;</button>
+  </div>
+
+  <!-- Settings modal -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal">
+      <h2>API Keys</h2>
+      <label for="key-anthropic">Anthropic</label>
+      <input type="password" id="key-anthropic" placeholder="sk-ant-...">
+      <label for="key-google">Google (Gemini)</label>
+      <input type="password" id="key-google" placeholder="AI...">
+      <label for="key-openai">OpenAI</label>
+      <input type="password" id="key-openai" placeholder="sk-...">
+      <label for="key-openrouter">OpenRouter</label>
+      <input type="password" id="key-openrouter" placeholder="sk-or-...">
+      <div class="modal-actions">
+        <button class="btn-secondary" id="btn-settings-cancel">Cancel</button>
+        <button class="btn-primary" id="btn-settings-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create agent modal -->
+  <div class="modal-overlay" id="create-agent-modal">
+    <div class="modal">
+      <h2>Create Agent</h2>
+      <label for="agent-name">Name</label>
+      <input type="text" id="agent-name" placeholder="My Agent">
+      <label for="agent-role">Role</label>
+      <select id="agent-role">
+        <option value="neutral">Neutral (general-purpose)</option>
+        <option value="researcher">Researcher</option>
+        <option value="coder">Coder</option>
+        <option value="writer">Writer</option>
+        <option value="planner">Planner</option>
+        <option value="reviewer">Reviewer</option>
+      </select>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="btn-create-cancel">Cancel</button>
+        <button class="btn-primary" id="btn-create-confirm">Create</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="src/sidepanel.ts"></script>
 </body>
 </html>

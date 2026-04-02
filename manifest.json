@@ -11,7 +11,8 @@
     "history",
     "storage",
     "sidePanel",
-    "scripting"
+    "scripting",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -27,5 +28,12 @@
     "default_popup": "popup.html",
     "default_title": "CHAOS"
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/extractor.ts"],
+      "run_at": "document_idle"
+    }
+  ],
   "icons": {}
 }

@@ -5,23 +5,133 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CHAOS</title>
   <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: system-ui, -apple-system, sans-serif;
-      margin: 0;
+      width: 280px;
+      background: #0d0d0d;
+      color: #e0e0e0;
       padding: 16px;
-      width: 300px;
-      background: #0a0a0a;
+      font-size: 13px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #8b5cf6;
+      letter-spacing: 1px;
+    }
+
+    .agent-info {
+      margin-bottom: 14px;
+    }
+
+    .agent-info .name {
+      font-size: 14px;
+      font-weight: 600;
       color: #e0e0e0;
     }
-    h1 {
-      font-size: 1.25rem;
-      margin: 0;
+
+    .agent-info .role {
+      font-size: 12px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .agent-info .none {
+      color: #666;
+      font-style: italic;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: #777;
+      margin-bottom: 4px;
+    }
+
+    select {
+      width: 100%;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 14px;
+    }
+
+    select:focus {
+      border-color: #8b5cf6;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .actions button {
+      width: 100%;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+    }
+
+    .actions button:hover {
+      background: #222;
+      border-color: #555;
+    }
+
+    .actions .primary {
+      background: #8b5cf6;
+      border-color: #8b5cf6;
+      color: #fff;
+      text-align: center;
+    }
+
+    .actions .primary:hover {
+      background: #7c3aed;
     }
   </style>
 </head>
 <body>
-  <h1>CHAOS</h1>
-  <div id="app"></div>
+  <div class="header">
+    <h1>CHAOS</h1>
+  </div>
+
+  <div class="agent-info" id="agent-info">
+    <div class="none">No agent selected</div>
+  </div>
+
+  <label for="popup-agent-select">Active Agent</label>
+  <select id="popup-agent-select">
+    <option value="">Select agent...</option>
+  </select>
+
+  <div class="actions">
+    <button class="primary" id="btn-open-sidepanel">Open Side Panel</button>
+  </div>
+
   <script type="module" src="src/popup.ts"></script>
 </body>
 </html>
