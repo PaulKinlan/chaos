@@ -105,9 +105,52 @@ async function readDirRecursive(
 
 // ── Installation ──
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('CHAOS extension installed');
+chrome.runtime.onInstalled.addListener(async (details) => {
+  console.log('CHAOS extension installed', details.reason);
   setupContextMenus();
+
+  // On update, reload existing NTP tabs so they pick up the new extension version
+  if (details.reason === 'update') {
+    try {
+      const ntpUrl = chrome.runtime.getURL('app.html');
+      const tabs = await chrome.tabs.query({ url: ntpUrl });
+      for (const tab of tabs) {
+        if (tab.id) {
+          chrome.tabs.reload(tab.id);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to reload NTP tabs on update:', err);
+    }
+  }
+
+  // On fresh install, create a default agent so the user has something to work with
+  if (details.reason === 'install') {
+    try {
+      const agents = await listAgents();
+      if (agents.length === 0) {
+        const agent = await createAgent('Assistant', 'neutral');
+        console.log('Created default agent:', agent.id);
+        // Set up the daily review for the default agent
+        const alarmName = `${agent.id}:daily-review`;
+        chrome.alarms.create(alarmName, {
+          delayInMinutes: 60,
+          periodInMinutes: 1440,
+        });
+        await addScheduledTask({
+          alarmId: alarmName,
+          agentId: agent.id,
+          prompt: 'Daily review: Read through your memories/, activity-log.jsonl, TODO.md, and any pending messages. Look for patterns: stale TODOs (older than a week), repeated topics without action, and ignored suggestions. Write a brief daily review to memories/daily-reviews/ with today\'s date. Include: what happened recently, what\'s pending, and 1-3 proactive suggestions for things you could help with.',
+          description: 'Daily review and proactive insights',
+          createdAt: new Date().toISOString(),
+          schedule: { type: 'recurring', periodInMinutes: 1440 },
+        });
+        await setupContextMenus(); // Refresh to include the new agent
+      }
+    } catch (err) {
+      console.error('Failed to create default agent:', err);
+    }
+  }
 });
 
 // ── Initialize hooks event listeners ──
