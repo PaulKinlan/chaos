@@ -678,6 +678,18 @@
       display: flex;
       flex-direction: column;
       gap: var(--sp-3);
+      min-height: 0;
+    }
+
+    .chat-messages:empty::after {
+      content: 'Start a conversation with your agent';
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      color: var(--text-muted);
+      font-size: var(--text-sm);
+      font-style: italic;
     }
 
     .chat-message {
