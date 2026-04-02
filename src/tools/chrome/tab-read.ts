@@ -33,9 +33,36 @@ export const tabRead = tool({
     }
 
     try {
-      const response = await chrome.tabs.sendMessage(targetTabId, {
-        type: 'extractContent',
-      });
+      // Try sending message first (content script may already be injected)
+      let response: Record<string, string>;
+      try {
+        response = await chrome.tabs.sendMessage(targetTabId, {
+          type: 'extractContent',
+        });
+      } catch {
+        // Content script not injected yet - inject dynamically
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            files: ['src/content/extractor.ts'],
+          });
+          // Wait for script to initialize
+          await new Promise((r) => setTimeout(r, 300));
+          response = await chrome.tabs.sendMessage(targetTabId, {
+            type: 'extractContent',
+          });
+        } catch (injectErr) {
+          // Last resort: try to get basic info from the tab
+          const tabs = await chrome.tabs.query({});
+          const tab = tabs.find((t) => t.id === targetTabId);
+          return {
+            title: tab?.title ?? '',
+            url: tab?.url ?? '',
+            content: '',
+            excerpt: `Could not read page content: ${injectErr instanceof Error ? injectErr.message : String(injectErr)}. The page may not allow content scripts (e.g. chrome:// pages). Try using fetch_page with the URL instead.`,
+          };
+        }
+      }
       return {
         title: response.title ?? '',
         url: response.url ?? '',
@@ -47,7 +74,7 @@ export const tabRead = tool({
         title: '',
         url: '',
         content: '',
-        excerpt: `Error: Could not extract content from tab ${targetTabId}: ${err instanceof Error ? err.message : String(err)}`,
+        excerpt: `Error: Could not extract content from tab ${targetTabId}: ${err instanceof Error ? err.message : String(err)}. Try using fetch_page with the URL instead.`,
       };
     }
   },
