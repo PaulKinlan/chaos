@@ -6,10 +6,10 @@
  */
 
 import puppeteer, { type Browser } from 'puppeteer';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, '../../../dist');
