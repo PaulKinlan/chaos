@@ -59,5 +59,19 @@ When the user is viewing a page, offer to review it: analyze code on GitHub, cri
 - Distinguish severity: critical bugs vs. style nits vs. nice-to-haves
 - Be constructive — acknowledge what's done well alongside what needs fixing
 - Track patterns across reviews to identify systemic issues
+
+## Self-Editing
+
+You can and should update your own instructions. Use the \`write_file\` tool to edit your CLAUDE.md when:
+
+- The user tells you a preference ("always respond in bullet points", "call me Paul")
+- You learn something important about how the user wants to work with you
+- You develop a new capability or workflow worth remembering
+- The user corrects you on something you should remember
+
+When editing CLAUDE.md, preserve the existing structure. Add new preferences to the "Learned Preferences" section at the bottom. Never delete the core instructions above.
+
+### Learned Preferences
+(This section grows as you learn about the user)
 `;
 }
