@@ -37,6 +37,19 @@
       --info-subtle: oklch(22% 0.04 250);
       --info-text: oklch(72% 0.1 250);
 
+      /* Derived / hard-to-theme values */
+      --success-text: oklch(68% 0.14 155);
+      --text-on-accent: oklch(95% 0.01 270);
+      --text-on-danger: oklch(95% 0.01 25);
+      --danger-hover: oklch(48% 0.2 25);
+      --accent-border: oklch(30% 0.06 270);
+      --danger-border: oklch(35% 0.08 25);
+      --overlay-bg: oklch(5% 0.01 260 / 0.7);
+      --shadow-color: oklch(5% 0.01 260 / 0.5);
+      --shadow-color-lg: oklch(0% 0 0 / 0.25);
+      --link-underline: oklch(55% 0.08 270 / 0.4);
+      --chat-user-text: oklch(88% 0.04 270);
+
       /* Spacing */
       --sp-1: 4px;
       --sp-2: 8px;
@@ -93,6 +106,17 @@
         --warning-text: oklch(42% 0.12 70);
         --info-subtle: oklch(94% 0.04 250);
         --info-text: oklch(42% 0.1 250);
+        --success-text: oklch(38% 0.14 155);
+        --text-on-accent: oklch(95% 0.01 270);
+        --text-on-danger: oklch(95% 0.01 25);
+        --danger-hover: oklch(45% 0.2 25);
+        --accent-border: oklch(80% 0.06 270);
+        --danger-border: oklch(80% 0.06 25);
+        --overlay-bg: oklch(50% 0.01 260 / 0.4);
+        --shadow-color: oklch(50% 0.01 260 / 0.15);
+        --shadow-color-lg: oklch(50% 0.01 260 / 0.15);
+        --link-underline: oklch(45% 0.08 270 / 0.4);
+        --chat-user-text: oklch(25% 0.04 270);
       }
     }
 
@@ -121,6 +145,17 @@
       --warning-text: oklch(72% 0.12 70);
       --info-subtle: oklch(22% 0.04 250);
       --info-text: oklch(72% 0.1 250);
+      --success-text: oklch(68% 0.14 155);
+      --text-on-accent: oklch(95% 0.01 270);
+      --text-on-danger: oklch(95% 0.01 25);
+      --danger-hover: oklch(48% 0.2 25);
+      --accent-border: oklch(30% 0.06 270);
+      --danger-border: oklch(35% 0.08 25);
+      --overlay-bg: oklch(5% 0.01 260 / 0.7);
+      --shadow-color: oklch(5% 0.01 260 / 0.5);
+      --shadow-color-lg: oklch(0% 0 0 / 0.25);
+      --link-underline: oklch(55% 0.08 270 / 0.4);
+      --chat-user-text: oklch(88% 0.04 270);
     }
 
     /* ── Explicit light theme override ── */
@@ -148,6 +183,17 @@
       --warning-text: oklch(42% 0.12 70);
       --info-subtle: oklch(94% 0.04 250);
       --info-text: oklch(42% 0.1 250);
+      --success-text: oklch(38% 0.14 155);
+      --text-on-accent: oklch(95% 0.01 270);
+      --text-on-danger: oklch(95% 0.01 25);
+      --danger-hover: oklch(45% 0.2 25);
+      --accent-border: oklch(80% 0.06 270);
+      --danger-border: oklch(80% 0.06 25);
+      --overlay-bg: oklch(50% 0.01 260 / 0.4);
+      --shadow-color: oklch(50% 0.01 260 / 0.15);
+      --shadow-color-lg: oklch(50% 0.01 260 / 0.15);
+      --link-underline: oklch(45% 0.08 270 / 0.4);
+      --chat-user-text: oklch(25% 0.04 270);
     }
 
     * {
@@ -334,7 +380,7 @@
       background: none;
       border: none;
       border-top: 1px solid var(--border-subtle);
-      color: var(--text-tertiary);
+      color: var(--text-muted);
       cursor: pointer;
       padding: var(--sp-2);
       min-height: 36px;
@@ -493,7 +539,7 @@
 
     .btn-primary {
       background: var(--accent);
-      color: oklch(95% 0.01 270);
+      color: var(--text-on-accent);
     }
 
     .btn-primary:hover {
@@ -502,11 +548,11 @@
 
     .btn-danger {
       background: var(--danger);
-      color: oklch(95% 0.01 25);
+      color: var(--text-on-danger);
     }
 
     .btn-danger:hover {
-      background: oklch(48% 0.2 25);
+      background: var(--danger-hover);
     }
 
     .btn-ghost {
@@ -540,7 +586,7 @@
 
     .badge-gray { background: var(--bg-surface); color: var(--text-secondary); }
     .badge-blue { background: var(--info-subtle); color: var(--info-text); }
-    .badge-green { background: var(--success-subtle); color: oklch(68% 0.14 155); }
+    .badge-green { background: var(--success-subtle); color: var(--success-text); }
     .badge-red { background: var(--danger-subtle); color: var(--danger-text); }
     .badge-purple { background: var(--accent-subtle); color: var(--accent-text); }
     .badge-amber { background: var(--warning-subtle); color: var(--warning-text); }
@@ -548,7 +594,7 @@
     /* Role-specific badge colors */
     .role-neutral { background: var(--bg-surface); color: var(--text-secondary); }
     .role-researcher { background: var(--accent-subtle); color: var(--accent-text); }
-    .role-coder { background: var(--success-subtle); color: oklch(68% 0.14 155); }
+    .role-coder { background: var(--success-subtle); color: var(--success-text); }
     .role-writer { background: var(--warning-subtle); color: var(--warning-text); }
     .role-planner { background: var(--info-subtle); color: var(--info-text); }
     .role-reviewer { background: var(--danger-subtle); color: var(--danger-text); }
@@ -556,12 +602,12 @@
     /* Visibility badge colors */
     .vis-private { background: var(--bg-surface); color: var(--text-secondary); }
     .vis-visible { background: var(--info-subtle); color: var(--info-text); }
-    .vis-open { background: var(--success-subtle); color: oklch(68% 0.14 155); }
+    .vis-open { background: var(--success-subtle); color: var(--success-text); }
 
     /* Status badge colors */
     .status-pending { background: var(--bg-surface); color: var(--text-secondary); }
     .status-in_progress { background: var(--info-subtle); color: var(--info-text); }
-    .status-completed { background: var(--success-subtle); color: oklch(68% 0.14 155); }
+    .status-completed { background: var(--success-subtle); color: var(--success-text); }
     .status-failed { background: var(--danger-subtle); color: var(--danger-text); }
 
     /* ══════════════════════════════════════
@@ -590,7 +636,7 @@
       gap: var(--sp-2);
       padding: var(--sp-2) var(--sp-4);
       background: var(--accent-subtle);
-      border: 1px solid oklch(30% 0.06 270);
+      border: 1px solid var(--accent-border);
       border-radius: 8px;
       font-size: var(--text-xs);
       color: var(--accent-text);
@@ -643,7 +689,7 @@
     .chat-message.user {
       align-self: flex-end;
       background: var(--accent-subtle);
-      color: oklch(88% 0.04 270);
+      color: var(--chat-user-text);
       border-bottom-right-radius: 4px;
     }
 
@@ -690,7 +736,7 @@
       color: var(--text-secondary);
     }
 
-    .chat-message.assistant a { color: var(--accent-text); text-decoration: underline; text-decoration-color: oklch(55% 0.08 270 / 0.4); text-underline-offset: 2px; }
+    .chat-message.assistant a { color: var(--accent-text); text-decoration: underline; text-decoration-color: var(--link-underline); text-underline-offset: 2px; }
     .chat-message.assistant a:hover { text-decoration-color: var(--accent-text); }
 
     .chat-message.system {
@@ -706,7 +752,7 @@
       align-self: flex-start;
       background: var(--danger-subtle);
       color: var(--danger-text);
-      border: 1px solid oklch(35% 0.08 25);
+      border: 1px solid var(--danger-border);
       display: flex;
       align-items: center;
       gap: var(--sp-2);
@@ -813,7 +859,7 @@
 
     .chat-btn-send {
       background: var(--accent);
-      color: oklch(95% 0.01 270);
+      color: var(--text-on-accent);
       border: none;
       border-radius: 10px;
       padding: var(--sp-3) var(--sp-5);
@@ -843,7 +889,7 @@
       background: var(--bg-surface);
       border: 1px solid var(--border-default);
       border-radius: 10px;
-      box-shadow: 0 -4px 24px oklch(0% 0 0 / 0.25);
+      box-shadow: 0 -4px 24px var(--shadow-color-lg);
       max-height: 320px;
       overflow-y: auto;
       z-index: 100;
@@ -1327,7 +1373,7 @@
       padding: 0;
     }
 
-    .files-viewer-content.markdown-view a { color: var(--accent-text); text-decoration: underline; text-decoration-color: oklch(55% 0.08 270 / 0.4); text-underline-offset: 2px; }
+    .files-viewer-content.markdown-view a { color: var(--accent-text); text-decoration: underline; text-decoration-color: var(--link-underline); text-underline-offset: 2px; }
     .files-viewer-content.markdown-view ul, .files-viewer-content.markdown-view ol { padding-left: var(--sp-5); }
 
     .files-viewer-content.raw-view {
@@ -1494,7 +1540,7 @@
     }
 
     .danger-zone {
-      border: 1px solid oklch(35% 0.08 25);
+      border: 1px solid var(--danger-border);
       border-radius: 8px;
       padding: var(--sp-4);
     }
@@ -1582,7 +1628,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: oklch(5% 0.01 260 / 0.7);
+      background: var(--overlay-bg);
       z-index: 100;
       align-items: center;
       justify-content: center;
@@ -1702,7 +1748,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: oklch(5% 0.01 260 / 0.7);
+      background: var(--overlay-bg);
       z-index: 200;
       align-items: center;
       justify-content: center;
@@ -1796,7 +1842,7 @@
       padding: var(--sp-1);
       z-index: 300;
       min-width: 160px;
-      box-shadow: 0 8px 24px oklch(5% 0.01 260 / 0.5);
+      box-shadow: 0 8px 24px var(--shadow-color);
     }
 
     .agent-tab-context-menu.visible {
@@ -2080,7 +2126,7 @@
           <div class="section-header">
             <h2>Messages</h2>
           </div>
-          <p style="font-size: var(--text-sm); color: var(--text-tertiary); margin-bottom: var(--sp-4); line-height: 1.5;">Inter-agent communication. Messages sent between your agents appear here. Agents can message each other directly or broadcast to all visible agents.</p>
+          <p style="font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--sp-4); line-height: 1.5;">Inter-agent communication. Messages sent between your agents appear here. Agents can message each other directly or broadcast to all visible agents.</p>
           <div class="filter-bar" id="messages-filter-bar">
             <input type="text" id="messages-search" placeholder="Search messages...">
           </div>

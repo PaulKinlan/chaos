@@ -19,6 +19,7 @@
       --accent: oklch(55% 0.14 270);
       --accent-hover: oklch(50% 0.16 270);
       --accent-text: oklch(75% 0.1 270);
+      --text-on-accent: oklch(95% 0.01 270);
       --font-sans: 'Instrument Sans', system-ui, -apple-system, sans-serif;
       --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
       --duration-fast: 120ms;
@@ -48,6 +49,7 @@
         --accent: oklch(50% 0.14 270);
         --accent-hover: oklch(45% 0.16 270);
         --accent-text: oklch(40% 0.1 270);
+        --text-on-accent: oklch(95% 0.01 270);
       }
     }
 
@@ -65,6 +67,7 @@
       --accent: oklch(55% 0.14 270);
       --accent-hover: oklch(50% 0.16 270);
       --accent-text: oklch(75% 0.1 270);
+      --text-on-accent: oklch(95% 0.01 270);
     }
 
     [data-theme="light"] {
@@ -81,6 +84,7 @@
       --accent: oklch(50% 0.14 270);
       --accent-hover: oklch(45% 0.16 270);
       --accent-text: oklch(40% 0.1 270);
+      --text-on-accent: oklch(95% 0.01 270);
     }
 
     * {
@@ -209,7 +213,7 @@
     .actions .primary {
       background: var(--accent);
       border-color: var(--accent);
-      color: oklch(95% 0.01 270);
+      color: var(--text-on-accent);
       text-align: center;
       font-weight: 600;
     }
