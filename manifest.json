@@ -8,7 +8,8 @@
     "storage",
     "sidePanel",
     "alarms",
-    "contextMenus"
+    "contextMenus",
+    "offscreen"
   ],
   "optional_permissions": [
     "tabs",

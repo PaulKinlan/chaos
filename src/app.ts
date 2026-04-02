@@ -821,17 +821,19 @@ createCancelBtn.addEventListener('click', () => {
 createConfirmBtn.addEventListener('click', async () => {
   const nameInput = document.getElementById('create-agent-name') as HTMLInputElement;
   const roleSelect = document.getElementById('create-agent-role') as HTMLSelectElement;
+  const visibilitySelect = document.getElementById('create-agent-visibility') as HTMLSelectElement;
   const name = nameInput.value.trim();
   if (!name) return;
   const role = roleSelect.value;
+  const visibility = visibilitySelect?.value || 'private';
   createAgentModal.classList.remove('visible');
 
   // If we're on the chat tab, use port-based creation for instant feedback
   if (port) {
-    sendPortMessage({ type: 'createAgent', name, role });
+    sendPortMessage({ type: 'createAgent', name, role, visibility });
   } else {
     try {
-      await sendMsg({ type: 'createAgent', name, role });
+      await sendMsg({ type: 'createAgent', name, role, visibility });
       await loadAgents();
     } catch (err) {
       showPanelError('panel-agents', `Failed to create agent: ${err instanceof Error ? err.message : String(err)}`);
