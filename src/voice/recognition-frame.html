@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>CHAOS Voice Recognition</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 4px 8px;
+      font-family: system-ui, sans-serif;
+      font-size: 11px;
+      background: transparent;
+      color: white;
+      min-height: 100%;
+      box-sizing: border-box;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pulse {
+      width: 8px;
+      height: 8px;
+      background: #ef4444;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+      flex-shrink: 0;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .error { color: #ef4444; }
+    #status-text { opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <div class="status">
+    <div class="pulse" id="pulse"></div>
+    <span id="status-text">Starting...</span>
+  </div>
+  <script src="recognition-frame.js"></script>
+</body>
+</html>

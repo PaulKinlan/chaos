@@ -1055,64 +1055,98 @@ function init(): void {
 
 init();
 
-// ── Speech-to-text ──
-
-// ── Speech-to-text via offscreen document ──
+// ── Speech-to-text via iframe-based recognition ──
 // SpeechRecognition doesn't work directly in extension pages (chrome-extension:// URLs).
-// We use an offscreen document which runs in a normal web context.
+// We use an iframe that loads a recognition page with its own DOM context.
 
 let isRecording = false;
-let textBeforeRecording = '';
+let voiceFinalTranscript = '';
+let recognitionIframe: HTMLIFrameElement | null = null;
 
-async function ensureOffscreenDocument(): Promise<void> {
-  // Check if offscreen document already exists
-  const existingContexts = await (chrome.runtime as any).getContexts?.({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
-  });
-  if (existingContexts?.length > 0) return;
+function startSidepanelVoice(): void {
+  if (isRecording) return;
+  isRecording = true;
+  voiceFinalTranscript = '';
+  chatInput.dataset.lastInterim = '';
+  btnMic.classList.add('recording');
 
-  try {
-    await (chrome as any).offscreen.createDocument({
-      url: 'offscreen.html',
-      reasons: ['USER_MEDIA'],
-      justification: 'Speech recognition requires a normal web page context',
-    });
-  } catch {
-    // May already exist
-  }
+  recognitionIframe = document.createElement('iframe');
+  recognitionIframe.src = chrome.runtime.getURL('src/voice/recognition-frame.html');
+  recognitionIframe.allow = 'microphone';
+  recognitionIframe.style.cssText = `
+    position: fixed; bottom: 60px; right: 10px;
+    width: 160px; height: 24px; border: none;
+    border-radius: 6px; z-index: 10000;
+    opacity: 0.9; pointer-events: none;
+  `;
+  document.body.appendChild(recognitionIframe);
 }
 
-btnMic.addEventListener('click', async () => {
-  if (isRecording) {
-    isRecording = false;
-    btnMic.classList.remove('recording');
-    chrome.runtime.sendMessage({ type: 'stopSpeechRecognition' });
-  } else {
-    try {
-      await ensureOffscreenDocument();
-      isRecording = true;
-      textBeforeRecording = chatInput.value;
-      btnMic.classList.add('recording');
-      chrome.runtime.sendMessage({ type: 'startSpeechRecognition' });
-    } catch (err) {
-      addSystemMessage(`Could not start voice input: ${err instanceof Error ? err.message : String(err)}`);
+function stopSidepanelVoice(): void {
+  if (!isRecording) return;
+  isRecording = false;
+  btnMic.classList.remove('recording');
+
+  if (recognitionIframe?.contentWindow) {
+    recognitionIframe.contentWindow.postMessage(
+      { target: 'chaos-recognition', type: 'stop' },
+      '*'
+    );
+  }
+  setTimeout(() => {
+    if (recognitionIframe) {
+      recognitionIframe.remove();
+      recognitionIframe = null;
     }
+  }, 200);
+  voiceFinalTranscript = '';
+  delete chatInput.dataset.lastInterim;
+}
+
+btnMic.addEventListener('click', () => {
+  if (isRecording) {
+    stopSidepanelVoice();
+  } else {
+    startSidepanelVoice();
   }
 });
 
-// Listen for transcription results from offscreen document (via background)
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === 'speechResult') {
-    chatInput.value = textBeforeRecording + msg.transcript;
-    chatInput.scrollTop = chatInput.scrollHeight;
-  } else if (msg.type === 'speechError') {
-    if (msg.error !== 'no-speech' && msg.error !== 'aborted') {
-      addSystemMessage(`Speech recognition error: ${msg.error}`);
+// Listen for messages from the recognition iframe
+window.addEventListener('message', (event) => {
+  if (event.data?.source !== 'chaos-recognition') return;
+
+  switch (event.data.type) {
+    case 'recognition-result': {
+      const { finalTranscript, interimTranscript } = event.data;
+      if (finalTranscript) {
+        voiceFinalTranscript += finalTranscript + ' ';
+      }
+      const existingText = chatInput.value.substring(
+        0,
+        chatInput.value.length - (chatInput.dataset.lastInterim?.length || 0)
+      );
+      chatInput.value = existingText + voiceFinalTranscript + (interimTranscript || '');
+      chatInput.dataset.lastInterim = interimTranscript || '';
+      chatInput.scrollTop = chatInput.scrollHeight;
+      break;
     }
-    isRecording = false;
-    btnMic.classList.remove('recording');
-  } else if (msg.type === 'speechEnd') {
-    isRecording = false;
-    btnMic.classList.remove('recording');
+    case 'recognition-error':
+      if (!event.data.recoverable) {
+        addSystemMessage(`Speech recognition error: ${event.data.error}`);
+        stopSidepanelVoice();
+      }
+      break;
+    case 'recognition-ended':
+      if (isRecording) {
+        isRecording = false;
+        btnMic.classList.remove('recording');
+        if (recognitionIframe) {
+          recognitionIframe.remove();
+          recognitionIframe = null;
+        }
+        voiceFinalTranscript = '';
+        delete chatInput.dataset.lastInterim;
+      }
+      break;
   }
 });

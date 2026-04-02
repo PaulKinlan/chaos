@@ -7,8 +7,7 @@
     "activeTab",
     "storage",
     "alarms",
-    "contextMenus",
-    "offscreen"
+    "contextMenus"
   ],
   "optional_permissions": [
     "tabs",
@@ -31,5 +30,23 @@
     "default_popup": "popup.html",
     "default_title": "CHAOS"
   },
+  "commands": {
+    "activate-voice": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+U",
+        "mac": "Command+Shift+U"
+      },
+      "description": "Activate voice input for current agent"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "matches": ["<all_urls>"],
+      "resources": [
+        "src/voice/recognition-frame.html",
+        "src/voice/recognition-frame.js"
+      ]
+    }
+  ],
   "icons": {}
 }

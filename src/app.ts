@@ -777,72 +777,128 @@ chatBtnDismissContext.addEventListener('click', () => {
   chatPageContextBar.classList.remove('visible');
 });
 
-// ── Chat voice input ──
+// ── Chat voice input (iframe-based recognition) ──
 
-const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-let recognition: any = null;
 let isRecording = false;
+let recognitionIframe: HTMLIFrameElement | null = null;
+let voiceFinalTranscript = '';
 
-if (SpeechRecognition) {
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-
-  let finalTranscript = '';
-
-  recognition.onresult = (event: any) => {
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalTranscript += transcript + ' ';
-      } else {
-        interim = transcript;
-      }
-    }
-    const existingText = chatInput.value.substring(0, chatInput.value.length - (chatInput.dataset.lastInterim?.length || 0));
-    chatInput.value = existingText + finalTranscript + interim;
-    chatInput.dataset.lastInterim = interim;
-    chatInput.scrollTop = chatInput.scrollHeight;
-  };
-
-  recognition.onend = () => {
-    if (isRecording) {
-      recognition.start();
-    } else {
-      chatBtnMic.classList.remove('recording');
-      finalTranscript = '';
-      delete chatInput.dataset.lastInterim;
-    }
-  };
-
-  recognition.onerror = (event: any) => {
-    if (event.error !== 'no-speech' && event.error !== 'aborted') {
-      addChatSystemMessage(`Speech recognition error: ${event.error}`);
-    }
-    isRecording = false;
-    chatBtnMic.classList.remove('recording');
-    finalTranscript = '';
-    delete chatInput.dataset.lastInterim;
-  };
-
-  chatBtnMic.addEventListener('click', () => {
-    if (isRecording) {
-      isRecording = false;
-      recognition.stop();
-      chatBtnMic.classList.remove('recording');
-    } else {
-      isRecording = true;
-      finalTranscript = '';
-      chatInput.dataset.lastInterim = '';
-      recognition.start();
-      chatBtnMic.classList.add('recording');
-    }
-  });
-} else {
-  chatBtnMic.style.display = 'none';
+function toggleVoiceInput(): void {
+  if (isRecording) {
+    stopVoiceInput();
+  } else {
+    startVoiceInput();
+  }
 }
+
+function startVoiceInput(): void {
+  if (isRecording) return;
+  isRecording = true;
+  voiceFinalTranscript = '';
+  chatInput.dataset.lastInterim = '';
+  chatBtnMic.classList.add('recording');
+
+  // Create iframe pointing to recognition frame
+  recognitionIframe = document.createElement('iframe');
+  recognitionIframe.src = chrome.runtime.getURL('src/voice/recognition-frame.html');
+  recognitionIframe.allow = 'microphone';
+  recognitionIframe.style.cssText = `
+    position: fixed;
+    bottom: 60px;
+    right: 20px;
+    width: 160px;
+    height: 24px;
+    border: none;
+    border-radius: 6px;
+    z-index: 10000;
+    opacity: 0.9;
+    pointer-events: none;
+  `;
+  document.body.appendChild(recognitionIframe);
+}
+
+function stopVoiceInput(): void {
+  if (!isRecording) return;
+  isRecording = false;
+  chatBtnMic.classList.remove('recording');
+
+  // Tell iframe to stop
+  if (recognitionIframe?.contentWindow) {
+    recognitionIframe.contentWindow.postMessage(
+      { target: 'chaos-recognition', type: 'stop' },
+      '*'
+    );
+  }
+
+  // Remove iframe after a brief delay to allow final results
+  setTimeout(() => {
+    if (recognitionIframe) {
+      recognitionIframe.remove();
+      recognitionIframe = null;
+    }
+  }, 200);
+
+  voiceFinalTranscript = '';
+  delete chatInput.dataset.lastInterim;
+}
+
+// Listen for messages from the recognition iframe
+window.addEventListener('message', (event) => {
+  if (event.data?.source !== 'chaos-recognition') return;
+
+  switch (event.data.type) {
+    case 'recognition-started':
+      // Recognition is active
+      break;
+
+    case 'recognition-result': {
+      const { finalTranscript, interimTranscript } = event.data;
+      if (finalTranscript) {
+        voiceFinalTranscript += finalTranscript + ' ';
+      }
+      const existingText = chatInput.value.substring(
+        0,
+        chatInput.value.length - (chatInput.dataset.lastInterim?.length || 0)
+      );
+      chatInput.value = existingText + voiceFinalTranscript + (interimTranscript || '');
+      chatInput.dataset.lastInterim = interimTranscript || '';
+      chatInput.scrollTop = chatInput.scrollHeight;
+      break;
+    }
+
+    case 'recognition-error':
+      if (!event.data.recoverable) {
+        addChatSystemMessage(`Speech recognition error: ${event.data.error}`);
+        stopVoiceInput();
+      }
+      break;
+
+    case 'recognition-ended':
+      // Only clean up if we didn't already stop (e.g. iframe died)
+      if (isRecording) {
+        isRecording = false;
+        chatBtnMic.classList.remove('recording');
+        if (recognitionIframe) {
+          recognitionIframe.remove();
+          recognitionIframe = null;
+        }
+        voiceFinalTranscript = '';
+        delete chatInput.dataset.lastInterim;
+      }
+      break;
+  }
+});
+
+chatBtnMic.addEventListener('click', () => {
+  toggleVoiceInput();
+});
+
+// Listen for hotkey toggle message from background
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.type === 'toggle-voice-input') {
+    toggleVoiceInput();
+  }
+});
 
 // ══════════════════════════════════════════
 // ── Tasks View

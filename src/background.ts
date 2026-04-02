@@ -768,28 +768,23 @@ async function handleOneShotMessage(
       return { opened: true };
     }
 
-    // Speech recognition relay - forward between offscreen doc and UI
-    case 'startSpeechRecognition':
-    case 'stopSpeechRecognition':
-      // Forward to offscreen document
-      try {
-        await chrome.runtime.sendMessage(msg);
-      } catch {
-        // Offscreen doc may not be ready
-      }
-      return { ok: true };
-
-    case 'speechResult':
-    case 'speechError':
-    case 'speechEnd':
-      // These come from offscreen doc, relay to all extension views
-      // (side panel and app.html will pick them up via their own onMessage listeners)
-      return { ok: true };
-
     default:
       throw new Error(`Unknown one-shot message type: ${msg.type}`);
   }
 }
+
+// ── Global hotkey for voice input ──
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command !== 'activate-voice') return;
+
+  // Find the active NTP tab and send a toggle message
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const ntpTab = tabs.find((t) => t.url?.startsWith('chrome-extension://') && t.url?.includes('app.html'));
+  if (ntpTab?.id) {
+    chrome.tabs.sendMessage(ntpTab.id, { type: 'toggle-voice-input' });
+  }
+});
 
 // ── Alarm handling for scheduled agent wake-ups ──
 

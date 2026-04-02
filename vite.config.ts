@@ -17,7 +17,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         app: new URL('./app.html', import.meta.url).pathname,
-        offscreen: new URL('./offscreen.html', import.meta.url).pathname,
+        'src/voice/recognition-frame': new URL('./src/voice/recognition-frame.html', import.meta.url).pathname,
       },
     },
   },
