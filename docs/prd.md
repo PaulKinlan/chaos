@@ -255,6 +255,9 @@ Right-click to send selected text or current page to an agent.
 ### Voice input
 Speech-to-text input is available in both the new tab chat and side panel using the Web Speech API. Click the microphone button to start/stop recording. Supports continuous dictation with interim results.
 
+### @ Mention autocomplete
+The chat input supports `@` mentions to inline browser context. Type `@` to see categories (tab, bookmark, history, agent), then type a category and filter text to search. Selecting an item inserts a formatted mention (`@type[title](id)`) that is resolved to full content when the message is sent. Mentions render as styled badges in the chat history.
+
 ### Browser permissions
 Chrome permissions (scripting, tabs, bookmarks, history) are **optional**. Each permission can be enabled individually through an in-UI request flow in Settings. Agents gracefully degrade when permissions aren't granted.
 

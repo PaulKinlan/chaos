@@ -290,6 +290,136 @@ async function appendActivityLog(
   await opfs.appendFile(logPath, JSON.stringify(entry) + '\n');
 }
 
+// ── Mention resolution ──
+
+interface ParsedMention {
+  type: 'tab' | 'bookmark' | 'history' | 'agent';
+  title: string;
+  id: string;
+  fullMatch: string;
+}
+
+function parseMentions(text: string): ParsedMention[] {
+  const pattern = /@(tab|bookmark|history|agent)\[([^\]]*)\]\(([^)]*)\)/g;
+  const mentions: ParsedMention[] = [];
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    mentions.push({
+      type: match[1] as ParsedMention['type'],
+      title: match[2],
+      id: match[3],
+      fullMatch: match[0],
+    });
+  }
+  return mentions;
+}
+
+async function resolveMentions(mentions: ParsedMention[]): Promise<string> {
+  if (mentions.length === 0) return '';
+
+  const parts: string[] = ['\n\n---\n**Context from mentioned sources:**\n'];
+
+  for (const mention of mentions) {
+    switch (mention.type) {
+      case 'tab': {
+        // Try to extract tab content via scripting
+        const tabId = parseInt(mention.id, 10);
+        if (isNaN(tabId)) {
+          parts.push(`\n### Tab: ${mention.title}\n*Could not read tab: invalid tab ID*\n`);
+          break;
+        }
+        try {
+          const hasScripting = await chrome.permissions.contains({
+            permissions: ['scripting'],
+            origins: ['<all_urls>'],
+          });
+          if (!hasScripting) {
+            // Fall back to basic tab info
+            const tabs = await chrome.tabs.query({});
+            const tab = tabs.find(t => t.id === tabId);
+            parts.push(`\n### Tab: ${mention.title}\n**URL:** ${tab?.url || 'unknown'}\n*Scripting permission not granted - cannot extract page content*\n`);
+            break;
+          }
+          // Try to get the tab's content
+          const results = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => {
+              return {
+                title: document.title,
+                url: location.href,
+                content: document.body?.innerText?.slice(0, 8000) || '',
+              };
+            },
+          });
+          const result = results?.[0]?.result as { title: string; url: string; content: string } | undefined;
+          if (result) {
+            parts.push(`\n### Tab: ${result.title}\n**URL:** ${result.url}\n\n${result.content}\n`);
+          } else {
+            parts.push(`\n### Tab: ${mention.title}\n*Could not extract content from this tab*\n`);
+          }
+        } catch (err) {
+          parts.push(`\n### Tab: ${mention.title}\n*Error reading tab: ${err instanceof Error ? err.message : String(err)}*\n`);
+        }
+        break;
+      }
+
+      case 'bookmark':
+      case 'history': {
+        // For bookmarks and history, we have a URL - try to fetch content
+        const url = mention.id;
+        try {
+          // Try to find an open tab with this URL first
+          const tabs = await chrome.tabs.query({ url });
+          if (tabs.length > 0 && tabs[0].id) {
+            const hasScripting = await chrome.permissions.contains({
+              permissions: ['scripting'],
+              origins: ['<all_urls>'],
+            });
+            if (hasScripting) {
+              try {
+                const results = await chrome.scripting.executeScript({
+                  target: { tabId: tabs[0].id },
+                  func: () => ({
+                    title: document.title,
+                    url: location.href,
+                    content: document.body?.innerText?.slice(0, 8000) || '',
+                  }),
+                });
+                const result = results?.[0]?.result as { title: string; url: string; content: string } | undefined;
+                if (result?.content) {
+                  parts.push(`\n### ${mention.type === 'bookmark' ? 'Bookmark' : 'History'}: ${mention.title}\n**URL:** ${url}\n\n${result.content}\n`);
+                  break;
+                }
+              } catch {
+                // Fall through to URL-only
+              }
+            }
+          }
+          // Can't extract content - provide URL context
+          parts.push(`\n### ${mention.type === 'bookmark' ? 'Bookmark' : 'History'}: ${mention.title}\n**URL:** ${url}\n`);
+        } catch {
+          parts.push(`\n### ${mention.type === 'bookmark' ? 'Bookmark' : 'History'}: ${mention.title}\n**URL:** ${url}\n`);
+        }
+        break;
+      }
+
+      case 'agent': {
+        // Include agent's name and role as context
+        const agentList = await getAgentList();
+        const referencedAgent = agentList.find(a => a.id === mention.id);
+        if (referencedAgent) {
+          parts.push(`\n### Agent: ${referencedAgent.name}\n**Role:** ${referencedAgent.role}\n**Visibility:** ${referencedAgent.visibility}\n`);
+        } else {
+          parts.push(`\n### Agent: ${mention.title}\n*Agent not found*\n`);
+        }
+        break;
+      }
+    }
+  }
+
+  return parts.join('');
+}
+
 // ── Main loop ──
 
 /**
@@ -299,7 +429,15 @@ async function appendActivityLog(
 export async function runAgentLoop(
   options: AgentLoopOptions,
 ): Promise<string> {
-  const { agentId, userMessage, pageContext, onChunk, toolLookupStrategy = 'static' } = options;
+  const { agentId, pageContext, onChunk, toolLookupStrategy = 'static' } = options;
+  let { userMessage } = options;
+
+  // 0. Resolve any @mentions in the user message
+  const mentions = parseMentions(userMessage);
+  if (mentions.length > 0) {
+    const mentionContext = await resolveMentions(mentions);
+    userMessage = userMessage + mentionContext;
+  }
 
   // 1. Read agent's CLAUDE.md from OPFS
   const claudeMdPath = `${AGENTS_ROOT}/${agentId}/CLAUDE.md`;

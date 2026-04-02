@@ -655,7 +655,13 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
 function addChatUserMessage(text: string): void {
   const el = document.createElement('div');
   el.className = 'chat-message user';
-  el.textContent = text;
+  // Render mention badges if present, otherwise plain text
+  const mentionPattern = /@(tab|bookmark|history|agent)\[[^\]]*\]\([^)]*\)/;
+  if (mentionPattern.test(text)) {
+    el.innerHTML = DOMPurify.sanitize(renderMentionBadges(escapeHtml(text)));
+  } else {
+    el.textContent = text;
+  }
   chatMessagesDiv.appendChild(el);
   chatScrollToBottom();
 }
@@ -752,7 +758,8 @@ function saveChatConversation(): void {
 chatBtnSend.addEventListener('click', sendChatMessage);
 
 chatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
+  // Don't send when mention dropdown is handling the key
+  if (e.key === 'Enter' && !e.shiftKey && !mentionVisible) {
     e.preventDefault();
     sendChatMessage();
   }
@@ -899,6 +906,454 @@ chrome.runtime.onMessage.addListener((msg) => {
     toggleVoiceInput();
   }
 });
+
+// ══════════════════════════════════════════
+// ── Mention Autocomplete
+// ══════════════════════════════════════════
+
+interface MentionItem {
+  type: 'tab' | 'bookmark' | 'history' | 'agent';
+  title: string;
+  subtitle: string;
+  value: string;
+  id: string;
+}
+
+const mentionDropdown = document.getElementById('mention-dropdown') as HTMLDivElement;
+const mentionDropdownHeader = document.getElementById('mention-dropdown-header') as HTMLDivElement;
+const mentionDropdownList = document.getElementById('mention-dropdown-list') as HTMLUListElement;
+
+let mentionItems: MentionItem[] = [];
+let mentionActiveIndex = -1;
+let mentionVisible = false;
+let mentionStartPos = -1; // position of the '@' character in the textarea
+
+const MENTION_CATEGORIES = ['tab', 'bookmark', 'history', 'agent'] as const;
+type MentionCategory = typeof MENTION_CATEGORIES[number];
+
+// SVG icons for each category
+const MENTION_ICONS: Record<MentionCategory, string> = {
+  tab: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+  history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  agent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+};
+
+const MENTION_LABELS: Record<MentionCategory, string> = {
+  tab: 'Tabs',
+  bookmark: 'Bookmarks',
+  history: 'History',
+  agent: 'Agents',
+};
+
+/**
+ * Parse the current mention query from the textarea.
+ * Returns null if the cursor is not in a mention context.
+ * Returns { category, filter, start } if it is.
+ */
+function parseMentionQuery(): { category: MentionCategory | null; filter: string; start: number } | null {
+  const cursorPos = chatInput.selectionStart;
+  const text = chatInput.value;
+
+  // Scan backwards from cursor to find '@'
+  let atPos = -1;
+  for (let i = cursorPos - 1; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === '@') {
+      // Only valid if at start of input or preceded by whitespace/newline
+      if (i === 0 || /\s/.test(text[i - 1])) {
+        atPos = i;
+      }
+      break;
+    }
+    // Stop scanning if we hit a space before finding a category keyword
+    // but allow spaces after category (e.g. "@tab meeting notes")
+    if (ch === '\n') break;
+  }
+
+  if (atPos === -1) return null;
+
+  const afterAt = text.slice(atPos + 1, cursorPos);
+
+  // Check if it matches a category
+  for (const cat of MENTION_CATEGORIES) {
+    if (afterAt.toLowerCase() === cat.slice(0, afterAt.length) && afterAt.length <= cat.length && !afterAt.includes(' ')) {
+      // Still typing the category name
+      return { category: null, filter: afterAt, start: atPos };
+    }
+    if (afterAt.toLowerCase().startsWith(cat + ' ') || afterAt.toLowerCase() === cat) {
+      const filter = afterAt.slice(cat.length).trimStart();
+      return { category: cat as MentionCategory, filter, start: atPos };
+    }
+  }
+
+  // Just '@' with no recognized category prefix yet
+  if (afterAt === '') {
+    return { category: null, filter: '', start: atPos };
+  }
+
+  // Partial text that doesn't match any category - check if it could be a prefix
+  const matchesAnyPrefix = MENTION_CATEGORIES.some(cat =>
+    cat.startsWith(afterAt.toLowerCase())
+  );
+  if (matchesAnyPrefix) {
+    return { category: null, filter: afterAt, start: atPos };
+  }
+
+  return null;
+}
+
+async function fetchMentionItems(category: MentionCategory, filter: string): Promise<MentionItem[]> {
+  const items: MentionItem[] = [];
+  const query = filter.toLowerCase();
+
+  switch (category) {
+    case 'tab': {
+      const hasTabs = await hasPermission('tabs');
+      if (!hasTabs) return [{
+        type: 'tab',
+        title: 'Enable tabs permission in settings',
+        subtitle: 'Required to list open tabs',
+        value: '',
+        id: '__permission__',
+      }];
+      try {
+        const tabs = await chrome.tabs.query({});
+        for (const tab of tabs) {
+          if (!tab.title && !tab.url) continue;
+          const title = tab.title || 'Untitled';
+          const url = tab.url || '';
+          if (query && !title.toLowerCase().includes(query) && !url.toLowerCase().includes(query)) continue;
+          items.push({
+            type: 'tab',
+            title,
+            subtitle: url,
+            value: `@tab[${title}](${tab.id})`,
+            id: String(tab.id),
+          });
+        }
+      } catch { /* permission denied or API error */ }
+      break;
+    }
+
+    case 'bookmark': {
+      const hasBookmarks = await hasPermission('bookmarks');
+      if (!hasBookmarks) return [{
+        type: 'bookmark',
+        title: 'Enable bookmarks permission in settings',
+        subtitle: 'Required to search bookmarks',
+        value: '',
+        id: '__permission__',
+      }];
+      try {
+        const results = await chrome.bookmarks.search(filter || ' ');
+        for (const bm of results) {
+          if (!bm.url) continue; // skip folders
+          const title = bm.title || 'Untitled';
+          items.push({
+            type: 'bookmark',
+            title,
+            subtitle: bm.url,
+            value: `@bookmark[${title}](${bm.url})`,
+            id: bm.url,
+          });
+        }
+      } catch { /* permission denied or API error */ }
+      break;
+    }
+
+    case 'history': {
+      const hasHistory = await hasPermission('history');
+      if (!hasHistory) return [{
+        type: 'history',
+        title: 'Enable history permission in settings',
+        subtitle: 'Required to search history',
+        value: '',
+        id: '__permission__',
+      }];
+      try {
+        const results = await chrome.history.search({
+          text: filter || '',
+          maxResults: 20,
+          startTime: Date.now() - 7 * 24 * 60 * 60 * 1000, // last 7 days
+        });
+        for (const item of results) {
+          if (!item.url) continue;
+          const title = item.title || 'Untitled';
+          if (query && !title.toLowerCase().includes(query) && !item.url.toLowerCase().includes(query)) continue;
+          items.push({
+            type: 'history',
+            title,
+            subtitle: item.url,
+            value: `@history[${title}](${item.url})`,
+            id: item.url,
+          });
+        }
+      } catch { /* permission denied or API error */ }
+      break;
+    }
+
+    case 'agent': {
+      for (const agent of agents) {
+        const title = agent.name;
+        const subtitle = agent.role;
+        if (query && !title.toLowerCase().includes(query) && !subtitle.toLowerCase().includes(query)) continue;
+        items.push({
+          type: 'agent',
+          title,
+          subtitle,
+          value: `@agent[${title}](${agent.id})`,
+          id: agent.id,
+        });
+      }
+      break;
+    }
+  }
+
+  return items.slice(0, 8);
+}
+
+function showMentionDropdown(items: MentionItem[], category: MentionCategory | null): void {
+  mentionItems = items;
+  mentionActiveIndex = items.length > 0 ? 0 : -1;
+  mentionVisible = true;
+
+  // Header
+  if (category) {
+    mentionDropdownHeader.innerHTML = `${MENTION_ICONS[category]}<span>${MENTION_LABELS[category]}</span>`;
+    mentionDropdownHeader.style.display = '';
+  } else {
+    mentionDropdownHeader.innerHTML = `<span>Type a category: tab, bookmark, history, agent</span>`;
+    mentionDropdownHeader.style.display = '';
+  }
+
+  // List
+  mentionDropdownList.innerHTML = '';
+
+  if (items.length === 0 && category) {
+    const emptyEl = document.createElement('li');
+    emptyEl.className = 'mention-dropdown-empty';
+    emptyEl.textContent = 'No results found';
+    mentionDropdownList.appendChild(emptyEl);
+  } else if (!category) {
+    // Show category chips
+    for (const cat of MENTION_CATEGORIES) {
+      const li = document.createElement('li');
+      li.className = 'mention-dropdown-item';
+      li.innerHTML = `
+        <span class="mention-icon type-${cat}">${MENTION_ICONS[cat]}</span>
+        <span class="mention-info">
+          <span class="mention-title">${MENTION_LABELS[cat]}</span>
+          <span class="mention-subtitle">Type @${cat} to search</span>
+        </span>
+      `;
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        insertCategoryText(cat);
+      });
+      mentionDropdownList.appendChild(li);
+    }
+    // Highlight first
+    const firstItem = mentionDropdownList.querySelector('.mention-dropdown-item');
+    if (firstItem) firstItem.classList.add('active');
+  } else {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const li = document.createElement('li');
+      li.className = 'mention-dropdown-item' + (i === mentionActiveIndex ? ' active' : '');
+      li.innerHTML = `
+        <span class="mention-icon type-${item.type}">${MENTION_ICONS[item.type]}</span>
+        <span class="mention-info">
+          <span class="mention-title">${escapeHtml(item.title)}</span>
+          <span class="mention-subtitle">${escapeHtml(item.subtitle)}</span>
+        </span>
+      `;
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        selectMentionItem(item);
+      });
+      li.addEventListener('mouseenter', () => {
+        mentionActiveIndex = i;
+        updateMentionActiveItem();
+      });
+      mentionDropdownList.appendChild(li);
+    }
+  }
+
+  mentionDropdown.classList.add('visible');
+}
+
+function hideMentionDropdown(): void {
+  mentionVisible = false;
+  mentionItems = [];
+  mentionActiveIndex = -1;
+  mentionStartPos = -1;
+  mentionDropdown.classList.remove('visible');
+}
+
+function updateMentionActiveItem(): void {
+  const items = mentionDropdownList.querySelectorAll('.mention-dropdown-item');
+  items.forEach((el, i) => {
+    el.classList.toggle('active', i === mentionActiveIndex);
+  });
+  // Scroll active item into view
+  const activeEl = mentionDropdownList.querySelector('.mention-dropdown-item.active');
+  if (activeEl) {
+    activeEl.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function insertCategoryText(category: MentionCategory): void {
+  if (mentionStartPos === -1) return;
+  const before = chatInput.value.slice(0, mentionStartPos);
+  const after = chatInput.value.slice(chatInput.selectionStart);
+  chatInput.value = before + '@' + category + ' ' + after;
+  const newCursorPos = mentionStartPos + 1 + category.length + 1;
+  chatInput.selectionStart = newCursorPos;
+  chatInput.selectionEnd = newCursorPos;
+  chatInput.focus();
+  // Trigger re-evaluation
+  handleMentionInput();
+}
+
+function selectMentionItem(item: MentionItem): void {
+  if (item.id === '__permission__' || !item.value) {
+    hideMentionDropdown();
+    return;
+  }
+
+  if (mentionStartPos === -1) return;
+  const before = chatInput.value.slice(0, mentionStartPos);
+  const after = chatInput.value.slice(chatInput.selectionStart);
+  chatInput.value = before + item.value + ' ' + after;
+  const newCursorPos = mentionStartPos + item.value.length + 1;
+  chatInput.selectionStart = newCursorPos;
+  chatInput.selectionEnd = newCursorPos;
+  chatInput.focus();
+  chatAutoResize();
+  hideMentionDropdown();
+}
+
+let mentionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function handleMentionInput(): Promise<void> {
+  const query = parseMentionQuery();
+
+  if (!query) {
+    hideMentionDropdown();
+    return;
+  }
+
+  mentionStartPos = query.start;
+
+  if (!query.category) {
+    // Show category picker, filtered by what they've typed
+    const filtered = MENTION_CATEGORIES.filter(cat =>
+      !query.filter || cat.startsWith(query.filter.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+      hideMentionDropdown();
+      return;
+    }
+
+    // Build pseudo-items for category display
+    showMentionDropdown([], null);
+    // Filter the displayed categories
+    const listItems = mentionDropdownList.querySelectorAll('.mention-dropdown-item');
+    listItems.forEach((li, idx) => {
+      const cat = MENTION_CATEGORIES[idx];
+      (li as HTMLElement).style.display = filtered.includes(cat) ? '' : 'none';
+    });
+    mentionActiveIndex = MENTION_CATEGORIES.indexOf(filtered[0]);
+    updateMentionActiveItem();
+    return;
+  }
+
+  // Debounce the actual data fetch
+  if (mentionDebounceTimer) clearTimeout(mentionDebounceTimer);
+  mentionDebounceTimer = setTimeout(async () => {
+    const items = await fetchMentionItems(query.category!, query.filter);
+    // Re-check query is still valid after async
+    const currentQuery = parseMentionQuery();
+    if (!currentQuery || currentQuery.category !== query.category) return;
+    showMentionDropdown(items, query.category);
+  }, 150);
+}
+
+// Hook into the chat input
+chatInput.addEventListener('input', () => {
+  handleMentionInput();
+});
+
+chatInput.addEventListener('keydown', (e) => {
+  if (!mentionVisible) return;
+
+  const allItems = mentionDropdownList.querySelectorAll('.mention-dropdown-item');
+  const visibleItems = Array.from(allItems).filter(el => (el as HTMLElement).style.display !== 'none');
+  const visibleCount = visibleItems.length;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (visibleCount > 0) {
+      // Find current visible index
+      const currentVisibleIdx = visibleItems.findIndex((_, i) => {
+        const allIdx = Array.from(allItems).indexOf(visibleItems[i]);
+        return allIdx === mentionActiveIndex;
+      });
+      const nextVisibleIdx = (currentVisibleIdx + 1) % visibleCount;
+      mentionActiveIndex = Array.from(allItems).indexOf(visibleItems[nextVisibleIdx]);
+      updateMentionActiveItem();
+    }
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (visibleCount > 0) {
+      const currentVisibleIdx = visibleItems.findIndex((_, i) => {
+        const allIdx = Array.from(allItems).indexOf(visibleItems[i]);
+        return allIdx === mentionActiveIndex;
+      });
+      const prevVisibleIdx = (currentVisibleIdx - 1 + visibleCount) % visibleCount;
+      mentionActiveIndex = Array.from(allItems).indexOf(visibleItems[prevVisibleIdx]);
+      updateMentionActiveItem();
+    }
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    const activeItem = mentionDropdownList.querySelector('.mention-dropdown-item.active') as HTMLElement | null;
+    if (activeItem) {
+      activeItem.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    hideMentionDropdown();
+  }
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('mousedown', (e) => {
+  if (mentionVisible && !mentionDropdown.contains(e.target as Node) && e.target !== chatInput) {
+    hideMentionDropdown();
+  }
+});
+
+// ── Mention badge rendering ──
+
+const MENTION_BADGE_ICONS: Record<string, string> = {
+  tab: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+  history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  agent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+};
+
+/** Replace @type[title](id) patterns with styled mention badges */
+function renderMentionBadges(text: string): string {
+  return text.replace(
+    /@(tab|bookmark|history|agent)\[([^\]]*)\]\(([^)]*)\)/g,
+    (_match, type: string, title: string, _id: string) => {
+      const icon = MENTION_BADGE_ICONS[type] || '';
+      return `<span class="mention-badge type-${escapeHtml(type)}">${icon}${escapeHtml(title)}</span>`;
+    }
+  );
+}
 
 // ══════════════════════════════════════════
 // ── Tasks View

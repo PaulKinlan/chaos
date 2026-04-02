@@ -302,6 +302,20 @@ Both the new tab chat and side panel support speech-to-text input via the Web Sp
 - Final transcripts accumulated into the text input
 - Gracefully hidden when the browser doesn't support the API
 
+### @ Mention Autocomplete
+
+The chat input supports inline `@` mentions to pull browser context into conversations:
+- **@tab** -- lists open tabs (requires `tabs` permission). Selecting inserts `@tab[Title](tabId)`.
+- **@bookmark** -- searches bookmarks (requires `bookmarks` permission). Selecting inserts `@bookmark[Title](url)`.
+- **@history** -- searches recent history (requires `history` permission). Selecting inserts `@history[Title](url)`.
+- **@agent** -- lists other agents (always available). Selecting inserts `@agent[Name](agentId)`.
+
+Typing `@` opens a category picker. Typing a category name and then a space filters results within that category. The dropdown supports keyboard navigation (arrows, Enter, Escape) and mouse selection. Max 8 results shown.
+
+**Mention resolution in the agent loop** (`src/agents/loop.ts`): Before the AI call, mentions are parsed from the user message. For `@tab` mentions, the tab's page content is extracted via `chrome.scripting`. For `@bookmark` and `@history`, the URL is included (with content extraction if the page is open in a tab). For `@agent`, the agent's name, role, and visibility are included. Resolved context is appended to the user message.
+
+**Mention rendering**: In chat messages, `@type[title](id)` patterns are rendered as styled inline badges with category-colored backgrounds and SVG icons.
+
 ### Browser Permissions
 
 Chrome permissions are declared as `optional_permissions` in the manifest and requested at runtime:
