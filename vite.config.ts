@@ -1,10 +1,6 @@
 import { defineConfig } from 'vite';
 import { crx } from '@crxjs/vite-plugin';
 import manifest from './manifest.json';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [
@@ -12,7 +8,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
+      '@': new URL('./src', import.meta.url).pathname,
     },
   },
   build: {
@@ -20,7 +16,7 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       input: {
-        app: resolve(__dirname, 'app.html'),
+        app: new URL('./app.html', import.meta.url).pathname,
       },
     },
   },
