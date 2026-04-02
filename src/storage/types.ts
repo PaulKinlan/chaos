@@ -161,4 +161,8 @@ export type HookTrigger =
   | { type: 'history-visited'; urlPattern: string }
   | { type: 'idle-changed'; state: 'active' | 'idle' | 'locked' }
   | { type: 'browser-startup' }
-  | { type: 'omnibox'; keyword: string };
+  | { type: 'omnibox'; keyword: string }
+  | { type: 'reading-list-changed' }
+  | { type: 'window-created' }
+  | { type: 'window-focused' }
+  | { type: 'window-closed' };

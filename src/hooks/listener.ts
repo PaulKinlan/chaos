@@ -197,6 +197,67 @@ function registerOmniboxListener(): void {
   });
 }
 
+// ── Window listeners ──
+
+function registerWindowCreatedListener(): void {
+  chrome.windows?.onCreated?.addListener(async (window) => {
+    const hooks = await getEnabledHooks();
+    const matching = hooks.filter((h) => h.trigger.type === 'window-created');
+    const context = `A new browser window was created (id: ${window.id}, type: ${window.type}).`;
+    for (const hook of matching) {
+      executeHook(hook, context);
+    }
+  });
+}
+
+function registerWindowFocusedListener(): void {
+  chrome.windows?.onFocusChanged?.addListener(async (windowId) => {
+    if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+    const hooks = await getEnabledHooks();
+    const matching = hooks.filter((h) => h.trigger.type === 'window-focused');
+    const context = `Browser window ${windowId} was focused.`;
+    for (const hook of matching) {
+      executeHook(hook, context);
+    }
+  });
+}
+
+function registerWindowClosedListener(): void {
+  chrome.windows?.onRemoved?.addListener(async (windowId) => {
+    const hooks = await getEnabledHooks();
+    const matching = hooks.filter((h) => h.trigger.type === 'window-closed');
+    const context = `Browser window ${windowId} was closed.`;
+    for (const hook of matching) {
+      executeHook(hook, context);
+    }
+  });
+}
+
+// ── Reading list listener ──
+
+function registerReadingListListener(): void {
+  // chrome.readingList doesn't have event listeners yet in the stable API,
+  // but we can poll periodically via an alarm if reading-list-changed hooks exist.
+  // For now, register a placeholder that checks on bookmark changes as a proxy.
+  chrome.bookmarks?.onCreated?.addListener(async () => {
+    const hooks = await getEnabledHooks();
+    const matching = hooks.filter((h) => h.trigger.type === 'reading-list-changed');
+    if (matching.length === 0) return;
+    // Check if reading list permission is available
+    try {
+      const has = await chrome.permissions.contains({ permissions: ['readingList' as chrome.runtime.ManifestPermissions] });
+      if (!has) return;
+      const items = await (chrome as any).readingList.query({});
+      const context = `Reading list updated. Current items: ${items.length}. Latest: ${items[0]?.title || 'none'}.`;
+      for (const hook of matching) {
+        executeHook(hook, context);
+      }
+    } catch {
+      // readingList API not available
+    }
+  });
+}
+
 // ── Initialization ──
 
 /**
@@ -213,6 +274,10 @@ export function initHooksListeners(): void {
   registerIdleChangedListener();
   registerBrowserStartupListener();
   registerOmniboxListener();
+  registerWindowCreatedListener();
+  registerWindowFocusedListener();
+  registerWindowClosedListener();
+  registerReadingListListener();
 
   console.log('CHAOS hooks listeners initialized');
 }

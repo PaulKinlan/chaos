@@ -1501,7 +1501,10 @@ function renderTasks(): void {
           <div class="task-prompt">${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
           ${t.lastRunAt ? `<div class="task-last-run">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) + (t.lastResult.length > 80 ? '...' : '') : ''}</div>` : ''}
         </div>
-        <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}">Cancel</button>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" data-run-task="${escapeHtml(t.alarmId)}">Run Now</button>
+          <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}">Cancel</button>
+        </div>
       </div>`;
     }).join('');
   }
@@ -1557,9 +1560,28 @@ function renderTasks(): void {
   // Wire up click-to-expand for scheduled tasks
   container.querySelectorAll<HTMLDivElement>('.scheduled-task-item').forEach((item) => {
     item.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('[data-cancel-task]')) return;
+      if ((e.target as HTMLElement).closest('[data-cancel-task]') || (e.target as HTMLElement).closest('[data-run-task]')) return;
       item.classList.toggle('expanded');
     });
+
+    // Run Now button
+    const runBtn = item.querySelector<HTMLButtonElement>('[data-run-task]');
+    if (runBtn) {
+      runBtn.addEventListener('click', async () => {
+        const alarmId = runBtn.dataset.runTask!;
+        runBtn.disabled = true;
+        runBtn.textContent = 'Running...';
+        try {
+          await sendMsg({ type: 'runScheduledTask', alarmId });
+          runBtn.textContent = 'Done';
+          setTimeout(() => { runBtn.textContent = 'Run Now'; runBtn.disabled = false; }, 2000);
+          loadTasks(); // Refresh to show updated lastRunAt
+        } catch (err) {
+          runBtn.textContent = 'Failed';
+          setTimeout(() => { runBtn.textContent = 'Run Now'; runBtn.disabled = false; }, 2000);
+        }
+      });
+    }
   });
 
   // Wire up collaborative task rows

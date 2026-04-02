@@ -902,6 +902,19 @@ async function handleOneShotMessage(
       return { cancelled: true };
     }
 
+    case 'runScheduledTask': {
+      const alarmId = msg.alarmId as string;
+      const allTasks = await getScheduledTasks();
+      const task = allTasks.find((t) => t.alarmId === alarmId);
+      if (!task) return { error: 'Task not found' };
+      const result = await runAgentLoop({
+        agentId: task.agentId,
+        userMessage: task.prompt,
+      });
+      await updateScheduledTaskRun(task.alarmId, result || '(no output)');
+      return { ran: true, result: (result || '').slice(0, 200) };
+    }
+
     case 'openDashboard': {
       const url = chrome.runtime.getURL('app.html');
       // Check if a new tab page is already open and focus it
