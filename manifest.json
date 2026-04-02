@@ -27,6 +27,5 @@
     "default_popup": "popup.html",
     "default_title": "CHAOS"
   },
-  "options_page": "options.html",
   "icons": {}
 }
