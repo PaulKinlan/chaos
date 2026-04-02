@@ -11,13 +11,19 @@ import { tabOpen } from './tab-open.js';
 import { tabClose } from './tab-close.js';
 import { tabList } from './tab-list.js';
 import { tabGroup } from './tab-group.js';
+import { tabFocus } from './tab-focus.js';
+import { tabNavigate } from './tab-navigate.js';
+import { tabScreenshot } from './tab-screenshot.js';
 import { createBookmarkAdd } from './bookmark-add.js';
 import { bookmarkSearch } from './bookmark-search.js';
 import { createBookmarkList } from './bookmark-list.js';
+import { bookmarkRemove } from './bookmark-remove.js';
 import { historySearch } from './history-search.js';
 import { createAlarmSet } from './alarm-set.js';
 import { createAlarmClear } from './alarm-clear.js';
 import { createAlarmList } from './alarm-list.js';
+import { notificationShow } from './notification-show.js';
+import { clipboardWrite } from './clipboard-write.js';
 import { hasPermission } from '../../permissions.js';
 
 /**
@@ -41,6 +47,9 @@ export async function getChromeTools(agentId: string): Promise<ToolSet> {
     tools.tab_close = tabClose;
     tools.tab_list = tabList;
     tools.tab_group = tabGroup;
+    tools.tab_focus = tabFocus;
+    tools.tab_navigate = tabNavigate;
+    tools.tab_screenshot = tabScreenshot;
   }
 
   // Bookmark tools need 'bookmarks' permission
@@ -48,12 +57,21 @@ export async function getChromeTools(agentId: string): Promise<ToolSet> {
     tools.bookmark_add = createBookmarkAdd(agentId);
     tools.bookmark_search = bookmarkSearch;
     tools.bookmark_list = createBookmarkList(agentId);
+    tools.bookmark_remove = bookmarkRemove;
   }
 
   // History tools need 'history' permission
   if (await hasPermission('history')) {
     tools.history_search = historySearch;
   }
+
+  // Notification tool needs 'notifications' permission
+  if (await hasPermission('notifications')) {
+    tools.notification_show = notificationShow;
+  }
+
+  // Clipboard tool (no special permission needed, but may fail in SW context)
+  tools.clipboard_write = clipboardWrite;
 
   return tools;
 }

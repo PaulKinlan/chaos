@@ -13,7 +13,8 @@
     "tabs",
     "bookmarks",
     "history",
-    "scripting"
+    "scripting",
+    "notifications"
   ],
   "host_permissions": [],
   "optional_host_permissions": [

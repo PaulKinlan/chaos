@@ -809,17 +809,18 @@ function startVoiceInput(): void {
   recognitionIframe = document.createElement('iframe');
   recognitionIframe.src = chrome.runtime.getURL('src/voice/recognition-frame.html');
   recognitionIframe.allow = 'microphone';
+  // Position near the mic button, allow pointer events for mic permission prompt
+  const micRect = chatBtnMic.getBoundingClientRect();
   recognitionIframe.style.cssText = `
     position: fixed;
-    bottom: 60px;
-    right: 20px;
-    width: 160px;
-    height: 24px;
+    bottom: ${window.innerHeight - micRect.top + 8}px;
+    right: ${window.innerWidth - micRect.right}px;
+    width: 140px;
+    height: 28px;
     border: none;
     border-radius: 6px;
     z-index: 10000;
-    opacity: 0.9;
-    pointer-events: none;
+    background: transparent;
   `;
   document.body.appendChild(recognitionIframe);
 }

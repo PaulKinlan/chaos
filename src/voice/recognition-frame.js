@@ -69,12 +69,9 @@
     recognition.onerror = function (event) {
       console.warn('CHAOS Recognition Frame: Error:', event.error);
 
+      // no-speech and aborted are normal - just restart via onend
       if (event.error === 'no-speech' || event.error === 'aborted') {
-        sendToParent({
-          type: 'recognition-error',
-          error: event.error,
-          recoverable: true,
-        });
+        // Don't even tell the parent about no-speech - it's just silence
         return;
       }
 
