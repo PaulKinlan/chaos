@@ -11,6 +11,8 @@ import { z } from 'zod';
 import { opfs } from '../storage/opfs.js';
 import { getAgentList, getApiKeys, getSettings } from '../storage/chrome-storage.js';
 import { createLanguageModel } from './provider-registry.js';
+import { getCommunicationTools } from '../tools/communication/index.js';
+import { getChromeTools } from '../tools/chrome/index.js';
 import type { AgentMeta } from '../storage/types.js';
 
 // ── Types ──
@@ -287,8 +289,16 @@ export async function runAgentLoop(
 
   const model = createLanguageModel(settings.activeProvider, apiKey);
 
-  // 4. Define tools
-  const tools = createAgentTools(agentId);
+  // 4. Define tools (file tools + communication tools if visible/open)
+  const agents = await getAgentList();
+  const selfMeta = agents.find((a) => a.id === agentId);
+  const isVisible = selfMeta && selfMeta.visibility !== 'private';
+
+  const tools: ToolSet = {
+    ...createAgentTools(agentId),
+    ...getChromeTools(agentId),
+    ...(isVisible ? getCommunicationTools(agentId) : {}),
+  };
 
   // 5. Log user message
   await appendActivityLog(agentId, {
