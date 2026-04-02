@@ -35,6 +35,60 @@ import {
   ensurePermission,
 } from './permissions.js';
 
+// ── OPFS directory listing helper ──
+
+interface OPFSFileEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'directory';
+  size?: number;
+  children?: OPFSFileEntry[];
+}
+
+async function listOPFSDir(basePath: string): Promise<OPFSFileEntry[]> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const segments = basePath.split('/').filter(Boolean);
+    let dir = root;
+    for (const seg of segments) {
+      dir = await dir.getDirectoryHandle(seg, { create: false });
+    }
+    return await readDirRecursive(dir, '');
+  } catch {
+    return [];
+  }
+}
+
+async function readDirRecursive(
+  dir: FileSystemDirectoryHandle,
+  prefix: string,
+): Promise<OPFSFileEntry[]> {
+  const entries: OPFSFileEntry[] = [];
+  for await (const [name, handle] of (dir as any).entries()) {
+    const path = prefix ? `${prefix}/${name}` : name;
+    if (handle.kind === 'directory') {
+      const children = await readDirRecursive(
+        handle as FileSystemDirectoryHandle,
+        path,
+      );
+      entries.push({ name, path, kind: 'directory', children });
+    } else {
+      let size: number | undefined;
+      try {
+        const file = await (handle as FileSystemFileHandle).getFile();
+        size = file.size;
+      } catch {
+        // size unavailable
+      }
+      entries.push({ name, path, kind: 'file', size });
+    }
+  }
+  return entries.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 // ── Side panel behavior ──
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -577,8 +631,37 @@ async function handleOneShotMessage(
       return { saved: true };
     }
 
+    case 'listAgentFiles': {
+      const agentId = msg.agentId as string;
+      const basePath = `agents/${agentId}`;
+      const files = await listOPFSDir(basePath);
+      return { files };
+    }
+
+    case 'readAgentFile': {
+      const agentId = msg.agentId as string;
+      const filePath = msg.path as string;
+      // Ensure the path is within the agent's directory for safety
+      const fullPath = `agents/${agentId}/${filePath}`;
+      try {
+        const content = await opfs.readFile(fullPath);
+        return { content };
+      } catch {
+        return { content: '(File not found or unreadable)' };
+      }
+    }
+
     case 'openDashboard': {
       const url = chrome.runtime.getURL('app.html');
+      // Check if a new tab page is already open and focus it
+      const existingTabs = await chrome.tabs.query({ url });
+      if (existingTabs.length > 0 && existingTabs[0].id) {
+        await chrome.tabs.update(existingTabs[0].id, { active: true });
+        if (existingTabs[0].windowId) {
+          await chrome.windows.update(existingTabs[0].windowId, { focused: true });
+        }
+        return { opened: true, focused: true };
+      }
       await chrome.tabs.create({ url });
       return { opened: true };
     }

@@ -819,6 +819,436 @@
       background: #475569;
     }
 
+    /* ── Chat Tab ── */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 76px);
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+      flex-shrink: 0;
+    }
+
+    .chat-header select {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 13px;
+      outline: none;
+      min-width: 200px;
+    }
+
+    .chat-header select:focus {
+      border-color: #8b5cf6;
+    }
+
+    .chat-page-context {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: #1a1523;
+      border: 1px solid #2d2040;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #c4b5fd;
+      flex-shrink: 0;
+      margin-bottom: 8px;
+    }
+
+    .chat-page-context.visible {
+      display: flex;
+    }
+
+    .chat-page-context span {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-page-context .dismiss {
+      cursor: pointer;
+      color: #8b5cf6;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-message {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.6;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      font-size: 14px;
+    }
+
+    .chat-message.user {
+      align-self: flex-end;
+      background: #2d1b69;
+      color: #e8e0f0;
+      border-bottom-right-radius: 4px;
+    }
+
+    .chat-message.assistant {
+      align-self: flex-start;
+      background: #1e293b;
+      color: #d4d4d4;
+      border-bottom-left-radius: 4px;
+    }
+
+    .chat-message.assistant p { margin: 0 0 8px 0; }
+    .chat-message.assistant p:last-child { margin-bottom: 0; }
+
+    .chat-message.assistant pre {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 10px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+
+    .chat-message.assistant code {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 12px;
+    }
+
+    .chat-message.assistant :not(pre) > code {
+      background: #334155;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    .chat-message.assistant ul, .chat-message.assistant ol {
+      padding-left: 20px;
+      margin: 6px 0;
+    }
+
+    .chat-message.assistant blockquote {
+      border-left: 3px solid #8b5cf6;
+      padding-left: 10px;
+      margin: 8px 0;
+      color: #94a3b8;
+    }
+
+    .chat-message.assistant a { color: #8b5cf6; text-decoration: none; }
+    .chat-message.assistant a:hover { text-decoration: underline; }
+
+    .chat-message.system {
+      align-self: center;
+      background: none;
+      color: #64748b;
+      font-size: 12px;
+      font-style: italic;
+      padding: 4px;
+    }
+
+    .chat-message.error {
+      align-self: flex-start;
+      background: #450a0a;
+      color: #fca5a5;
+      border: 1px solid #7f1d1d;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chat-typing {
+      display: none;
+      align-self: flex-start;
+      padding: 10px 14px;
+    }
+
+    .chat-typing.visible {
+      display: flex;
+    }
+
+    .chat-typing span {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      background: #475569;
+      border-radius: 50%;
+      margin-right: 4px;
+      animation: chatBounce 1.2s infinite;
+    }
+
+    .chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+    .chat-typing span:nth-child(3) { animation-delay: 0.4s; margin-right: 0; }
+
+    @keyframes chatBounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-6px); }
+    }
+
+    .chat-input-area {
+      display: flex;
+      gap: 8px;
+      padding: 12px 0;
+      border-top: 1px solid #1e293b;
+      flex-shrink: 0;
+      align-items: flex-end;
+    }
+
+    .chat-input-wrapper {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .chat-input-area textarea {
+      flex: 1;
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 10px 40px 10px 14px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: none;
+      outline: none;
+      max-height: 160px;
+      min-height: 42px;
+      line-height: 1.5;
+    }
+
+    .chat-input-area textarea:focus {
+      border-color: #8b5cf6;
+    }
+
+    .chat-input-area textarea::placeholder {
+      color: #475569;
+    }
+
+    .chat-btn-mic {
+      position: absolute;
+      right: 6px;
+      bottom: 6px;
+      background: none;
+      border: none;
+      padding: 4px 6px;
+      font-size: 18px;
+      cursor: pointer;
+      color: #64748b;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+
+    .chat-btn-mic:hover { color: #e2e8f0; }
+
+    .chat-btn-mic.recording {
+      color: #ef4444;
+      animation: pulse 1s infinite;
+    }
+
+    .chat-btn-send {
+      background: #8b5cf6;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .chat-btn-send:hover { background: #7c3aed; }
+    .chat-btn-send:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
+    /* ── Files Tab ── */
+    .files-container {
+      display: flex;
+      height: calc(100vh - 120px);
+      gap: 16px;
+    }
+
+    .files-tree-panel {
+      width: 320px;
+      flex-shrink: 0;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .files-tree-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #334155;
+    }
+
+    .files-tree-header select {
+      width: 100%;
+      background: #0f172a;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .files-tree-header select:focus { border-color: #8b5cf6; }
+
+    .files-tree {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .files-tree-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #cbd5e1;
+      transition: background 0.1s;
+    }
+
+    .files-tree-item:hover { background: #334155; }
+    .files-tree-item.selected { background: #3b0764; color: #e2e8f0; }
+    .files-tree-item.directory { color: #94a3b8; font-weight: 500; }
+
+    .files-tree-item .icon { font-size: 14px; flex-shrink: 0; width: 18px; text-align: center; }
+    .files-tree-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .files-tree-item .size { font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; }
+
+    .files-indent { padding-left: 20px; }
+    .files-indent-2 { padding-left: 40px; }
+    .files-indent-3 { padding-left: 60px; }
+
+    .files-viewer-panel {
+      flex: 1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .files-viewer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid #334155;
+      flex-shrink: 0;
+    }
+
+    .files-viewer-header .filename {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f1f5f9;
+      font-family: monospace;
+    }
+
+    .files-viewer-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .files-viewer-content.markdown-view {
+      font-size: 14px;
+      line-height: 1.7;
+      color: #cbd5e1;
+    }
+
+    .files-viewer-content.markdown-view h1,
+    .files-viewer-content.markdown-view h2,
+    .files-viewer-content.markdown-view h3 {
+      color: #f1f5f9;
+      margin: 16px 0 8px;
+    }
+
+    .files-viewer-content.markdown-view h1 { font-size: 22px; }
+    .files-viewer-content.markdown-view h2 { font-size: 18px; }
+    .files-viewer-content.markdown-view h3 { font-size: 15px; }
+
+    .files-viewer-content.markdown-view code {
+      background: #334155;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+    }
+
+    .files-viewer-content.markdown-view pre {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 12px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+
+    .files-viewer-content.markdown-view pre code {
+      background: none;
+      padding: 0;
+    }
+
+    .files-viewer-content.markdown-view a { color: #8b5cf6; }
+    .files-viewer-content.markdown-view ul, .files-viewer-content.markdown-view ol { padding-left: 20px; }
+
+    .files-viewer-content.raw-view {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #cbd5e1;
+    }
+
+    .files-viewer-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #64748b;
+      font-size: 14px;
+    }
+
+    .files-jsonl-entry {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #cbd5e1;
+    }
+
     /* ── Responsive ── */
     @media (max-width: 768px) {
       .settings-grid {
@@ -826,6 +1256,16 @@
       }
       .agent-grid {
         grid-template-columns: 1fr;
+      }
+      .files-container {
+        flex-direction: column;
+      }
+      .files-tree-panel {
+        width: 100%;
+        max-height: 250px;
+      }
+      .chat-message {
+        max-width: 95%;
       }
     }
   </style>
@@ -835,17 +1275,52 @@
   <nav class="topbar">
     <div class="topbar-brand">CHAOS</div>
     <div class="topbar-tabs">
-      <button class="topbar-tab active" data-tab="agents">Agents</button>
+      <button class="topbar-tab active" data-tab="chat">Chat</button>
+      <button class="topbar-tab" data-tab="agents">Agents</button>
       <button class="topbar-tab" data-tab="tasks">Tasks</button>
       <button class="topbar-tab" data-tab="messages">Messages</button>
       <button class="topbar-tab" data-tab="artifacts">Artifacts</button>
+      <button class="topbar-tab" data-tab="files">Files</button>
       <button class="topbar-tab" data-tab="settings">Settings</button>
     </div>
   </nav>
 
   <div class="main">
+    <!-- ════════ Chat Tab ════════ -->
+    <div class="tab-panel active" id="panel-chat">
+      <div class="chat-container">
+        <div class="chat-header">
+          <select id="chat-agent-select">
+            <option value="">Select agent...</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" id="chat-btn-read-page" title="Read current tab">&#128196; Read Page</button>
+          <button class="btn btn-ghost btn-sm" id="chat-btn-clear" title="Clear conversation">&#128465; Clear</button>
+          <button class="btn btn-primary btn-sm" id="chat-btn-new-agent">+ New Agent</button>
+        </div>
+
+        <div class="chat-page-context" id="chat-page-context">
+          <span id="chat-page-context-text"></span>
+          <span class="dismiss" id="chat-btn-dismiss-context">&times;</span>
+        </div>
+
+        <div class="chat-messages" id="chat-messages"></div>
+
+        <div class="chat-typing" id="chat-typing">
+          <span></span><span></span><span></span>
+        </div>
+
+        <div class="chat-input-area">
+          <div class="chat-input-wrapper">
+            <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
+            <button id="chat-btn-mic" title="Voice input" class="chat-btn-mic">&#127908;</button>
+          </div>
+          <button id="chat-btn-send" class="chat-btn-send" title="Send">&#9654;</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ════════ Agents Tab ════════ -->
-    <div class="tab-panel active" id="panel-agents">
+    <div class="tab-panel" id="panel-agents">
       <div class="section-header">
         <h2>Agents</h2>
         <button class="btn btn-primary" id="btn-create-agent">+ Create Agent</button>
@@ -930,6 +1405,36 @@
         <div class="empty-state-icon">&#128230;</div>
         <h3>No artifacts</h3>
         <p>Shared artifacts will appear here when agents publish them.</p>
+      </div>
+    </div>
+
+    <!-- ════════ Files Tab ════════ -->
+    <div class="tab-panel" id="panel-files">
+      <div class="section-header">
+        <h2>Files</h2>
+      </div>
+      <div class="files-container">
+        <div class="files-tree-panel">
+          <div class="files-tree-header">
+            <select id="files-agent-select">
+              <option value="">Select agent...</option>
+            </select>
+          </div>
+          <div class="files-tree" id="files-tree">
+            <div class="empty-state" style="padding:24px;">
+              <p>Select an agent to browse its files.</p>
+            </div>
+          </div>
+        </div>
+        <div class="files-viewer-panel">
+          <div class="files-viewer-header">
+            <span class="filename" id="files-viewer-filename">No file selected</span>
+            <button class="btn btn-ghost btn-sm" id="files-btn-download" style="display:none;">Download</button>
+          </div>
+          <div class="files-viewer-content" id="files-viewer-content">
+            <div class="files-viewer-empty">Select a file to view its contents.</div>
+          </div>
+        </div>
       </div>
     </div>
 

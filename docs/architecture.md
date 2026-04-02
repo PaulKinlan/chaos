@@ -272,14 +272,45 @@ class LLMToolLookup implements ToolLookup { ... }
 
 ## UI
 
-The primary interface is the **side panel**, always accessible without losing context. But CHAOS should also be able to open a **full tab** for richer, more expressive UIs. Think of it this way: the side panel is for quick interactions and monitoring, the full tab is the operating system view.
+The primary interface is the **new tab page** (`app.html`), which overrides Chrome's default new tab with a full-width operating system view. The **side panel** remains available for quick in-page interactions without leaving the current page.
 
 The vision: this could *be* the interface for Chrome in the future. Not a bolt-on assistant, but the primary way you interact with the browser.
 
-- **Side panel**: persistent conversation with the active agent, context from current tab, quick actions
-- **Full tab** (`chrome-extension://id/app.html`): dashboard view of all agents, shared task board, artifact browser, agent configuration, rich visualizations of agent activity
+- **New tab page** (`app.html`, `chrome_url_overrides.newtab`): The primary interface. Chat tab (default) provides a full-width conversation interface with agent selector, streaming responses, page context, and voice input (Web Speech API). Dashboard tabs (Agents, Tasks, Messages, Artifacts) provide the operating system view. Files tab provides an OPFS file explorer for browsing each agent's directory tree with markdown rendering and JSONL formatting. Settings tab includes provider selector, API key management, optional browser permission requests, and tool permissions.
+- **Side panel**: persistent chat for quick in-page interactions, voice input, page context reading. Operates independently of the new tab page.
 - **Popup**: minimal, just agent switcher and quick status
 - **Context menu**: right-click to send selected text or page to an agent
+
+### OPFS File Explorer
+
+The Files tab provides read-only transparency into each agent's OPFS storage:
+
+- Agent selector to switch between agents
+- Tree view showing the directory structure (CLAUDE.md, memories/, people/, ideas/, etc.)
+- Click a file to view its content in a viewer panel
+- Markdown files rendered with marked.js, JSONL files shown with syntax highlighting
+- File sizes displayed
+- Download any file locally
+
+The file explorer is read-only by design — agents manage their own files through the tool system. The explorer exists for user transparency and debugging.
+
+### Voice Input
+
+Both the new tab chat and side panel support speech-to-text input via the Web Speech API:
+- Click the microphone button to start/stop continuous recording
+- Interim results displayed in real-time as the user speaks
+- Final transcripts accumulated into the text input
+- Gracefully hidden when the browser doesn't support the API
+
+### Browser Permissions
+
+Chrome permissions are declared as `optional_permissions` in the manifest and requested at runtime:
+- **scripting** + host permissions: needed for reading page content
+- **tabs**: needed for tab management
+- **bookmarks**: needed for bookmark integration
+- **history**: needed for history search
+
+Each permission has an Enable button in Settings. The UI shows current grant status and uses `chrome.permissions.request()` for the in-context request flow.
 
 ## What's NOT in scope (yet)
 

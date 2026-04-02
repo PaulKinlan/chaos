@@ -27,6 +27,9 @@
   "side_panel": {
     "default_path": "sidepanel.html"
   },
+  "chrome_url_overrides": {
+    "newtab": "app.html"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "CHAOS"

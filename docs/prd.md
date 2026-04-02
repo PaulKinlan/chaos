@@ -233,23 +233,30 @@ class LLMToolLookup implements ToolLookup { ... }
 
 ## UI
 
-### Side panel (primary)
-Persistent conversation with the active agent. Shows context from current tab. Quick actions. Agent switcher. Always accessible without losing the current page.
+### New tab page (primary)
+`app.html` overrides Chrome's new tab page and serves as the primary interface:
+- **Chat tab** (default): Full-width chat interface with agent selector, full message history, streaming responses, page context display, voice input (Web Speech API), and "Read current tab" button. The chat is the hero — big, central, easy to use.
+- **Agents tab**: Overview of all agents — roles, visibility, status, CLAUDE.md, activity journal, bookmarks.
+- **Tasks tab**: Shared task board with status, dependencies, and filtering.
+- **Messages tab**: Inter-agent communication log, filterable by agent and searchable.
+- **Artifacts tab**: Shared files browser with metadata and content preview.
+- **Files tab**: OPFS file explorer for transparency — browse each agent's directory tree (CLAUDE.md, memories/, people/, ideas/, activity-log.jsonl, etc.), view files with markdown rendering and JSONL syntax formatting, download any file. Read-only — agents manage their own files.
+- **Settings tab**: API keys for multiple providers (Anthropic, Google, OpenAI, OpenRouter), provider selector, default role for new agents, browser permission management (optional with in-UI request flow), and tool permission controls.
 
-### Full tab (dashboard / OS view)
-`chrome-extension://id/app.html` - the operating system view:
-- Agent overview (all agents, their roles, status, recent activity)
-- Shared task board (all tasks, dependencies, status, who's working on what)
-- Message log (inter-agent communication, filterable)
-- Artifact browser (shared files, metadata, access log)
-- Agent configuration (edit role, visibility, CLAUDE.md, alarm schedules)
-- Activity timeline (combined view of agent actions)
+### Side panel (secondary)
+Persistent chat interface for quick in-page interactions. Agent switcher, page context reading, voice input via Web Speech API. Works independently of the new tab page for when you want to chat without leaving the current page.
 
 ### Popup
 Minimal. Agent switcher and quick status only.
 
 ### Context menu
 Right-click to send selected text or current page to an agent.
+
+### Voice input
+Speech-to-text input is available in both the new tab chat and side panel using the Web Speech API. Click the microphone button to start/stop recording. Supports continuous dictation with interim results.
+
+### Browser permissions
+Chrome permissions (scripting, tabs, bookmarks, history) are **optional**. Each permission can be enabled individually through an in-UI request flow in Settings. Agents gracefully degrade when permissions aren't granted.
 
 ## Storage
 

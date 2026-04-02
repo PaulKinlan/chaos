@@ -1,15 +1,29 @@
 /**
  * Dashboard UI (app.html)
  *
- * Full-tab "operating system view" showing all agents, tasks,
- * messages, artifacts, and settings.
+ * Full-tab new tab page and "operating system view" showing:
+ * - Chat (primary, default tab) with full-width conversation interface
+ * - Agents, Tasks, Messages, Artifacts dashboard tabs
+ * - Files: OPFS file explorer for agent transparency
+ * - Settings
  *
- * Communicates with the background service worker via
- * chrome.runtime.sendMessage (one-shot request/response).
+ * Chat uses a long-lived port (like sidepanel.ts) for streaming.
+ * Dashboard tabs use chrome.runtime.sendMessage (one-shot request/response).
  */
 
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
+import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
+import { hasPermission, hasHostPermissions } from './permissions.js';
+
+// ── Configure marked ──
+
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+});
 
 // ── State ──
 
@@ -18,6 +32,25 @@ let tasks: Task[] = [];
 let messages: AgentMessage[] = [];
 let artifacts: ArtifactMeta[] = [];
 let expandedAgentId: string | null = null;
+
+// Chat state
+let port: chrome.runtime.Port | null = null;
+let chatActiveAgentId: string | null = null;
+let isChatStreaming = false;
+let chatPageContext: { title: string; url: string; content: string } | null = null;
+let currentStreamEl: HTMLDivElement | null = null;
+let currentStreamContent = '';
+let reconnectAttempts = 0;
+const MAX_RECONNECT_RETRIES = 3;
+
+interface ConversationEntry {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  pageContext?: { title: string; url: string };
+}
+
+let conversationHistory: ConversationEntry[] = [];
 
 // ── Helpers ──
 
@@ -82,7 +115,7 @@ function statusBadgeClass(status: string): string {
   return `status-${status}`;
 }
 
-// ── Messaging helpers ──
+// ── One-shot messaging (for dashboard tabs) ──
 
 async function sendMsg<T = unknown>(msg: Record<string, unknown>): Promise<T> {
   const result = await (chrome.runtime.sendMessage(msg) as Promise<T & { error?: string }>);
@@ -95,7 +128,6 @@ async function sendMsg<T = unknown>(msg: Record<string, unknown>): Promise<T> {
 function showPanelLoading(panelId: string): void {
   const panel = document.getElementById(panelId);
   if (!panel) return;
-  // Insert a loading spinner at the top of the panel content area
   let spinner = panel.querySelector('.panel-spinner') as HTMLDivElement | null;
   if (!spinner) {
     spinner = document.createElement('div');
@@ -129,7 +161,9 @@ function showPanelError(panelId: string, message: string): void {
   }, 5000);
 }
 
-// ── Tab navigation ──
+// ══════════════════════════════════════════
+// ── Tab navigation
+// ══════════════════════════════════════════
 
 const tabButtons = document.querySelectorAll<HTMLButtonElement>('.topbar-tab');
 const tabPanels = document.querySelectorAll<HTMLDivElement>('.tab-panel');
@@ -144,6 +178,9 @@ tabButtons.forEach((btn) => {
 
     // Load data when switching tabs
     switch (tab) {
+      case 'chat':
+        // Chat is always connected via port
+        break;
       case 'agents':
         loadAgents();
         break;
@@ -156,6 +193,9 @@ tabButtons.forEach((btn) => {
       case 'artifacts':
         loadArtifacts();
         break;
+      case 'files':
+        loadFilesTab();
+        break;
       case 'settings':
         loadSettings();
         loadPermissions();
@@ -163,6 +203,440 @@ tabButtons.forEach((btn) => {
     }
   });
 });
+
+// ══════════════════════════════════════════
+// ── Chat Tab (port-based streaming)
+// ══════════════════════════════════════════
+
+const chatAgentSelect = document.getElementById('chat-agent-select') as HTMLSelectElement;
+const chatMessagesDiv = document.getElementById('chat-messages') as HTMLDivElement;
+const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
+const chatBtnSend = document.getElementById('chat-btn-send') as HTMLButtonElement;
+const chatBtnReadPage = document.getElementById('chat-btn-read-page') as HTMLButtonElement;
+const chatBtnClear = document.getElementById('chat-btn-clear') as HTMLButtonElement;
+const chatBtnNewAgent = document.getElementById('chat-btn-new-agent') as HTMLButtonElement;
+const chatBtnMic = document.getElementById('chat-btn-mic') as HTMLButtonElement;
+const chatTyping = document.getElementById('chat-typing') as HTMLDivElement;
+const chatPageContextBar = document.getElementById('chat-page-context') as HTMLDivElement;
+const chatPageContextText = document.getElementById('chat-page-context-text') as HTMLSpanElement;
+const chatBtnDismissContext = document.getElementById('chat-btn-dismiss-context') as HTMLSpanElement;
+
+function connectPort(): chrome.runtime.Port {
+  const p = chrome.runtime.connect({ name: 'chaos-sidepanel' });
+
+  p.onMessage.addListener((msg: Record<string, unknown>) => {
+    handlePortMessage(msg);
+  });
+
+  p.onDisconnect.addListener(() => {
+    port = null;
+    if (reconnectAttempts < MAX_RECONNECT_RETRIES) {
+      const delay = Math.pow(2, reconnectAttempts) * 1000;
+      reconnectAttempts++;
+      addChatSystemMessage(`Connection lost. Reconnecting... (attempt ${reconnectAttempts}/${MAX_RECONNECT_RETRIES})`);
+      setTimeout(() => {
+        try {
+          port = connectPort();
+          reconnectAttempts = 0;
+          addChatSystemMessage('Reconnected.');
+          sendPortMessage({ type: 'listAgents' });
+        } catch {
+          // Will be handled by next disconnect
+        }
+      }, delay);
+    } else {
+      addChatSystemMessage('Could not reconnect. Please reload the page.');
+    }
+  });
+
+  return p;
+}
+
+function sendPortMessage(msg: Record<string, unknown>): void {
+  if (!port) {
+    port = connectPort();
+  }
+  port.postMessage(msg);
+}
+
+function handlePortMessage(msg: Record<string, unknown>): void {
+  switch (msg.type) {
+    case 'agentList':
+      populateChatAgentSelect(msg.agents as AgentMeta[]);
+      break;
+
+    case 'agentCreated': {
+      const agent = msg.agent as AgentMeta;
+      addChatAgentOption(agent);
+      chatAgentSelect.value = agent.id;
+      chatActiveAgentId = agent.id;
+      addChatSystemMessage(`Agent "${agent.name}" created.`);
+      createAgentModal.classList.remove('visible');
+      break;
+    }
+
+    case 'agentDeleted':
+      sendPortMessage({ type: 'listAgents' });
+      addChatSystemMessage('Agent deleted.');
+      break;
+
+    case 'chatStart':
+      isChatStreaming = true;
+      currentStreamContent = '';
+      currentStreamEl = addChatAssistantMessage('');
+      chatTyping.classList.add('visible');
+      chatBtnSend.disabled = true;
+      break;
+
+    case 'chatChunk':
+      if (currentStreamEl) {
+        currentStreamContent += msg.chunk as string;
+        renderChatMarkdown(currentStreamEl, currentStreamContent);
+        chatScrollToBottom();
+      }
+      break;
+
+    case 'chatEnd':
+      isChatStreaming = false;
+      chatTyping.classList.remove('visible');
+      chatBtnSend.disabled = false;
+      if (currentStreamEl && msg.fullResponse) {
+        renderChatMarkdown(currentStreamEl, msg.fullResponse as string);
+      }
+      if (msg.fullResponse) {
+        conversationHistory.push({
+          role: 'assistant',
+          content: msg.fullResponse as string,
+          timestamp: new Date().toISOString(),
+        });
+        saveChatConversation();
+      }
+      currentStreamEl = null;
+      currentStreamContent = '';
+      chatScrollToBottom();
+      break;
+
+    case 'chatError':
+      isChatStreaming = false;
+      chatTyping.classList.remove('visible');
+      chatBtnSend.disabled = false;
+      if (currentStreamEl) {
+        currentStreamEl.remove();
+      }
+      currentStreamEl = null;
+      currentStreamContent = '';
+      addChatErrorMessage(msg.error as string);
+      break;
+
+    case 'extractedContent':
+      if (msg.content) {
+        const content = msg.content as { title: string; url: string; content: string };
+        chatPageContext = content;
+        chatPageContextText.textContent = `Page loaded: ${content.title}`;
+        chatPageContextBar.classList.add('visible');
+        addChatSystemMessage(`Page content loaded: "${content.title}"`);
+      } else {
+        addChatSystemMessage(`Could not extract page content: ${msg.error || 'unknown error'}`);
+      }
+      break;
+
+    case 'apiKeys':
+      // handled by settings
+      break;
+
+    case 'apiKeysSaved':
+      addChatSystemMessage('Settings saved.');
+      break;
+
+    case 'conversationLoaded': {
+      const loadedMessages = msg.messages as ConversationEntry[];
+      conversationHistory = loadedMessages;
+      chatMessagesDiv.innerHTML = '';
+      for (const entry of loadedMessages) {
+        if (entry.role === 'user') {
+          addChatUserMessage(entry.content);
+        } else if (entry.role === 'assistant') {
+          addChatAssistantMessage(entry.content);
+        } else if (entry.role === 'system') {
+          addChatSystemMessage(entry.content);
+        }
+      }
+      break;
+    }
+
+    case 'conversationSaved':
+      break;
+
+    case 'conversationCleared':
+      conversationHistory = [];
+      chatMessagesDiv.innerHTML = '';
+      addChatSystemMessage('Conversation cleared.');
+      break;
+
+    case 'error':
+      addChatSystemMessage(`Error: ${msg.error}`);
+      break;
+  }
+}
+
+// ── Chat agent select ──
+
+function populateChatAgentSelect(agentList: AgentMeta[]): void {
+  // Also update the global agents array
+  agents = agentList;
+  populateAgentFilters();
+
+  while (chatAgentSelect.options.length > 1) {
+    chatAgentSelect.remove(1);
+  }
+
+  for (const agent of agentList) {
+    addChatAgentOption(agent);
+  }
+
+  if (chatActiveAgentId) {
+    chatAgentSelect.value = chatActiveAgentId;
+  } else if (agentList.length > 0) {
+    chatAgentSelect.value = agentList[0].id;
+    chatActiveAgentId = agentList[0].id;
+  }
+
+  if (chatActiveAgentId) {
+    sendPortMessage({ type: 'getConversation', agentId: chatActiveAgentId });
+  }
+}
+
+function addChatAgentOption(agent: AgentMeta): void {
+  const opt = document.createElement('option');
+  opt.value = agent.id;
+  opt.textContent = `${agent.name} (${agent.role})`;
+  chatAgentSelect.appendChild(opt);
+}
+
+chatAgentSelect.addEventListener('change', () => {
+  saveChatConversation();
+  chatActiveAgentId = chatAgentSelect.value || null;
+  chatMessagesDiv.innerHTML = '';
+  conversationHistory = [];
+  chatPageContext = null;
+  chatPageContextBar.classList.remove('visible');
+  if (chatActiveAgentId) {
+    sendPortMessage({ type: 'getConversation', agentId: chatActiveAgentId });
+  }
+});
+
+// ── Chat message rendering ──
+
+function addChatUserMessage(text: string): void {
+  const el = document.createElement('div');
+  el.className = 'chat-message user';
+  el.textContent = text;
+  chatMessagesDiv.appendChild(el);
+  chatScrollToBottom();
+}
+
+function addChatAssistantMessage(content: string): HTMLDivElement {
+  const el = document.createElement('div');
+  el.className = 'chat-message assistant';
+  if (content) {
+    renderChatMarkdown(el, content);
+  }
+  chatMessagesDiv.appendChild(el);
+  chatScrollToBottom();
+  return el;
+}
+
+function addChatSystemMessage(text: string): void {
+  const el = document.createElement('div');
+  el.className = 'chat-message system';
+  el.textContent = text;
+  chatMessagesDiv.appendChild(el);
+  chatScrollToBottom();
+}
+
+function addChatErrorMessage(error: string): void {
+  const el = document.createElement('div');
+  el.className = 'chat-message error';
+  el.textContent = `Error: ${error}`;
+  chatMessagesDiv.appendChild(el);
+  chatScrollToBottom();
+}
+
+function renderChatMarkdown(el: HTMLDivElement, content: string): void {
+  const rawHtml = marked.parse(content) as string;
+  const sanitized = DOMPurify.sanitize(rawHtml);
+  if (needsSandbox(rawHtml)) {
+    el.innerHTML = '';
+    renderInSandbox(sanitized, el);
+  } else {
+    el.innerHTML = sanitized;
+  }
+}
+
+function chatScrollToBottom(): void {
+  chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+}
+
+// ── Chat send ──
+
+function sendChatMessage(): void {
+  const text = chatInput.value.trim();
+  if (!text || isChatStreaming) return;
+
+  if (!chatActiveAgentId) {
+    addChatSystemMessage('Please select or create an agent first.');
+    return;
+  }
+
+  addChatUserMessage(text);
+  chatInput.value = '';
+  chatAutoResize();
+
+  const entry: ConversationEntry = {
+    role: 'user',
+    content: text,
+    timestamp: new Date().toISOString(),
+  };
+
+  const msg: Record<string, unknown> = {
+    type: 'chat',
+    agentId: chatActiveAgentId,
+    message: text,
+  };
+
+  if (chatPageContext) {
+    msg.pageContext = chatPageContext;
+    entry.pageContext = { title: chatPageContext.title, url: chatPageContext.url };
+    chatPageContext = null;
+    chatPageContextBar.classList.remove('visible');
+  }
+
+  conversationHistory.push(entry);
+  sendPortMessage(msg);
+}
+
+function saveChatConversation(): void {
+  if (!chatActiveAgentId || conversationHistory.length === 0) return;
+  sendPortMessage({
+    type: 'saveConversation',
+    agentId: chatActiveAgentId,
+    messages: conversationHistory,
+  });
+}
+
+chatBtnSend.addEventListener('click', sendChatMessage);
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+});
+
+function chatAutoResize(): void {
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + 'px';
+}
+
+chatInput.addEventListener('input', chatAutoResize);
+
+// ── Chat actions ──
+
+chatBtnReadPage.addEventListener('click', async () => {
+  const hasScripting = await chrome.permissions.contains({ permissions: ['scripting'], origins: ['<all_urls>'] });
+  if (!hasScripting) {
+    const granted = await chrome.permissions.request({ permissions: ['scripting'], origins: ['<all_urls>'] });
+    if (!granted) {
+      addChatSystemMessage('Permission denied. Enable "Read page content" in Settings to use this feature.');
+      return;
+    }
+  }
+  sendPortMessage({ type: 'extractContent' });
+});
+
+chatBtnClear.addEventListener('click', () => {
+  if (!chatActiveAgentId) return;
+  sendPortMessage({ type: 'clearConversation', agentId: chatActiveAgentId });
+});
+
+chatBtnDismissContext.addEventListener('click', () => {
+  chatPageContext = null;
+  chatPageContextBar.classList.remove('visible');
+});
+
+chatBtnNewAgent.addEventListener('click', () => {
+  (document.getElementById('create-agent-name') as HTMLInputElement).value = '';
+  (document.getElementById('create-agent-role') as HTMLSelectElement).value = 'neutral';
+  createAgentModal.classList.add('visible');
+  (document.getElementById('create-agent-name') as HTMLInputElement).focus();
+});
+
+// ── Chat voice input ──
+
+const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+let recognition: any = null;
+let isRecording = false;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  let finalTranscript = '';
+
+  recognition.onresult = (event: any) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript + ' ';
+      } else {
+        interim = transcript;
+      }
+    }
+    const existingText = chatInput.value.substring(0, chatInput.value.length - (chatInput.dataset.lastInterim?.length || 0));
+    chatInput.value = existingText + finalTranscript + interim;
+    chatInput.dataset.lastInterim = interim;
+    chatInput.scrollTop = chatInput.scrollHeight;
+  };
+
+  recognition.onend = () => {
+    if (isRecording) {
+      recognition.start();
+    } else {
+      chatBtnMic.classList.remove('recording');
+      finalTranscript = '';
+      delete chatInput.dataset.lastInterim;
+    }
+  };
+
+  recognition.onerror = (event: any) => {
+    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+      addChatSystemMessage(`Speech recognition error: ${event.error}`);
+    }
+    isRecording = false;
+    chatBtnMic.classList.remove('recording');
+    finalTranscript = '';
+    delete chatInput.dataset.lastInterim;
+  };
+
+  chatBtnMic.addEventListener('click', () => {
+    if (isRecording) {
+      isRecording = false;
+      recognition.stop();
+      chatBtnMic.classList.remove('recording');
+    } else {
+      isRecording = true;
+      finalTranscript = '';
+      chatInput.dataset.lastInterim = '';
+      recognition.start();
+      chatBtnMic.classList.add('recording');
+    }
+  });
+} else {
+  chatBtnMic.style.display = 'none';
+}
 
 // ══════════════════════════════════════════
 // ── Agents Tab
@@ -214,7 +688,6 @@ function renderAgents(): void {
     )
     .join('');
 
-  // Attach click handlers
   grid.querySelectorAll<HTMLDivElement>('.agent-card').forEach((card) => {
     card.addEventListener('click', () => {
       const id = card.dataset.agentId!;
@@ -300,7 +773,6 @@ async function loadAgentDetail(agentId: string): Promise<void> {
     </div>
   `;
 
-  // Visibility change handler
   const visSelect = document.getElementById(`vis-select-${meta.id}`) as HTMLSelectElement;
   visSelect.addEventListener('change', async () => {
     await sendMsg({
@@ -313,7 +785,6 @@ async function loadAgentDetail(agentId: string): Promise<void> {
     await loadAgentDetail(meta.id);
   });
 
-  // Delete handler
   const deleteBtn = detail.querySelector(`[data-delete-agent="${meta.id}"]`) as HTMLButtonElement;
   deleteBtn.addEventListener('click', () => {
     showConfirm(
@@ -332,18 +803,15 @@ async function loadAgentDetail(agentId: string): Promise<void> {
 
 // ── Create Agent ──
 
-const createAgentBtn = document.getElementById('btn-create-agent')!;
 const createAgentModal = document.getElementById('create-agent-modal')!;
 const createCancelBtn = document.getElementById('btn-create-cancel')!;
 const createConfirmBtn = document.getElementById('btn-create-confirm')!;
-const createNameInput = document.getElementById('create-agent-name') as HTMLInputElement;
-const createRoleSelect = document.getElementById('create-agent-role') as HTMLSelectElement;
 
-createAgentBtn.addEventListener('click', () => {
-  createNameInput.value = '';
-  createRoleSelect.value = 'neutral';
+document.getElementById('btn-create-agent')!.addEventListener('click', () => {
+  (document.getElementById('create-agent-name') as HTMLInputElement).value = '';
+  (document.getElementById('create-agent-role') as HTMLSelectElement).value = 'neutral';
   createAgentModal.classList.add('visible');
-  createNameInput.focus();
+  (document.getElementById('create-agent-name') as HTMLInputElement).focus();
 });
 
 createCancelBtn.addEventListener('click', () => {
@@ -351,15 +819,23 @@ createCancelBtn.addEventListener('click', () => {
 });
 
 createConfirmBtn.addEventListener('click', async () => {
-  const name = createNameInput.value.trim();
+  const nameInput = document.getElementById('create-agent-name') as HTMLInputElement;
+  const roleSelect = document.getElementById('create-agent-role') as HTMLSelectElement;
+  const name = nameInput.value.trim();
   if (!name) return;
-  const role = createRoleSelect.value;
+  const role = roleSelect.value;
   createAgentModal.classList.remove('visible');
-  try {
-    await sendMsg({ type: 'createAgent', name, role });
-    await loadAgents();
-  } catch (err) {
-    showPanelError('panel-agents', `Failed to create agent: ${err instanceof Error ? err.message : String(err)}`);
+
+  // If we're on the chat tab, use port-based creation for instant feedback
+  if (port) {
+    sendPortMessage({ type: 'createAgent', name, role });
+  } else {
+    try {
+      await sendMsg({ type: 'createAgent', name, role });
+      await loadAgents();
+    } catch (err) {
+      showPanelError('panel-agents', `Failed to create agent: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 });
 
@@ -389,7 +865,6 @@ function renderTasks(): void {
   const empty = document.getElementById('tasks-empty')!;
   const table = document.getElementById('tasks-table')!;
 
-  // Apply filters
   const filterAgent = (document.getElementById('tasks-filter-agent') as HTMLSelectElement).value;
   const filterStatus = (document.getElementById('tasks-filter-status') as HTMLSelectElement).value;
 
@@ -426,7 +901,6 @@ function renderTasks(): void {
     )
     .join('');
 
-  // Click handler for task rows
   tbody.querySelectorAll<HTMLTableRowElement>('tr.clickable').forEach((row) => {
     row.addEventListener('click', () => {
       const taskId = row.dataset.taskId!;
@@ -473,11 +947,9 @@ function showTaskDetail(taskId: string): void {
   modal.classList.add('visible');
 }
 
-// Task filters
 document.getElementById('tasks-filter-agent')!.addEventListener('change', renderTasks);
 document.getElementById('tasks-filter-status')!.addEventListener('change', renderTasks);
 
-// Task detail close
 document.getElementById('task-detail-close')!.addEventListener('click', () => {
   document.getElementById('task-detail-modal')!.classList.remove('visible');
 });
@@ -509,7 +981,6 @@ function renderMessages(): void {
   const list = document.getElementById('message-list')!;
   const empty = document.getElementById('messages-empty')!;
 
-  // Apply filters
   const filterAgent = (document.getElementById('messages-filter-agent') as HTMLSelectElement).value;
   const searchText = (document.getElementById('messages-search') as HTMLInputElement).value
     .toLowerCase()
@@ -549,11 +1020,9 @@ function renderMessages(): void {
     )
     .join('');
 
-  // Auto-scroll to bottom
   list.scrollTop = list.scrollHeight;
 }
 
-// Message filters
 document.getElementById('messages-filter-agent')!.addEventListener('change', renderMessages);
 document.getElementById('messages-search')!.addEventListener('input', renderMessages);
 
@@ -578,7 +1047,6 @@ function renderArtifacts(): void {
   const grid = document.getElementById('artifact-grid')!;
   const empty = document.getElementById('artifacts-empty')!;
 
-  // Apply filter
   const filterAgent = (document.getElementById('artifacts-filter-agent') as HTMLSelectElement).value;
 
   let filtered = artifacts;
@@ -610,7 +1078,6 @@ function renderArtifacts(): void {
     )
     .join('');
 
-  // Click handlers
   grid.querySelectorAll<HTMLDivElement>('.artifact-card').forEach((card) => {
     card.addEventListener('click', async () => {
       const idx = parseInt(card.dataset.artifactIndex!, 10);
@@ -626,7 +1093,6 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
 
   const filename = artifact.path.split('/').pop() || artifact.path;
 
-  // Try to read content from OPFS via background
   let fileContent = '(Unable to read file content)';
   try {
     const result = await sendMsg<{ content: string }>({
@@ -675,8 +1141,167 @@ document.getElementById('artifact-detail-modal')!.addEventListener('click', (e) 
   }
 });
 
-// Artifacts filter
 document.getElementById('artifacts-filter-agent')!.addEventListener('change', renderArtifacts);
+
+// ══════════════════════════════════════════
+// ── Files Tab (OPFS File Explorer)
+// ══════════════════════════════════════════
+
+interface FileEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'directory';
+  size?: number;
+  children?: FileEntry[];
+}
+
+const filesAgentSelect = document.getElementById('files-agent-select') as HTMLSelectElement;
+const filesTree = document.getElementById('files-tree') as HTMLDivElement;
+const filesViewerFilename = document.getElementById('files-viewer-filename') as HTMLSpanElement;
+const filesViewerContent = document.getElementById('files-viewer-content') as HTMLDivElement;
+const filesBtnDownload = document.getElementById('files-btn-download') as HTMLButtonElement;
+
+let filesSelectedPath: string | null = null;
+let filesSelectedContent: string | null = null;
+
+function loadFilesTab(): void {
+  // Populate agent selector
+  while (filesAgentSelect.options.length > 1) {
+    filesAgentSelect.remove(1);
+  }
+  for (const agent of agents) {
+    const opt = document.createElement('option');
+    opt.value = agent.id;
+    opt.textContent = `${agent.name} (${agent.role})`;
+    filesAgentSelect.appendChild(opt);
+  }
+}
+
+filesAgentSelect.addEventListener('change', async () => {
+  const agentId = filesAgentSelect.value;
+  if (!agentId) {
+    filesTree.innerHTML = '<div class="empty-state" style="padding:24px;"><p>Select an agent to browse its files.</p></div>';
+    filesViewerFilename.textContent = 'No file selected';
+    filesViewerContent.innerHTML = '<div class="files-viewer-empty">Select a file to view its contents.</div>';
+    filesBtnDownload.style.display = 'none';
+    return;
+  }
+
+  filesTree.innerHTML = '<p style="color:#64748b;padding:12px;">Loading...</p>';
+
+  try {
+    const result = await sendMsg<{ files: FileEntry[] }>({ type: 'listAgentFiles', agentId });
+    renderFileTree(result.files, agentId);
+  } catch (err) {
+    filesTree.innerHTML = `<p style="color:#f87171;padding:12px;">Error: ${err instanceof Error ? err.message : String(err)}</p>`;
+  }
+});
+
+function renderFileTree(entries: FileEntry[], agentId: string, depth = 0): void {
+  if (depth === 0) {
+    filesTree.innerHTML = '';
+  }
+
+  if (entries.length === 0 && depth === 0) {
+    filesTree.innerHTML = '<div class="empty-state" style="padding:24px;"><p>No files found for this agent.</p></div>';
+    return;
+  }
+
+  // Sort: directories first, then files, alphabetically
+  const sorted = [...entries].sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  for (const entry of sorted) {
+    const item = document.createElement('div');
+    item.className = `files-tree-item${entry.kind === 'directory' ? ' directory' : ''}`;
+    if (depth === 1) item.classList.add('files-indent');
+    else if (depth === 2) item.classList.add('files-indent-2');
+    else if (depth >= 3) item.classList.add('files-indent-3');
+
+    const icon = entry.kind === 'directory' ? '\uD83D\uDCC1' : '\uD83D\uDCC4';
+    const sizeStr = entry.size !== undefined ? formatFileSize(entry.size) : '';
+
+    item.innerHTML = `<span class="icon">${icon}</span><span class="name">${escapeHtml(entry.name)}</span>${sizeStr ? `<span class="size">${sizeStr}</span>` : ''}`;
+
+    if (entry.kind === 'file') {
+      item.addEventListener('click', () => {
+        // Deselect previous
+        filesTree.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
+        item.classList.add('selected');
+        loadFileContent(agentId, entry.path, entry.name);
+      });
+    }
+
+    filesTree.appendChild(item);
+
+    if (entry.kind === 'directory' && entry.children) {
+      renderFileTree(entry.children, agentId, depth + 1);
+    }
+  }
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+async function loadFileContent(agentId: string, filePath: string, fileName: string): Promise<void> {
+  filesViewerFilename.textContent = fileName;
+  filesViewerContent.innerHTML = '<p style="color:#64748b;">Loading...</p>';
+  filesBtnDownload.style.display = 'none';
+
+  try {
+    const result = await sendMsg<{ content: string }>({ type: 'readAgentFile', agentId, path: filePath });
+    filesSelectedPath = filePath;
+    filesSelectedContent = result.content;
+    filesBtnDownload.style.display = '';
+
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+
+    if (ext === 'md') {
+      // Render markdown
+      filesViewerContent.className = 'files-viewer-content markdown-view';
+      const rawHtml = marked.parse(result.content) as string;
+      filesViewerContent.innerHTML = DOMPurify.sanitize(rawHtml);
+    } else if (ext === 'jsonl') {
+      // Render JSONL with syntax highlighting
+      filesViewerContent.className = 'files-viewer-content';
+      const lines = result.content.split('\n').filter((l) => l.trim());
+      filesViewerContent.innerHTML = lines
+        .map((line) => {
+          try {
+            const parsed = JSON.parse(line);
+            return `<div class="files-jsonl-entry">${escapeHtml(JSON.stringify(parsed, null, 2))}</div>`;
+          } catch {
+            return `<div class="files-jsonl-entry">${escapeHtml(line)}</div>`;
+          }
+        })
+        .join('');
+    } else {
+      // Raw text
+      filesViewerContent.className = 'files-viewer-content raw-view';
+      filesViewerContent.textContent = result.content;
+    }
+  } catch (err) {
+    filesViewerContent.className = 'files-viewer-content raw-view';
+    filesViewerContent.textContent = `Error reading file: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+filesBtnDownload.addEventListener('click', () => {
+  if (!filesSelectedContent || !filesSelectedPath) return;
+  const fileName = filesSelectedPath.split('/').pop() || 'file';
+  const blob = new Blob([filesSelectedContent], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+});
 
 // ══════════════════════════════════════════
 // ── Settings Tab
@@ -721,7 +1346,6 @@ document.getElementById('btn-save-keys')!.addEventListener('click', async () => 
 });
 
 document.getElementById('btn-save-prefs')!.addEventListener('click', () => {
-  // For now, just acknowledge — settings stored locally in the dashboard
   alert('Preferences saved.');
 });
 
@@ -759,6 +1383,7 @@ document.getElementById('btn-save-permissions')!.addEventListener('click', async
   }
   alert('Tool permissions saved.');
 });
+
 // ══════════════════════════════════════════
 // ── Confirm Dialog
 // ══════════════════════════════════════════
@@ -804,7 +1429,6 @@ function populateAgentFilters(): void {
   ];
 
   for (const select of selects) {
-    // Keep the first "All" option, remove the rest
     while (select.options.length > 1) {
       select.remove(1);
     }
@@ -822,8 +1446,9 @@ function populateAgentFilters(): void {
 // ══════════════════════════════════════════
 
 async function init(): Promise<void> {
-  await loadAgents();
-  populateAgentFilters();
+  // Connect the port for chat streaming
+  port = connectPort();
+  sendPortMessage({ type: 'listAgents' });
 }
 
 init();
