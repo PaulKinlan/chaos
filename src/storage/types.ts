@@ -26,6 +26,7 @@ export interface ApiKeys {
   openai?: string;
   google?: string;
   openrouter?: string;
+  brave?: string;
 }
 
 // ── Inter-agent messages ──

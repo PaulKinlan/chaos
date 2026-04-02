@@ -2111,6 +2111,8 @@ async function loadSettings(): Promise<void> {
     (document.getElementById('settings-key-openai') as HTMLInputElement).value = keys.openai || '';
     (document.getElementById('settings-key-openrouter') as HTMLInputElement).value =
       keys.openrouter || '';
+    (document.getElementById('settings-key-brave') as HTMLInputElement).value =
+      keys.brave || '';
 
     // Load settings (provider, theme)
     const settingsResult = await sendMsg<{ settings: { activeProvider: string; theme: string } }>({ type: 'getSettings' });
@@ -2135,6 +2137,9 @@ document.getElementById('btn-save-keys')!.addEventListener('click', async () => 
       undefined,
     openrouter:
       (document.getElementById('settings-key-openrouter') as HTMLInputElement).value.trim() ||
+      undefined,
+    brave:
+      (document.getElementById('settings-key-brave') as HTMLInputElement).value.trim() ||
       undefined,
   };
   await sendMsg({ type: 'setApiKeys', keys });

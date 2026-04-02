@@ -745,7 +745,7 @@ export async function runAgentLoop(
     ...(await getChromeTools(agentId)),
     ...(isVisible ? getCommunicationTools(agentId) : {}),
     ...wasmTools,
-    ...getWebTools(),
+    ...getWebTools({ braveApiKey: apiKeys.brave }),
   };
 
   // Filter tools based on agent's enabledTools/disabledTools config

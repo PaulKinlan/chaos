@@ -4,7 +4,7 @@
  * Tests for fetch_page and web_search tools.
  */
 
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mock DOMParser for Node environment ──
 
@@ -136,6 +136,14 @@ describe('getWebTools', () => {
     expect(keys).toContain('web_search');
     expect(keys).toHaveLength(2);
   });
+
+  it('accepts optional braveApiKey', () => {
+    const tools = getWebTools({ braveApiKey: 'test-key' });
+    const keys = Object.keys(tools);
+    expect(keys).toContain('fetch_page');
+    expect(keys).toContain('web_search');
+    expect(keys).toHaveLength(2);
+  });
 });
 
 describe('fetch_page', () => {
@@ -233,31 +241,153 @@ describe('fetch_page', () => {
 });
 
 describe('web_search', () => {
-  it('returns a delegation message with search URL', async () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns DuckDuckGo results for a query', async () => {
+    const ddgResponse = {
+      AbstractText: 'TypeScript is a typed superset of JavaScript.',
+      AbstractURL: 'https://www.typescriptlang.org/',
+      AbstractSource: 'TypeScript',
+      Heading: 'TypeScript',
+      RelatedTopics: [
+        {
+          Text: 'TypeScript Tutorial - Learn TypeScript basics.',
+          FirstURL: 'https://example.com/ts-tutorial',
+        },
+      ],
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(ddgResponse), { status: 200 }),
+    );
+
     const tools = getWebTools();
     const result = await tools.web_search.execute!(
-      { query: 'test query' },
+      { query: 'TypeScript' },
       { toolCallId: 'test', messages: [] },
     );
 
-    const r = result as { message: string; searchUrl: string; suggestedAction: string };
-    expect(r.message).toContain('tab_open');
-    expect(r.searchUrl).toContain('google.com/search');
-    expect(r.searchUrl).toContain('test');
-    expect(r.searchUrl).toContain('query');
-    expect(r.suggestedAction).toContain('tab_open');
+    const r = result as { source: string; query: string; results: Array<{ title: string; url: string; description: string }> };
+    expect(r.source).toBe('duckduckgo');
+    expect(r.query).toBe('TypeScript');
+    expect(r.results.length).toBeGreaterThan(0);
+    expect(r.results[0].title).toBe('TypeScript');
+    expect(r.results[0].url).toBe('https://www.typescriptlang.org/');
+    expect(r.results[0].description).toContain('typed superset');
+  });
+
+  it('returns empty results with message when no results found', async () => {
+    const ddgResponse = {
+      AbstractText: '',
+      RelatedTopics: [],
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(ddgResponse), { status: 200 }),
+    );
+
+    const tools = getWebTools();
+    const result = await tools.web_search.execute!(
+      { query: 'xyznonexistentquery123' },
+      { toolCallId: 'test', messages: [] },
+    );
+
+    const r = result as { source: string; results: unknown[]; message: string };
+    expect(r.source).toBe('none');
+    expect(r.results).toHaveLength(0);
+    expect(r.message).toContain('No results');
+  });
+
+  it('returns error on fetch failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+
+    const tools = getWebTools();
+    const result = await tools.web_search.execute!(
+      { query: 'test' },
+      { toolCallId: 'test', messages: [] },
+    );
+
+    const r = result as { source: string; error: string };
+    expect(r.source).toBe('error');
+    expect(r.error).toContain('Network error');
+  });
+
+  it('uses Brave Search when API key is provided', async () => {
+    const braveResponse = {
+      web: {
+        results: [
+          {
+            title: 'Brave Result 1',
+            url: 'https://brave-result.com',
+            description: 'A result from Brave Search.',
+          },
+        ],
+      },
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(braveResponse), { status: 200 }),
+    );
+
+    const tools = getWebTools({ braveApiKey: 'test-brave-key' });
+    const result = await tools.web_search.execute!(
+      { query: 'test' },
+      { toolCallId: 'test', messages: [] },
+    );
+
+    const r = result as { source: string; results: Array<{ title: string; url: string }> };
+    expect(r.source).toBe('brave');
+    expect(r.results[0].title).toBe('Brave Result 1');
+    expect(r.results[0].url).toBe('https://brave-result.com');
+  });
+
+  it('falls back to DuckDuckGo when Brave fails', async () => {
+    let callCount = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      callCount++;
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+      if (url.includes('brave')) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      // DuckDuckGo response
+      return new Response(
+        JSON.stringify({
+          AbstractText: 'Fallback result',
+          AbstractURL: 'https://fallback.com',
+          Heading: 'Fallback',
+          RelatedTopics: [],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const tools = getWebTools({ braveApiKey: 'bad-key' });
+    const result = await tools.web_search.execute!(
+      { query: 'test' },
+      { toolCallId: 'test', messages: [] },
+    );
+
+    const r = result as { source: string; results: Array<{ title: string }> };
+    expect(r.source).toBe('duckduckgo');
+    expect(r.results[0].title).toBe('Fallback');
+    expect(callCount).toBe(2); // Brave failed, then DuckDuckGo
   });
 
   it('URL-encodes the query', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ AbstractText: '', RelatedTopics: [] }), { status: 200 }),
+    );
+
     const tools = getWebTools();
-    const result = await tools.web_search.execute!(
+    await tools.web_search.execute!(
       { query: 'hello world & stuff' },
       { toolCallId: 'test', messages: [] },
     );
 
-    const r = result as { searchUrl: string };
-    // Should contain URL-encoded version
-    expect(r.searchUrl).toContain('hello');
-    expect(r.searchUrl).not.toContain('&stuff'); // & should be encoded
+    const calledUrl = fetchSpy.mock.calls[0][0] as string;
+    expect(calledUrl).toContain('hello%20world');
+    expect(calledUrl).not.toContain('&stuff');
   });
 });
