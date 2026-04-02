@@ -13,6 +13,16 @@ import type { AgentMeta } from './storage/types.js';
 const agentInfoDiv = document.getElementById('agent-info') as HTMLDivElement;
 const btnOpenDashboard = document.getElementById('btn-open-dashboard') as HTMLButtonElement;
 
+// ── Apply saved theme ──
+
+chrome.storage.sync.get('chaos:settings').then((result) => {
+  const settings = result['chaos:settings'] as { theme?: string } | undefined;
+  const theme = settings?.theme ?? 'system';
+  if (theme !== 'system') {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+});
+
 // ── Load agent info ──
 
 async function loadAgentInfo(): Promise<void> {

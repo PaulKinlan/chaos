@@ -120,6 +120,23 @@ function statusBadgeClass(status: string): string {
   return `status-${status}`;
 }
 
+// ── Theme ──
+
+function applyTheme(theme: 'system' | 'light' | 'dark'): void {
+  if (theme === 'system') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+}
+
+// Load and apply theme on startup
+chrome.storage.sync.get('chaos:settings').then((result) => {
+  const settings = result['chaos:settings'] as { theme?: string } | undefined;
+  const theme = (settings?.theme ?? 'system') as 'system' | 'light' | 'dark';
+  applyTheme(theme);
+});
+
 // ── One-shot messaging (for dashboard views) ──
 
 async function sendMsg<T = unknown>(msg: Record<string, unknown>): Promise<T> {
@@ -317,6 +334,7 @@ document.getElementById('btn-global-settings')!.addEventListener('click', () => 
 
   loadSettings();
   loadPermissions();
+  loadBrowserPermissions();
 });
 
 function loadCurrentViewData(): void {
@@ -342,6 +360,7 @@ function loadCurrentViewData(): void {
     case 'global-settings':
       loadSettings();
       loadPermissions();
+      loadBrowserPermissions();
       break;
   }
 }
@@ -1417,6 +1436,12 @@ async function loadSettings(): Promise<void> {
     (document.getElementById('settings-key-openai') as HTMLInputElement).value = keys.openai || '';
     (document.getElementById('settings-key-openrouter') as HTMLInputElement).value =
       keys.openrouter || '';
+
+    // Load settings (provider, theme)
+    const settingsResult = await sendMsg<{ settings: { activeProvider: string; theme: string } }>({ type: 'getSettings' });
+    const settings = settingsResult.settings;
+    (document.getElementById('settings-provider') as HTMLSelectElement).value = settings.activeProvider || 'anthropic';
+    (document.getElementById('theme-select') as HTMLSelectElement).value = settings.theme || 'system';
   } catch (err) {
     showPanelError('view-global-settings', `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -1441,9 +1466,91 @@ document.getElementById('btn-save-keys')!.addEventListener('click', async () => 
   alert('API keys saved.');
 });
 
-document.getElementById('btn-save-prefs')!.addEventListener('click', () => {
+document.getElementById('btn-save-prefs')!.addEventListener('click', async () => {
+  const provider = (document.getElementById('settings-provider') as HTMLSelectElement).value;
+  const theme = (document.getElementById('theme-select') as HTMLSelectElement).value as 'system' | 'light' | 'dark';
+  await sendMsg({ type: 'setSettings', settings: { activeProvider: provider, theme } });
+  applyTheme(theme);
   alert('Preferences saved.');
 });
+
+// ── Browser Permissions ──
+
+async function loadBrowserPermissions(): Promise<void> {
+  const container = document.getElementById('browser-permissions-area');
+  if (!container) return;
+
+  const browserPerms = [
+    { id: 'page-content', label: 'Read page content', permission: 'scripting' as const, needsHost: true },
+    { id: 'tabs', label: 'Tab management', permission: 'tabs' as const, needsHost: false },
+    { id: 'bookmarks', label: 'Bookmarks', permission: 'bookmarks' as const, needsHost: false },
+    { id: 'history', label: 'Browsing history', permission: 'history' as const, needsHost: false },
+  ];
+
+  const rows: string[] = [];
+  for (const perm of browserPerms) {
+    const granted = await hasPermission(perm.permission) && (!perm.needsHost || await hasHostPermissions());
+    rows.push(`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:var(--text-sm);border-bottom:1px solid var(--border-subtle);">
+      <span style="color:var(--text-secondary);">${perm.label}</span>
+      <button class="browser-perm-btn btn" data-perm="${perm.permission}" data-needs-host="${perm.needsHost}"
+        style="padding:4px 12px;border-radius:4px;font-size:var(--text-xs);cursor:pointer;border:1px solid ${granted ? 'var(--success)' : 'var(--accent)'};background:${granted ? 'var(--success-subtle)' : 'var(--accent-subtle)'};color:${granted ? 'var(--success)' : 'var(--accent-text)'};">
+        ${granted ? 'Enabled' : 'Enable'}
+      </button>
+    </div>`);
+  }
+  container.innerHTML = rows.join('');
+
+  container.querySelectorAll<HTMLButtonElement>('.browser-perm-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const permName = btn.dataset.perm! as chrome.runtime.ManifestPermissions;
+      const needsHost = btn.dataset.needsHost === 'true';
+      const label = btn.parentElement?.querySelector('span')?.textContent || permName;
+      const request: chrome.permissions.Permissions = { permissions: [permName] };
+      if (needsHost) request.origins = ['<all_urls>'];
+      try {
+        const granted = await chrome.permissions.request(request);
+        if (granted) {
+          btn.textContent = 'Enabled';
+          btn.style.borderColor = 'var(--success)';
+          btn.style.background = 'var(--success-subtle)';
+          btn.style.color = 'var(--success)';
+        } else {
+          btn.textContent = 'Denied';
+          btn.style.borderColor = 'var(--danger)';
+          btn.style.background = 'var(--danger-subtle)';
+          btn.style.color = 'var(--danger-text)';
+          const errMsg = document.createElement('div');
+          errMsg.textContent = `"${label}" permission was denied. Your browser or IT policy may be blocking this.`;
+          errMsg.style.cssText = 'font-size:var(--text-xs);color:var(--danger-text);margin-top:4px;padding:4px 8px;background:var(--danger-subtle);border-radius:4px;';
+          btn.parentElement?.appendChild(errMsg);
+          setTimeout(() => {
+            errMsg.remove();
+            btn.textContent = 'Enable';
+            btn.style.borderColor = 'var(--accent)';
+            btn.style.background = 'var(--accent-subtle)';
+            btn.style.color = 'var(--accent-text)';
+          }, 5000);
+        }
+      } catch (err) {
+        btn.textContent = 'Error';
+        btn.style.borderColor = 'var(--danger)';
+        btn.style.background = 'var(--danger-subtle)';
+        btn.style.color = 'var(--danger-text)';
+        const errMsg = document.createElement('div');
+        errMsg.textContent = `Failed to request "${label}": ${err instanceof Error ? err.message : String(err)}`;
+        errMsg.style.cssText = 'font-size:var(--text-xs);color:var(--danger-text);margin-top:4px;padding:4px 8px;background:var(--danger-subtle);border-radius:4px;';
+        btn.parentElement?.appendChild(errMsg);
+        setTimeout(() => {
+          errMsg.remove();
+          btn.textContent = 'Enable';
+          btn.style.borderColor = 'var(--accent)';
+          btn.style.background = 'var(--accent-subtle)';
+          btn.style.color = 'var(--accent-text)';
+        }, 5000);
+      }
+    });
+  });
+}
 
 // ── Tool Permissions ──
 

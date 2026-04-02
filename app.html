@@ -67,6 +67,89 @@
       --agent-tabs-height: 40px;
     }
 
+    /* ── Light mode (system preference) ── */
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-base: oklch(97% 0.005 260);
+        --bg-raised: oklch(93% 0.005 260);
+        --bg-surface: oklch(100% 0 0);
+        --bg-hover: oklch(90% 0.008 260);
+        --border-subtle: oklch(88% 0.005 260);
+        --border-default: oklch(82% 0.008 260);
+        --border-focus: oklch(55% 0.14 270);
+        --text-primary: oklch(20% 0.01 260);
+        --text-secondary: oklch(40% 0.01 260);
+        --text-muted: oklch(55% 0.01 260);
+        --accent: oklch(50% 0.14 270);
+        --accent-hover: oklch(45% 0.16 270);
+        --accent-subtle: oklch(90% 0.06 270);
+        --accent-text: oklch(40% 0.1 270);
+        --success: oklch(50% 0.15 155);
+        --success-subtle: oklch(92% 0.04 155);
+        --danger: oklch(50% 0.2 25);
+        --danger-subtle: oklch(94% 0.04 25);
+        --danger-text: oklch(42% 0.14 25);
+        --warning-subtle: oklch(94% 0.04 70);
+        --warning-text: oklch(42% 0.12 70);
+        --info-subtle: oklch(94% 0.04 250);
+        --info-text: oklch(42% 0.1 250);
+      }
+    }
+
+    /* ── Explicit dark theme override ── */
+    [data-theme="dark"] {
+      --bg-base: oklch(13% 0.01 260);
+      --bg-raised: oklch(18% 0.012 260);
+      --bg-surface: oklch(22% 0.012 260);
+      --bg-hover: oklch(26% 0.014 260);
+      --border-subtle: oklch(27% 0.01 260);
+      --border-default: oklch(32% 0.012 260);
+      --border-focus: oklch(55% 0.14 270);
+      --text-primary: oklch(92% 0.01 260);
+      --text-secondary: oklch(67% 0.01 260);
+      --text-muted: oklch(52% 0.01 260);
+      --accent: oklch(55% 0.14 270);
+      --accent-hover: oklch(50% 0.16 270);
+      --accent-subtle: oklch(25% 0.06 270);
+      --accent-text: oklch(75% 0.1 270);
+      --success: oklch(60% 0.15 155);
+      --success-subtle: oklch(22% 0.04 155);
+      --danger: oklch(55% 0.2 25);
+      --danger-subtle: oklch(22% 0.04 25);
+      --danger-text: oklch(72% 0.14 25);
+      --warning-subtle: oklch(22% 0.04 70);
+      --warning-text: oklch(72% 0.12 70);
+      --info-subtle: oklch(22% 0.04 250);
+      --info-text: oklch(72% 0.1 250);
+    }
+
+    /* ── Explicit light theme override ── */
+    [data-theme="light"] {
+      --bg-base: oklch(97% 0.005 260);
+      --bg-raised: oklch(93% 0.005 260);
+      --bg-surface: oklch(100% 0 0);
+      --bg-hover: oklch(90% 0.008 260);
+      --border-subtle: oklch(88% 0.005 260);
+      --border-default: oklch(82% 0.008 260);
+      --border-focus: oklch(55% 0.14 270);
+      --text-primary: oklch(20% 0.01 260);
+      --text-secondary: oklch(40% 0.01 260);
+      --text-muted: oklch(55% 0.01 260);
+      --accent: oklch(50% 0.14 270);
+      --accent-hover: oklch(45% 0.16 270);
+      --accent-subtle: oklch(90% 0.06 270);
+      --accent-text: oklch(40% 0.1 270);
+      --success: oklch(50% 0.15 155);
+      --success-subtle: oklch(92% 0.04 155);
+      --danger: oklch(50% 0.2 25);
+      --danger-subtle: oklch(94% 0.04 25);
+      --danger-text: oklch(42% 0.14 25);
+      --warning-subtle: oklch(94% 0.04 70);
+      --warning-text: oklch(42% 0.12 70);
+      --info-subtle: oklch(94% 0.04 250);
+      --info-text: oklch(42% 0.1 250);
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -1896,6 +1979,14 @@
                   <option value="google">Google (Gemini)</option>
                   <option value="openai">OpenAI</option>
                   <option value="openrouter">OpenRouter</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label for="theme-select">Theme</label>
+                <select id="theme-select">
+                  <option value="system">System (auto)</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
                 </select>
               </div>
               <div class="settings-actions">

@@ -707,6 +707,19 @@ async function handleOneShotMessage(
       return { saved: true };
     }
 
+    case 'getSettings': {
+      const { getSettings: getSettingsSync } = await import('./storage/chrome-storage.js');
+      const settings = await getSettingsSync();
+      return { settings };
+    }
+
+    case 'setSettings': {
+      const { getSettings: getSettingsSync2, setSettings: setSettingsSync } = await import('./storage/chrome-storage.js');
+      const current = await getSettingsSync2();
+      await setSettingsSync({ ...current, ...msg.settings as Record<string, unknown> });
+      return { saved: true };
+    }
+
     case 'listAgentFiles': {
       const agentId = msg.agentId as string;
       const basePath = `agents/${agentId}`;
