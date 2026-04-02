@@ -1450,7 +1450,7 @@ function renderTasks(): void {
   if (filtered.length === 0) {
     table.style.display = 'none';
     empty.textContent = tasks.filter((t) => t.owner === activeAgentId).length === 0
-      ? 'No tasks for this agent yet.'
+      ? 'No scheduled tasks yet. Ask your agent to do something on a timer or schedule, like "check my bookmarks every morning" or "remind me to review my notes on Friday". Tasks appear here when the agent sets up recurring or one-shot work.'
       : 'No tasks match the current filters.';
     empty.style.display = '';
     return;
@@ -1564,7 +1564,7 @@ function renderMessages(): void {
   if (filtered.length === 0) {
     list.innerHTML = '';
     empty.textContent = messages.filter((m) => m.from === activeAgentId || m.to === activeAgentId).length === 0
-      ? 'No messages for this agent yet.'
+      ? 'No messages yet. This is the inter-agent communication log. When agents are set to "visible" or "open" visibility, they can send messages to each other. You can also ask an agent to message another agent directly.'
       : 'No messages match the current search.';
     empty.style.display = '';
     return;
@@ -1620,7 +1620,7 @@ function renderArtifacts(): void {
 
   if (filtered.length === 0) {
     grid.innerHTML = '';
-    empty.textContent = 'No artifacts for this agent yet.';
+    empty.textContent = 'No shared artifacts yet. Artifacts are files that an agent publishes to the shared space for other agents to read. Ask an agent to "publish" or "share" a file, and it will appear here.';
     empty.style.display = '';
     return;
   }
