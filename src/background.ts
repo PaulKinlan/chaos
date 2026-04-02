@@ -165,14 +165,63 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   if (!content) return;
 
+  // Get agent name for notifications
+  const agentMeta = await getAgent(agentId).catch(() => null);
+  const agentName = agentMeta?.meta?.name || 'Agent';
+
+  // Show notification that work has started
+  try {
+    const hasNotifs = await chrome.permissions.contains({ permissions: ['notifications'] });
+    if (hasNotifs) {
+      chrome.notifications.create(`chaos-ctx-${Date.now()}`, {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+        title: `CHAOS: Sent to ${agentName}`,
+        message: content.slice(0, 100) + (content.length > 100 ? '...' : ''),
+      });
+    }
+  } catch {
+    // Notifications not available, continue silently
+  }
+
+  const userMsg = `The user sent you this content via context menu:\n\n${content}`;
+
   // Run agent loop with the content
   try {
-    await runAgentLoop({
+    startKeepalive();
+    const result = await runAgentLoop({
       agentId,
-      userMessage: `The user sent you this content via context menu:\n\n${content}`,
+      userMessage: userMsg,
     });
+
+    // Save to conversation history so it appears in chat
+    const { getConversation: getConv, setConversation: setConv } = await import('./storage/idb.js');
+    const existing = await getConv(agentId).catch(() => null);
+    const messages = existing?.messages || [];
+    messages.push(
+      { role: 'user' as const, content: userMsg, timestamp: new Date().toISOString() },
+      { role: 'assistant' as const, content: result || '(no response)', timestamp: new Date().toISOString() },
+    );
+    await setConv({ id: agentId, agentId, timestamp: new Date().toISOString(), messages });
+
+    // Notify completion
+    try {
+      const hasNotifs = await chrome.permissions.contains({ permissions: ['notifications'] });
+      if (hasNotifs) {
+        chrome.notifications.create(`chaos-ctx-done-${Date.now()}`, {
+          type: 'basic',
+          iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+          title: `CHAOS: ${agentName} finished`,
+          message: (result || '(no response)').slice(0, 100) + ((result?.length || 0) > 100 ? '...' : ''),
+        });
+      }
+    } catch {
+      // Notifications not available
+    }
   } catch (err) {
     console.error('Context menu agent loop failed:', err);
+  } finally {
+    stopKeepalive();
   }
 });
 
