@@ -9,6 +9,7 @@
  */
 
 import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys } from './storage/types.js';
+import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 
 // ── State ──
 
@@ -84,7 +85,48 @@ function statusBadgeClass(status: string): string {
 // ── Messaging helpers ──
 
 async function sendMsg<T = unknown>(msg: Record<string, unknown>): Promise<T> {
-  return chrome.runtime.sendMessage(msg) as Promise<T>;
+  const result = await (chrome.runtime.sendMessage(msg) as Promise<T & { error?: string }>);
+  if (result && typeof result === 'object' && 'error' in result && result.error) {
+    throw new Error(result.error);
+  }
+  return result;
+}
+
+function showPanelLoading(panelId: string): void {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  // Insert a loading spinner at the top of the panel content area
+  let spinner = panel.querySelector('.panel-spinner') as HTMLDivElement | null;
+  if (!spinner) {
+    spinner = document.createElement('div');
+    spinner.className = 'panel-spinner';
+    spinner.innerHTML = '<div class="spinner"></div><span>Loading...</span>';
+    panel.prepend(spinner);
+  }
+  spinner.style.display = '';
+}
+
+function hidePanelLoading(panelId: string): void {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const spinner = panel.querySelector('.panel-spinner') as HTMLDivElement | null;
+  if (spinner) spinner.style.display = 'none';
+}
+
+function showPanelError(panelId: string, message: string): void {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  let errorEl = panel.querySelector('.panel-error') as HTMLDivElement | null;
+  if (!errorEl) {
+    errorEl = document.createElement('div');
+    errorEl.className = 'panel-error';
+    panel.prepend(errorEl);
+  }
+  errorEl.textContent = message;
+  errorEl.style.display = '';
+  setTimeout(() => {
+    if (errorEl) errorEl.style.display = 'none';
+  }, 5000);
 }
 
 // ── Tab navigation ──
@@ -116,6 +158,7 @@ tabButtons.forEach((btn) => {
         break;
       case 'settings':
         loadSettings();
+        loadPermissions();
         break;
     }
   });
@@ -126,9 +169,16 @@ tabButtons.forEach((btn) => {
 // ══════════════════════════════════════════
 
 async function loadAgents(): Promise<void> {
-  const result = await sendMsg<{ agents: AgentMeta[] }>({ type: 'listAgents' });
-  agents = result.agents;
-  renderAgents();
+  showPanelLoading('panel-agents');
+  try {
+    const result = await sendMsg<{ agents: AgentMeta[] }>({ type: 'listAgents' });
+    agents = result.agents;
+    renderAgents();
+  } catch (err) {
+    showPanelError('panel-agents', `Failed to load agents: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    hidePanelLoading('panel-agents');
+  }
 }
 
 function renderAgents(): void {
@@ -140,6 +190,7 @@ function renderAgents(): void {
     grid.innerHTML = '';
     detail.innerHTML = '';
     detail.classList.remove('active');
+    empty.textContent = 'No agents yet \u2014 create one to get started.';
     empty.style.display = '';
     return;
   }
@@ -304,8 +355,12 @@ createConfirmBtn.addEventListener('click', async () => {
   if (!name) return;
   const role = createRoleSelect.value;
   createAgentModal.classList.remove('visible');
-  await sendMsg({ type: 'createAgent', name, role });
-  await loadAgents();
+  try {
+    await sendMsg({ type: 'createAgent', name, role });
+    await loadAgents();
+  } catch (err) {
+    showPanelError('panel-agents', `Failed to create agent: ${err instanceof Error ? err.message : String(err)}`);
+  }
 });
 
 createAgentModal.addEventListener('click', (e) => {
@@ -317,9 +372,16 @@ createAgentModal.addEventListener('click', (e) => {
 // ══════════════════════════════════════════
 
 async function loadTasks(): Promise<void> {
-  const result = await sendMsg<{ tasks: Task[] }>({ type: 'getTaskState' });
-  tasks = result.tasks;
-  renderTasks();
+  showPanelLoading('panel-tasks');
+  try {
+    const result = await sendMsg<{ tasks: Task[] }>({ type: 'getTaskState' });
+    tasks = result.tasks;
+    renderTasks();
+  } catch (err) {
+    showPanelError('panel-tasks', `Failed to load tasks: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    hidePanelLoading('panel-tasks');
+  }
 }
 
 function renderTasks(): void {
@@ -341,6 +403,7 @@ function renderTasks(): void {
 
   if (filtered.length === 0) {
     table.style.display = 'none';
+    empty.textContent = tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the current filters.';
     empty.style.display = '';
     return;
   }
@@ -430,9 +493,16 @@ document.getElementById('task-detail-modal')!.addEventListener('click', (e) => {
 // ══════════════════════════════════════════
 
 async function loadMessages(): Promise<void> {
-  const result = await sendMsg<{ messages: AgentMessage[] }>({ type: 'getMessages' });
-  messages = result.messages;
-  renderMessages();
+  showPanelLoading('panel-messages');
+  try {
+    const result = await sendMsg<{ messages: AgentMessage[] }>({ type: 'getMessages' });
+    messages = result.messages;
+    renderMessages();
+  } catch (err) {
+    showPanelError('panel-messages', `Failed to load messages: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    hidePanelLoading('panel-messages');
+  }
 }
 
 function renderMessages(): void {
@@ -455,6 +525,7 @@ function renderMessages(): void {
 
   if (filtered.length === 0) {
     list.innerHTML = '';
+    empty.textContent = messages.length === 0 ? 'No messages yet.' : 'No messages match the current filters.';
     empty.style.display = '';
     return;
   }
@@ -491,9 +562,16 @@ document.getElementById('messages-search')!.addEventListener('input', renderMess
 // ══════════════════════════════════════════
 
 async function loadArtifacts(): Promise<void> {
-  const result = await sendMsg<{ artifacts: ArtifactMeta[] }>({ type: 'getArtifacts' });
-  artifacts = result.artifacts;
-  renderArtifacts();
+  showPanelLoading('panel-artifacts');
+  try {
+    const result = await sendMsg<{ artifacts: ArtifactMeta[] }>({ type: 'getArtifacts' });
+    artifacts = result.artifacts;
+    renderArtifacts();
+  } catch (err) {
+    showPanelError('panel-artifacts', `Failed to load artifacts: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    hidePanelLoading('panel-artifacts');
+  }
 }
 
 function renderArtifacts(): void {
@@ -510,6 +588,7 @@ function renderArtifacts(): void {
 
   if (filtered.length === 0) {
     grid.innerHTML = '';
+    empty.textContent = artifacts.length === 0 ? 'No artifacts yet.' : 'No artifacts match the current filter.';
     empty.style.display = '';
     return;
   }
@@ -604,15 +683,22 @@ document.getElementById('artifacts-filter-agent')!.addEventListener('change', re
 // ══════════════════════════════════════════
 
 async function loadSettings(): Promise<void> {
-  const result = await sendMsg<{ keys: ApiKeys }>({ type: 'getApiKeys' });
-  const keys = result.keys;
+  showPanelLoading('panel-settings');
+  try {
+    const result = await sendMsg<{ keys: ApiKeys }>({ type: 'getApiKeys' });
+    const keys = result.keys;
 
-  (document.getElementById('settings-key-anthropic') as HTMLInputElement).value =
-    keys.anthropic || '';
-  (document.getElementById('settings-key-google') as HTMLInputElement).value = keys.google || '';
-  (document.getElementById('settings-key-openai') as HTMLInputElement).value = keys.openai || '';
-  (document.getElementById('settings-key-openrouter') as HTMLInputElement).value =
-    keys.openrouter || '';
+    (document.getElementById('settings-key-anthropic') as HTMLInputElement).value =
+      keys.anthropic || '';
+    (document.getElementById('settings-key-google') as HTMLInputElement).value = keys.google || '';
+    (document.getElementById('settings-key-openai') as HTMLInputElement).value = keys.openai || '';
+    (document.getElementById('settings-key-openrouter') as HTMLInputElement).value =
+      keys.openrouter || '';
+  } catch (err) {
+    showPanelError('panel-settings', `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    hidePanelLoading('panel-settings');
+  }
 }
 
 document.getElementById('btn-save-keys')!.addEventListener('click', async () => {
@@ -639,6 +725,40 @@ document.getElementById('btn-save-prefs')!.addEventListener('click', () => {
   alert('Preferences saved.');
 });
 
+
+// ── Tool Permissions ──
+
+async function loadPermissions(): Promise<void> {
+  const perms = await getAllPermissions();
+  const grid = document.getElementById('tool-permissions-grid')!;
+
+  const toolNames = Object.keys(DEFAULT_PERMISSIONS).sort();
+
+  grid.innerHTML = toolNames
+    .map((name) => {
+      const level = perms[name] ?? 'ask';
+      return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f172a;border-radius:6px;border:1px solid #334155;">
+        <span style="font-size:13px;font-family:monospace;color:#cbd5e1;">${escapeHtml(name)}</span>
+        <select class="perm-select" data-tool="${escapeHtml(name)}" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:4px 8px;font-size:12px;outline:none;">
+          <option value="always"${level === 'always' ? ' selected' : ''}>Always</option>
+          <option value="ask"${level === 'ask' ? ' selected' : ''}>Ask</option>
+          <option value="never"${level === 'never' ? ' selected' : ''}>Never</option>
+        </select>
+      </div>`;
+    })
+    .join('');
+}
+
+document.getElementById('btn-save-permissions')!.addEventListener('click', async () => {
+  const selects = document.querySelectorAll<HTMLSelectElement>('.perm-select');
+  for (const sel of selects) {
+    const toolName = sel.dataset.tool!;
+    const level = sel.value as PermissionLevel;
+    await setPermission(toolName, level);
+  }
+  alert('Tool permissions saved.');
+});
 // ══════════════════════════════════════════
 // ── Confirm Dialog
 // ══════════════════════════════════════════

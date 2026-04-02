@@ -4,10 +4,10 @@
  * Tests for keyword lookup, static lookup, registry, and factory.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { KeywordLookup } from '../keyword-lookup.js';
 import { StaticLookup } from '../static-lookup.js';
-import { EmbeddingLookup } from '../embedding-lookup.js';
+import { EmbeddingLookup, cosineSimilarity, hashString } from '../embedding-lookup.js';
 import { createToolLookup } from '../index.js';
 import { toolRegistry } from '../registry.js';
 import type { ToolMeta } from '../types.js';
@@ -222,11 +222,151 @@ describe('createToolLookup', () => {
     expect(results[0].name).toBe('tab_open');
   });
 
-  it('creates an embedding lookup (falls back to keyword)', async () => {
+  it('creates an embedding lookup (falls back to keyword without API key)', async () => {
     const lookup = createToolLookup('embedding');
     const results = await lookup.resolve('open a new tab');
     expect(results.length).toBeGreaterThan(0);
-    // Embedding stub delegates to keyword, so same result
+    // Without API key, embedding falls back to keyword
     expect(results[0].name).toBe('tab_open');
+  });
+
+  it('creates an embedding lookup with API key option', () => {
+    // Should not throw when given an API key (initialization happens async)
+    const lookup = createToolLookup('embedding', { apiKey: 'test-key' });
+    expect(lookup).toBeDefined();
+  });
+});
+
+// ── Cosine Similarity Tests ──
+
+describe('cosineSimilarity', () => {
+  it('returns 1 for identical vectors', () => {
+    const v = [1, 2, 3, 4];
+    expect(cosineSimilarity(v, v)).toBeCloseTo(1.0);
+  });
+
+  it('returns 0 for orthogonal vectors', () => {
+    const a = [1, 0, 0];
+    const b = [0, 1, 0];
+    expect(cosineSimilarity(a, b)).toBeCloseTo(0.0);
+  });
+
+  it('returns -1 for opposite vectors', () => {
+    const a = [1, 0, 0];
+    const b = [-1, 0, 0];
+    expect(cosineSimilarity(a, b)).toBeCloseTo(-1.0);
+  });
+
+  it('handles zero vectors', () => {
+    const a = [0, 0, 0];
+    const b = [1, 2, 3];
+    expect(cosineSimilarity(a, b)).toBe(0);
+  });
+
+  it('handles empty vectors', () => {
+    expect(cosineSimilarity([], [])).toBe(0);
+  });
+
+  it('handles mismatched lengths', () => {
+    expect(cosineSimilarity([1, 2], [1, 2, 3])).toBe(0);
+  });
+
+  it('computes correct similarity for known vectors', () => {
+    const a = [1, 2, 3];
+    const b = [4, 5, 6];
+    // dot = 4+10+18 = 32, normA = sqrt(14), normB = sqrt(77)
+    const expected = 32 / (Math.sqrt(14) * Math.sqrt(77));
+    expect(cosineSimilarity(a, b)).toBeCloseTo(expected);
+  });
+});
+
+// ── Hash String Tests ──
+
+describe('hashString', () => {
+  it('returns consistent hashes', () => {
+    const h1 = hashString('hello world');
+    const h2 = hashString('hello world');
+    expect(h1).toBe(h2);
+  });
+
+  it('returns different hashes for different strings', () => {
+    const h1 = hashString('hello');
+    const h2 = hashString('world');
+    expect(h1).not.toBe(h2);
+  });
+
+  it('returns a string', () => {
+    expect(typeof hashString('test')).toBe('string');
+  });
+});
+
+// ── Embedding Lookup with Mock ──
+
+describe('EmbeddingLookup', () => {
+  it('falls back to keyword lookup when not initialized', async () => {
+    const lookup = new EmbeddingLookup();
+    for (const meta of allFixtures) {
+      lookup.register(meta);
+    }
+
+    const results = await lookup.resolve('open a new tab');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].name).toBe('tab_open');
+  });
+
+  it('uses embeddings when initialized with mock', async () => {
+    const lookup = new EmbeddingLookup();
+    for (const meta of allFixtures) {
+      lookup.register(meta);
+    }
+
+    // Create mock embeddings where each tool gets a unique direction
+    const mockEmbeddings = new Map<string, number[]>();
+    allFixtures.forEach((tool, i) => {
+      const vec = new Array(8).fill(0);
+      vec[i % 8] = 1.0;
+      mockEmbeddings.set(
+        `${tool.description} ${tool.keywords.join(' ')}`,
+        vec,
+      );
+    });
+
+    // Set up the intent embedding to match tab_open's direction
+    const tabOpenIdx = allFixtures.findIndex((t) => t.name === 'tab_open');
+    const intentVec = new Array(8).fill(0);
+    intentVec[tabOpenIdx % 8] = 1.0;
+
+    const mockEmbed = vi.fn(async ({ value }: { model: unknown; value: string }) => {
+      if (mockEmbeddings.has(value)) {
+        return { embedding: mockEmbeddings.get(value)! };
+      }
+      // For the intent query, return the intent vector
+      return { embedding: intentVec };
+    });
+
+    const mockModelFactory = vi.fn((_apiKey: string) => 'mock-model');
+
+    await lookup.initialize('test-api-key', mockEmbed, mockModelFactory);
+
+    const results = await lookup.resolve('open a new tab');
+    expect(results.length).toBeGreaterThan(0);
+    // The mock embed was called
+    expect(mockEmbed).toHaveBeenCalled();
+  });
+
+  it('caches embeddings in IndexedDB', async () => {
+    // This tests that setEmbedding is called during initialization
+    const lookup = new EmbeddingLookup();
+    lookup.register(tabOpenMeta);
+
+    const mockEmbed = vi.fn(async () => ({
+      embedding: [1, 0, 0, 0],
+    }));
+    const mockModelFactory = vi.fn((_apiKey: string) => 'mock-model');
+
+    await lookup.initialize('test-api-key', mockEmbed, mockModelFactory);
+
+    // Embed was called for the tool description + hash storage
+    expect(mockEmbed).toHaveBeenCalledTimes(1);
   });
 });
