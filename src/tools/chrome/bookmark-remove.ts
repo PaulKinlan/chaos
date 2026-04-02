@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const bookmarkRemove = tool({
   description: 'Remove a bookmark by its ID.',
-  parameters: z.object({
+  inputSchema: z.object({
     bookmarkId: z.string().describe('The ID of the bookmark to remove'),
   }),
   execute: async ({ bookmarkId }) => {

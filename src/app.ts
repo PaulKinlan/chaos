@@ -18,7 +18,7 @@ import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionL
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
 import { toolRegistry } from './tools/lookup/registry.js';
-import { fetchModels, getFallbackModels, type ModelOption } from './agents/provider-registry.js';
+import { getFallbackModels, type ModelOption } from './agents/provider-registry.js';
 import type { ToolMeta } from './tools/lookup/types.js';
 
 // ── Configure marked ──
@@ -2172,19 +2172,7 @@ async function populateModelSelect(
   // Show loading state
   modelSelect.innerHTML = '<option value="">Loading models...</option>';
 
-  let models: ModelOption[];
-  const apiKey = keys[providerId as keyof ApiKeys];
-
-  if (apiKey) {
-    try {
-      models = await fetchModels(providerId, apiKey);
-    } catch {
-      // Fallback to hardcoded models on fetch failure
-      models = getFallbackModels(providerId);
-    }
-  } else {
-    models = getFallbackModels(providerId);
-  }
+  const models = getFallbackModels(providerId);
 
   // Populate select
   modelSelect.innerHTML = '<option value="">(provider default)</option>';
@@ -2248,35 +2236,6 @@ document.getElementById('settings-provider')!.addEventListener('change', async (
   await populateModelSelect(providerId, apiKeys);
 });
 
-document.getElementById('btn-refresh-models')!.addEventListener('click', async () => {
-  const providerId = (document.getElementById('settings-provider') as HTMLSelectElement).value;
-  const apiKeys = await getCurrentApiKeys();
-  const apiKey = apiKeys[providerId as keyof ApiKeys];
-  const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
-  modelSelect.innerHTML = '<option value="">Refreshing...</option>';
-
-  if (apiKey) {
-    try {
-      const models = await fetchModels(providerId, apiKey, true);
-      modelSelect.innerHTML = '<option value="">(provider default)</option>';
-      for (const m of models) {
-        const opt = document.createElement('option');
-        opt.value = m.value;
-        opt.textContent = m.label;
-        modelSelect.appendChild(opt);
-      }
-    } catch (err) {
-      modelSelect.innerHTML = '<option value="">Fetch failed — using defaults</option>';
-      const fallback = getFallbackModels(providerId);
-      for (const m of fallback) {
-        const opt = document.createElement('option');
-        opt.value = m.value;
-        opt.textContent = m.label;
-        modelSelect.appendChild(opt);
-      }
-    }
-  }
-});
 
 /** Helper to get current API keys from storage. */
 async function getCurrentApiKeys(): Promise<ApiKeys> {

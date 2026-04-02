@@ -52,7 +52,7 @@ export function createHookCreate(agentId: string) {
       'Create a hook that automatically runs this agent when a browser event occurs. ' +
       'Hooks let you respond to bookmarks being created, tab navigation, downloads completing, ' +
       'browser startup, omnibox input, and more.',
-    parameters: z.object({
+    inputSchema: z.object({
       trigger: triggerSchema.describe('The event trigger configuration'),
       prompt: z.string().describe('What the agent should do when the hook fires'),
       description: z.string().describe('Human-readable description of this hook'),

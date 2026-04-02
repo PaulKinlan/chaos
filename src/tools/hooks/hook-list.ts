@@ -12,7 +12,7 @@ export function createHookList(agentId: string) {
   return tool({
     description:
       'List all hooks for this agent. Shows each hook\'s trigger, prompt, status, and stats.',
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       const allHooks = await getHooks();
       const myHooks = allHooks.filter((h) => h.agentId === agentId);

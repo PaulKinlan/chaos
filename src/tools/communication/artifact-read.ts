@@ -12,7 +12,7 @@ export function createArtifactReadTool(_agentId: string) {
   return tool({
     description:
       'Read the content of a shared artifact by its path (as returned by artifact_list).',
-    parameters: z.object({
+    inputSchema: z.object({
       path: z
         .string()
         .describe('Full artifact path (e.g. shared/artifacts/agent-id/file.md)'),

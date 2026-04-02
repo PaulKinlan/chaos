@@ -11,7 +11,7 @@ export function createBookmarkList(agentId: string) {
   return tool({
     description:
       "List all bookmarks in this agent's dedicated bookmark folder.",
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       try {
         const folderTitle = `CHAOS: ${agentId}`;

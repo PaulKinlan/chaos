@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const tabNavigate = tool({
   description:
     'Navigate an existing browser tab to a new URL. Unlike tab_open, this reuses an existing tab instead of opening a new one.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabId: z.number().describe('The ID of the tab to navigate'),
     url: z.string().describe('The URL to navigate to'),
   }),

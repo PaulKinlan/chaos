@@ -12,7 +12,7 @@ import { z } from 'zod';
 export const clipboardWrite = tool({
   description:
     'Write text to the system clipboard. Note: clipboard access may be limited in some contexts.',
-  parameters: z.object({
+  inputSchema: z.object({
     text: z.string().describe('The text to copy to the clipboard'),
   }),
   execute: async ({ text }) => {

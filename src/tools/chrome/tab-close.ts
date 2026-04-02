@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const tabClose = tool({
   description: 'Close a browser tab by its ID.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabId: z.number().describe('The ID of the tab to close'),
   }),
   execute: async ({ tabId }) => {

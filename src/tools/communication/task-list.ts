@@ -12,7 +12,7 @@ export function createTaskListTool(_agentId: string) {
   return tool({
     description:
       'List tasks from the shared task board. Filter by agent, status, or show only unblocked tasks.',
-    parameters: z.object({
+    inputSchema: z.object({
       agentId: z
         .string()
         .optional()

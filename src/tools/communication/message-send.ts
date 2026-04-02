@@ -13,7 +13,7 @@ export function createMessageSendTool(agentId: string) {
   return tool({
     description:
       'Send a message to another agent by ID, or broadcast to all visible agents. Messages are free-form text.',
-    parameters: z.object({
+    inputSchema: z.object({
       to: z
         .string()
         .describe("Target agent ID, or 'broadcast' to send to all visible agents"),

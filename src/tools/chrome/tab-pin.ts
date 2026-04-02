@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const tabPin = tool({
   description: 'Pin or unpin a browser tab by its ID.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabId: z.number().describe('The ID of the tab to pin/unpin'),
     pinned: z.boolean().describe('Whether to pin (true) or unpin (false) the tab'),
   }),

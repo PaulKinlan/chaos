@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const windowFocus = tool({
   description: 'Focus a browser window by its ID, bringing it to the front.',
-  parameters: z.object({
+  inputSchema: z.object({
     windowId: z.number().describe('The ID of the window to focus'),
   }),
   execute: async ({ windowId }) => {

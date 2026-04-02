@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const tabGroup = tool({
   description:
     'Create a tab group or add tabs to an existing group. Groups tabs together with a title and optional color.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabIds: z.array(z.number()).describe('Array of tab IDs to group together'),
     title: z.string().describe('Title for the tab group'),
     color: z

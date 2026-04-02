@@ -17,7 +17,7 @@ const turndown = new TurndownService({
 export const fetchPage = tool({
   description:
     'Fetch a web page by URL and return its main content as markdown. Handles CORS errors, 404s, and timeouts gracefully.',
-  parameters: z.object({
+  inputSchema: z.object({
     url: z.string().url().describe('The URL to fetch'),
   }),
   execute: async ({ url }) => {

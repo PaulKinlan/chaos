@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const tabDuplicate = tool({
   description: 'Duplicate an existing browser tab by its ID.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabId: z.number().describe('The ID of the tab to duplicate'),
   }),
   execute: async ({ tabId }) => {

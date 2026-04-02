@@ -6,7 +6,7 @@
  * processes the response.
  */
 
-import { streamText, tool, type ToolSet } from 'ai';
+import { streamText, stepCountIs, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { opfs } from '../storage/opfs.js';
 import { getAgentList, getApiKeys, getSettings } from '../storage/chrome-storage.js';
@@ -156,7 +156,7 @@ function createAgentTools(agentId: string): ToolSet {
     read_file: tool({
       description:
         'Read a file from your private storage. Path is relative to your agent root directory.',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('File path relative to agent root'),
       }),
       execute: async ({ path }) => {
@@ -172,7 +172,7 @@ function createAgentTools(agentId: string): ToolSet {
     write_file: tool({
       description:
         'Write content to a file in your private storage. Creates the file and parent directories if they do not exist. Path is relative to your agent root directory.',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('File path relative to agent root'),
         content: z.string().describe('File content to write'),
       }),
@@ -185,7 +185,7 @@ function createAgentTools(agentId: string): ToolSet {
     list_directory: tool({
       description:
         'List files and directories in a directory in your private storage. Path is relative to your agent root directory.',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z
           .string()
           .default('.')
@@ -205,7 +205,7 @@ function createAgentTools(agentId: string): ToolSet {
     edit_file: tool({
       description:
         'Edit a file by replacing an exact string match. Useful for updating specific sections of CLAUDE.md or other files without rewriting the entire file.',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('File path relative to agent root'),
         old_string: z.string().describe('Exact string to find and replace'),
         new_string: z.string().describe('Replacement string'),
@@ -229,7 +229,7 @@ function createAgentTools(agentId: string): ToolSet {
     mkdir: tool({
       description:
         'Create a directory (and any missing parent directories) in your private storage.',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('Directory path relative to agent root'),
       }),
       execute: async ({ path }) => {
@@ -241,7 +241,7 @@ function createAgentTools(agentId: string): ToolSet {
     append_file: tool({
       description:
         'Append content to a file. Creates the file if it does not exist. Useful for logs and journals.',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('File path relative to agent root'),
         content: z.string().describe('Content to append'),
       }),
@@ -254,7 +254,7 @@ function createAgentTools(agentId: string): ToolSet {
     grep_file: tool({
       description:
         'Search file contents for a text pattern. If path is a file, search that file and return matching lines with line numbers. If path is a directory (or omitted), recursively search all files and return file:line:content. Uses simple string matching (not regex). Limited to 50 matches.',
-      parameters: z.object({
+      inputSchema: z.object({
         pattern: z.string().describe('Text pattern to search for'),
         path: z.string().default('.').describe('File or directory path relative to agent root (defaults to root)'),
       }),
@@ -329,7 +329,7 @@ function createAgentTools(agentId: string): ToolSet {
     find_files: tool({
       description:
         'Find files by name pattern. Recursively lists all files and filters by a simple glob pattern where * matches anything. Returns matching file paths.',
-      parameters: z.object({
+      inputSchema: z.object({
         pattern: z.string().describe('File name pattern (e.g. "*.md", "TODO*")'),
         path: z.string().default('.').describe('Directory path relative to agent root (defaults to root)'),
       }),
@@ -375,7 +375,7 @@ function createAgentTools(agentId: string): ToolSet {
     delete_file: tool({
       description:
         'Delete a file from your private storage. Cannot delete CLAUDE.md (protected).',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('File path relative to agent root'),
       }),
       execute: async ({ path }) => {
@@ -394,7 +394,7 @@ function createAgentTools(agentId: string): ToolSet {
     rename_file: tool({
       description:
         'Rename or move a file within your private storage. Reads the old file, writes to the new path, then deletes the old file.',
-      parameters: z.object({
+      inputSchema: z.object({
         oldPath: z.string().describe('Current file path relative to agent root'),
         newPath: z.string().describe('New file path relative to agent root'),
       }),
@@ -413,7 +413,7 @@ function createAgentTools(agentId: string): ToolSet {
     file_info: tool({
       description:
         'Get metadata about a file or directory: whether it exists, approximate size, and type (file or directory).',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('File or directory path relative to agent root'),
       }),
       execute: async ({ path }) => {
@@ -770,7 +770,7 @@ export async function runAgentLoop(
         description:
           'Describe what you need to do and this tool will return the most relevant tools. ' +
           'Call this before attempting to use any other tool.',
-        parameters: z.object({
+        inputSchema: z.object({
           intent: z.string().describe('Natural language description of what you want to do'),
           count: z.number().optional().default(5).describe('Number of tools to return'),
         }),
@@ -814,7 +814,7 @@ export async function runAgentLoop(
     system: systemPrompt,
     messages: [{ role: 'user', content: userMessage }],
     tools,
-    maxSteps: 10,
+    stopWhen: stepCountIs(10),
   });
 
   // 7. Stream response and collect full text
@@ -824,8 +824,8 @@ export async function runAgentLoop(
   for await (const part of result.fullStream) {
     switch (part.type) {
       case 'text-delta':
-        fullResponse += part.textDelta;
-        onChunk?.(part.textDelta);
+        fullResponse += part.text;
+        onChunk?.(part.text);
         break;
       case 'tool-call':
         toolCallNames.push(part.toolName);

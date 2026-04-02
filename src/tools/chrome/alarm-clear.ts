@@ -12,7 +12,7 @@ import { removeScheduledTask } from '../../storage/chrome-storage.js';
 export function createAlarmClear(agentId: string) {
   return tool({
     description: 'Clear a previously set Chrome alarm by name. Also removes the associated scheduled task.',
-    parameters: z.object({
+    inputSchema: z.object({
       name: z.string().describe('Name of the alarm to clear (will be prefixed with agentId)'),
     }),
     execute: async ({ name }) => {

@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const historySearch = tool({
   description:
     'Search the browsing history by query. Returns matching history items with title, URL, last visit time, and visit count.',
-  parameters: z.object({
+  inputSchema: z.object({
     query: z.string().describe('Search query to match against history entries'),
     maxResults: z
       .number()

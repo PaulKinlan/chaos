@@ -137,7 +137,7 @@ export function createWebSearch(braveApiKey?: string) {
     description:
       'Search the web for information. Returns a list of results with titles, URLs, and descriptions. ' +
       'Use fetch_page on result URLs to get full page content.',
-    parameters: z.object({
+    inputSchema: z.object({
       query: z.string().describe('The search query'),
     }),
     execute: async ({ query }) => {

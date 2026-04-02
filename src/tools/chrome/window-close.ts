@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const windowClose = tool({
   description: 'Close a browser window by its ID.',
-  parameters: z.object({
+  inputSchema: z.object({
     windowId: z.number().describe('The ID of the window to close'),
   }),
   execute: async ({ windowId }) => {

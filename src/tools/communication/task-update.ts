@@ -12,7 +12,7 @@ export function createTaskUpdateTool(_agentId: string) {
   return tool({
     description:
       'Update the status of a shared task. Use this to mark tasks as in progress, completed, or failed.',
-    parameters: z.object({
+    inputSchema: z.object({
       taskId: z.string().describe('ID of the task to update'),
       status: z
         .enum(['in_progress', 'completed', 'failed'])

@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const bookmarkSearch = tool({
   description: 'Search bookmarks by a query string. Returns matching bookmarks with title, URL, and date added.',
-  parameters: z.object({
+  inputSchema: z.object({
     query: z.string().describe('Search query to match against bookmark titles and URLs'),
   }),
   execute: async ({ query }) => {

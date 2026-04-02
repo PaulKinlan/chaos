@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const tabList = tool({
   description:
     'List open browser tabs. Optionally filter by a query string that matches against tab titles and URLs.',
-  parameters: z.object({
+  inputSchema: z.object({
     query: z
       .string()
       .optional()

@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const downloadFile = tool({
   description: 'Download a file from a URL. Optionally specify a filename for the download.',
-  parameters: z.object({
+  inputSchema: z.object({
     url: z.string().describe('The URL of the file to download'),
     filename: z.string().optional().describe('Suggested filename for the download'),
   }),

@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const readingListAdd = tool({
   description: 'Add a URL to the browser reading list with a title.',
-  parameters: z.object({
+  inputSchema: z.object({
     url: z.string().describe('The URL to add to the reading list'),
     title: z.string().describe('Title for the reading list entry'),
   }),

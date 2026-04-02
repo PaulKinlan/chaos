@@ -12,7 +12,7 @@ export function createTaskCreateTool(_agentId: string) {
   return tool({
     description:
       'Create a new shared task on the task board. Tasks can have an owner and dependencies on other tasks.',
-    parameters: z.object({
+    inputSchema: z.object({
       subject: z.string().describe('Short title for the task'),
       description: z
         .string()

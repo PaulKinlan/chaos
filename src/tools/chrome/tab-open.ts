@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const tabOpen = tool({
   description:
     'Open a URL in a new browser tab. By default the tab opens in the background.',
-  parameters: z.object({
+  inputSchema: z.object({
     url: z.string().describe('The URL to open'),
     active: z
       .boolean()

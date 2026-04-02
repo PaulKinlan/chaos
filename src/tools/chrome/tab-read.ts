@@ -12,7 +12,7 @@ import { z } from 'zod';
 export const tabRead = tool({
   description:
     'Read the content of a browser tab by extracting its page content as markdown. Defaults to the active tab if no tabId is provided.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabId: z
       .number()
       .optional()

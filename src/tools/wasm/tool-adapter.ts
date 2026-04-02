@@ -18,7 +18,7 @@ import { getTool } from './store.js';
 export function wasmToolToAITool(manifest: WasmToolManifest) {
   return tool({
     description: manifest.description,
-    parameters: z.object({
+    inputSchema: z.object({
       input: z.string().describe('Input text for the tool'),
     }),
     execute: async ({ input }) => {

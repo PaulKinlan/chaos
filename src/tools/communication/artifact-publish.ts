@@ -17,7 +17,7 @@ export function createArtifactPublishTool(agentId: string) {
   return tool({
     description:
       "Publish a file from your private storage as a shared artifact that other agents can discover and read. The file's content is copied to the shared artifacts space.",
-    parameters: z.object({
+    inputSchema: z.object({
       path: z
         .string()
         .describe("File path relative to your agent root directory (e.g. 'research/report.md')"),

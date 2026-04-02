@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const windowList = tool({
   description: 'List all open browser windows with their IDs, types, and bounds.',
-  parameters: z.object({}),
+  inputSchema: z.object({}),
   execute: async () => {
     try {
       const windows = await chrome.windows.getAll({ populate: false });

@@ -32,7 +32,7 @@ export function createBookmarkAdd(agentId: string) {
   return tool({
     description:
       "Add a bookmark to this agent's dedicated bookmark folder. Creates the folder if it doesn't exist.",
-    parameters: z.object({
+    inputSchema: z.object({
       url: z.string().describe('URL to bookmark'),
       title: z.string().describe('Title for the bookmark'),
     }),

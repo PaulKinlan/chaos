@@ -187,7 +187,7 @@ describe('wasmToolToAITool', () => {
     const aiTool = wasmToolToAITool(manifest);
     expect(aiTool).toBeDefined();
     expect(aiTool.description).toBe('Count lines, words, and characters.');
-    expect(aiTool.parameters).toBeDefined();
+    expect(aiTool.inputSchema).toBeDefined();
     expect(aiTool.execute).toBeDefined();
   });
 

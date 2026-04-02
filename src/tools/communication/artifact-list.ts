@@ -12,7 +12,7 @@ export function createArtifactListTool(_agentId: string) {
   return tool({
     description:
       'List shared artifacts published by agents. Optionally filter by producing agent ID.',
-    parameters: z.object({
+    inputSchema: z.object({
       agentId: z
         .string()
         .optional()

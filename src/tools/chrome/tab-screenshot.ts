@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const tabScreenshot = tool({
   description:
     'Capture a screenshot of the currently active tab. Returns a base64-encoded PNG data URL.',
-  parameters: z.object({}),
+  inputSchema: z.object({}),
   execute: async () => {
     try {
       const dataUrl = await chrome.tabs.captureVisibleTab(undefined as unknown as number, {

@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const windowCreate = tool({
   description:
     'Create a new browser window. Optionally open a URL, set size, or create an incognito/popup window.',
-  parameters: z.object({
+  inputSchema: z.object({
     url: z.string().optional().describe('URL to open in the new window'),
     type: z
       .enum(['normal', 'popup', 'panel'])

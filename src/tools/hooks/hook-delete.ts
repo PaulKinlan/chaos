@@ -11,7 +11,7 @@ import { getHooks, removeHook } from '../../storage/chrome-storage.js';
 export function createHookDelete(agentId: string) {
   return tool({
     description: 'Delete a hook by its ID. Only hooks belonging to this agent can be deleted.',
-    parameters: z.object({
+    inputSchema: z.object({
       hookId: z.string().describe('The ID of the hook to delete'),
     }),
     execute: async ({ hookId }) => {

@@ -13,7 +13,7 @@ export function createMessageReadTool(agentId: string) {
   return tool({
     description:
       'Read messages sent to you (including broadcasts). Optionally filter by time and limit the number of results.',
-    parameters: z.object({
+    inputSchema: z.object({
       since: z
         .string()
         .optional()

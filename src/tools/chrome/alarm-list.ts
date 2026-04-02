@@ -12,7 +12,7 @@ import { getScheduledTasks } from '../../storage/chrome-storage.js';
 export function createAlarmList(agentId: string) {
   return tool({
     description: "List all Chrome alarms set by this agent, including stored prompts and last run info.",
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       try {
         const allAlarms = await chrome.alarms.getAll();

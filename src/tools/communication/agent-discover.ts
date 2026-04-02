@@ -13,7 +13,7 @@ export function createAgentDiscoverTool(agentId: string) {
   return tool({
     description:
       'Discover other agents that are visible or open. Returns their ID, name, role, and visibility. Private agents are excluded.',
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       const agents = await getAgentList();
 

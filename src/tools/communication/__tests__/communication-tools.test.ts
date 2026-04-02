@@ -83,7 +83,7 @@ describe('Message send/read round-trip', () => {
     const read = createMessageReadTool('agent-b');
 
     // Agent A sends to Agent B
-    const sendResult = await send.execute!(
+    const sendResult = await (send.execute! as any)(
       { to: 'agent-b', body: 'Hello Bob!' },
       { toolCallId: 'tc1', messages: [] },
     );
@@ -93,7 +93,7 @@ describe('Message send/read round-trip', () => {
     expect(sendResult.to).toBe('agent-b');
 
     // Agent B reads messages
-    const messages = await read.execute!(
+    const messages = await (read.execute! as any)(
       { since: undefined, limit: 20 },
       { toolCallId: 'tc2', messages: [] },
     );
@@ -108,12 +108,12 @@ describe('Message send/read round-trip', () => {
     const send = createMessageSendTool('agent-a');
     const read = createMessageReadTool('agent-b');
 
-    await send.execute!(
+    await (send.execute! as any)(
       { to: 'broadcast', body: 'Hello everyone!' },
       { toolCallId: 'tc1', messages: [] },
     );
 
-    const messages = await read.execute!(
+    const messages = await (read.execute! as any)(
       { since: undefined, limit: 20 },
       { toolCallId: 'tc2', messages: [] },
     );
@@ -127,12 +127,12 @@ describe('Message send/read round-trip', () => {
     const send = createMessageSendTool('agent-a');
     const readC = createMessageReadTool('agent-c');
 
-    await send.execute!(
+    await (send.execute! as any)(
       { to: 'agent-b', body: 'Private to B' },
       { toolCallId: 'tc1', messages: [] },
     );
 
-    const messages = await readC.execute!(
+    const messages = await (readC.execute! as any)(
       { since: undefined, limit: 20 },
       { toolCallId: 'tc2', messages: [] },
     );
@@ -151,12 +151,12 @@ describe('Message send/read round-trip', () => {
     }) + '\n';
     store.set('shared/messages.jsonl', oldMsg);
 
-    await send.execute!(
+    await (send.execute! as any)(
       { to: 'agent-b', body: 'New message' },
       { toolCallId: 'tc1', messages: [] },
     );
 
-    const messages = await read.execute!(
+    const messages = await (read.execute! as any)(
       { since: '2026-03-01T00:00:00Z', limit: 20 },
       { toolCallId: 'tc2', messages: [] },
     );
@@ -170,13 +170,13 @@ describe('Message send/read round-trip', () => {
     const read = createMessageReadTool('agent-b');
 
     for (let i = 0; i < 5; i++) {
-      await send.execute!(
+      await (send.execute! as any)(
         { to: 'agent-b', body: `Message ${i}` },
         { toolCallId: `tc${i}`, messages: [] },
       );
     }
 
-    const messages = await read.execute!(
+    const messages = await (read.execute! as any)(
       { since: undefined, limit: 2 },
       { toolCallId: 'tc-read', messages: [] },
     );
@@ -194,7 +194,7 @@ describe('Task create/update/list lifecycle', () => {
     const create = createTaskCreateTool('agent-a');
     const list = createTaskListTool('agent-a');
 
-    const result = await create.execute!(
+    const result = await (create.execute! as any)(
       { subject: 'Research AI safety', description: 'Gather papers', owner: 'agent-a', blockedBy: undefined },
       { toolCallId: 'tc1', messages: [] },
     );
@@ -203,7 +203,7 @@ describe('Task create/update/list lifecycle', () => {
     expect(result.taskId).toBeDefined();
     expect(result.subject).toBe('Research AI safety');
 
-    const tasks = await list.execute!(
+    const tasks = await (list.execute! as any)(
       { agentId: undefined, status: undefined, unblockedOnly: false },
       { toolCallId: 'tc2', messages: [] },
     );
@@ -219,28 +219,28 @@ describe('Task create/update/list lifecycle', () => {
     const update = createTaskUpdateTool('agent-a');
     const list = createTaskListTool('agent-a');
 
-    const createResult = await create.execute!(
+    const createResult = await (create.execute! as any)(
       { subject: 'Write draft', owner: 'agent-b', description: undefined, blockedBy: undefined },
       { toolCallId: 'tc1', messages: [] },
     );
 
-    await update.execute!(
+    await (update.execute! as any)(
       { taskId: createResult.taskId, status: 'in_progress', result: undefined },
       { toolCallId: 'tc2', messages: [] },
     );
 
-    let tasks = await list.execute!(
+    let tasks = await (list.execute! as any)(
       { agentId: undefined, status: undefined, unblockedOnly: false },
       { toolCallId: 'tc3', messages: [] },
     );
     expect(tasks[0].status).toBe('in_progress');
 
-    await update.execute!(
+    await (update.execute! as any)(
       { taskId: createResult.taskId, status: 'completed', result: 'Draft is done' },
       { toolCallId: 'tc4', messages: [] },
     );
 
-    tasks = await list.execute!(
+    tasks = await (list.execute! as any)(
       { agentId: undefined, status: undefined, unblockedOnly: false },
       { toolCallId: 'tc5', messages: [] },
     );
@@ -252,16 +252,16 @@ describe('Task create/update/list lifecycle', () => {
     const create = createTaskCreateTool('agent-a');
     const list = createTaskListTool('agent-a');
 
-    await create.execute!(
+    await (create.execute! as any)(
       { subject: 'Task for A', owner: 'agent-a', description: undefined, blockedBy: undefined },
       { toolCallId: 'tc1', messages: [] },
     );
-    await create.execute!(
+    await (create.execute! as any)(
       { subject: 'Task for B', owner: 'agent-b', description: undefined, blockedBy: undefined },
       { toolCallId: 'tc2', messages: [] },
     );
 
-    const tasks = await list.execute!(
+    const tasks = await (list.execute! as any)(
       { agentId: 'agent-a', status: undefined, unblockedOnly: false },
       { toolCallId: 'tc3', messages: [] },
     );
@@ -275,21 +275,21 @@ describe('Task create/update/list lifecycle', () => {
     const update = createTaskUpdateTool('agent-a');
     const list = createTaskListTool('agent-a');
 
-    const r1 = await create.execute!(
+    const r1 = await (create.execute! as any)(
       { subject: 'Pending task', description: undefined, owner: undefined, blockedBy: undefined },
       { toolCallId: 'tc1', messages: [] },
     );
-    await create.execute!(
+    await (create.execute! as any)(
       { subject: 'Another task', description: undefined, owner: undefined, blockedBy: undefined },
       { toolCallId: 'tc2', messages: [] },
     );
 
-    await update.execute!(
+    await (update.execute! as any)(
       { taskId: r1.taskId, status: 'completed', result: undefined },
       { toolCallId: 'tc3', messages: [] },
     );
 
-    const tasks = await list.execute!(
+    const tasks = await (list.execute! as any)(
       { agentId: undefined, status: 'pending', unblockedOnly: false },
       { toolCallId: 'tc4', messages: [] },
     );
@@ -302,16 +302,16 @@ describe('Task create/update/list lifecycle', () => {
     const create = createTaskCreateTool('agent-a');
     const list = createTaskListTool('agent-a');
 
-    const r1 = await create.execute!(
+    const r1 = await (create.execute! as any)(
       { subject: 'First', description: undefined, owner: undefined, blockedBy: undefined },
       { toolCallId: 'tc1', messages: [] },
     );
-    await create.execute!(
+    await (create.execute! as any)(
       { subject: 'Second', description: undefined, owner: undefined, blockedBy: [r1.taskId] },
       { toolCallId: 'tc2', messages: [] },
     );
 
-    const tasks = await list.execute!(
+    const tasks = await (list.execute! as any)(
       { agentId: undefined, status: undefined, unblockedOnly: true },
       { toolCallId: 'tc3', messages: [] },
     );
@@ -332,7 +332,7 @@ describe('Artifact publish/list/read round-trip', () => {
     // Write a file to the agent's private storage first
     store.set('agents/agent-a/research/report.md', '# Report\n\nFindings here.');
 
-    const pubResult = await publish.execute!(
+    const pubResult = await (publish.execute! as any)(
       { path: 'research/report.md', description: 'Research report' },
       { toolCallId: 'tc1', messages: [] },
     );
@@ -341,7 +341,7 @@ describe('Artifact publish/list/read round-trip', () => {
     expect(pubResult.artifactPath).toBe('shared/artifacts/agent-a/research/report.md');
 
     // List artifacts
-    const artifacts = await list.execute!(
+    const artifacts = await (list.execute! as any)(
       { agentId: undefined },
       { toolCallId: 'tc2', messages: [] },
     );
@@ -351,7 +351,7 @@ describe('Artifact publish/list/read round-trip', () => {
     expect(artifacts[0].description).toBe('Research report');
 
     // Read the artifact
-    const readResult = await read.execute!(
+    const readResult = await (read.execute! as any)(
       { path: pubResult.artifactPath as string },
       { toolCallId: 'tc3', messages: [] },
     );
@@ -363,7 +363,7 @@ describe('Artifact publish/list/read round-trip', () => {
   it('returns error when publishing a non-existent file', async () => {
     const publish = createArtifactPublishTool('agent-a');
 
-    const result = await publish.execute!(
+    const result = await (publish.execute! as any)(
       { path: 'nonexistent.md', description: 'Missing file' },
       { toolCallId: 'tc1', messages: [] },
     );
@@ -375,7 +375,7 @@ describe('Artifact publish/list/read round-trip', () => {
   it('returns error when reading a non-existent artifact', async () => {
     const read = createArtifactReadTool('agent-a');
 
-    const result = await read.execute!(
+    const result = await (read.execute! as any)(
       { path: 'shared/artifacts/nonexistent.md' },
       { toolCallId: 'tc1', messages: [] },
     );
@@ -392,16 +392,16 @@ describe('Artifact publish/list/read round-trip', () => {
     store.set('agents/agent-a/file-a.md', 'Content A');
     store.set('agents/agent-b/file-b.md', 'Content B');
 
-    await publishA.execute!(
+    await (publishA.execute! as any)(
       { path: 'file-a.md', description: 'File from A' },
       { toolCallId: 'tc1', messages: [] },
     );
-    await publishB.execute!(
+    await (publishB.execute! as any)(
       { path: 'file-b.md', description: 'File from B' },
       { toolCallId: 'tc2', messages: [] },
     );
 
-    const artifacts = await list.execute!(
+    const artifacts = await (list.execute! as any)(
       { agentId: 'agent-a' },
       { toolCallId: 'tc3', messages: [] },
     );
@@ -417,7 +417,7 @@ describe('Agent discovery', () => {
   it('returns visible and open agents, excluding self and private agents', async () => {
     const discover = createAgentDiscoverTool('agent-a');
 
-    const agents = await discover.execute!(
+    const agents = await (discover.execute! as any)(
       {},
       { toolCallId: 'tc1', messages: [] },
     );
@@ -435,7 +435,7 @@ describe('Agent discovery', () => {
   it('excludes only self when called by a different agent', async () => {
     const discover = createAgentDiscoverTool('agent-b');
 
-    const agents = await discover.execute!(
+    const agents = await (discover.execute! as any)(
       {},
       { toolCallId: 'tc1', messages: [] },
     );
@@ -448,7 +448,7 @@ describe('Agent discovery', () => {
   it('filters out all private agents', async () => {
     const discover = createAgentDiscoverTool('agent-c');
 
-    const agents = await discover.execute!(
+    const agents = await (discover.execute! as any)(
       {},
       { toolCallId: 'tc1', messages: [] },
     );

@@ -70,8 +70,8 @@ let capturedStreamTextArgs: any = null;
 
 // Create an async generator that yields text deltas
 async function* mockFullStream() {
-  yield { type: 'text-delta' as const, textDelta: 'Hello, ' };
-  yield { type: 'text-delta' as const, textDelta: 'I am TestBot!' };
+  yield { type: 'text-delta' as const, text: 'Hello, ' };
+  yield { type: 'text-delta' as const, text: 'I am TestBot!' };
 }
 
 vi.mock('ai', () => ({
@@ -82,6 +82,7 @@ vi.mock('ai', () => ({
     };
   }),
   tool: vi.fn((config: any) => config),
+  stepCountIs: vi.fn((count: number) => ({ type: 'stepCount', count })),
 }));
 
 // ── Provider registry mock ──
@@ -212,13 +213,13 @@ describe('Agent Loop', () => {
       expect(toolNames).toContain('append_file');
     });
 
-    it('sets maxSteps for multi-step tool use', async () => {
+    it('sets stopWhen for multi-step tool use', async () => {
       await runAgentLoop({
         agentId: 'test-agent-1',
         userMessage: 'Hello!',
       });
 
-      expect(capturedStreamTextArgs.maxSteps).toBe(10);
+      expect(capturedStreamTextArgs.stopWhen).toEqual({ type: 'stepCount', count: 10 });
     });
 
     it('appends to activity log after interaction', async () => {
@@ -269,7 +270,7 @@ describe('Agent Loop', () => {
       vi.mocked(streamText).mockReturnValueOnce({
         fullStream: (async function* () {
           yield { type: 'tool-call' as const, toolName: 'read_file', toolCallId: '1', args: { path: 'CLAUDE.md' } };
-          yield { type: 'text-delta' as const, textDelta: 'I read the file.' };
+          yield { type: 'text-delta' as const, text: 'I read the file.' };
         })(),
       } as any);
 

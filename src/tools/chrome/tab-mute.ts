@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const tabMute = tool({
   description: 'Mute or unmute a browser tab by its ID.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabId: z.number().describe('The ID of the tab to mute/unmute'),
     muted: z.boolean().describe('Whether to mute (true) or unmute (false) the tab'),
   }),

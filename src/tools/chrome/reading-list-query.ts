@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const readingListQuery = tool({
   description:
     'Query the browser reading list. Optionally filter by URL or read/unread status.',
-  parameters: z.object({
+  inputSchema: z.object({
     url: z.string().optional().describe('Filter by URL'),
     hasBeenRead: z.boolean().optional().describe('Filter by read status (true = read, false = unread)'),
   }),

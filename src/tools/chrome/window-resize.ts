@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const windowResize = tool({
   description:
     'Resize, move, or change the state of a browser window (minimize, maximize, fullscreen).',
-  parameters: z.object({
+  inputSchema: z.object({
     windowId: z.number().describe('The ID of the window to resize/move'),
     width: z.number().optional().describe('New width in pixels'),
     height: z.number().optional().describe('New height in pixels'),

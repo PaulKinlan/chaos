@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const downloadList = tool({
   description: 'Search recent downloads. Optionally filter by query string and limit results.',
-  parameters: z.object({
+  inputSchema: z.object({
     query: z.string().optional().describe('Search query to filter downloads by filename or URL'),
     limit: z
       .number()

@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const tabFocus = tool({
   description:
     'Focus an existing browser tab by its ID, making it the active tab and bringing its window to the front.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabId: z.number().describe('The ID of the tab to focus'),
   }),
   execute: async ({ tabId }) => {

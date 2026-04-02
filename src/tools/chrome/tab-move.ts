@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const tabMove = tool({
   description:
     'Move a tab to a different position or window. Specify a target window and/or index.',
-  parameters: z.object({
+  inputSchema: z.object({
     tabId: z.number().describe('The ID of the tab to move'),
     windowId: z.number().optional().describe('The ID of the target window'),
     index: z

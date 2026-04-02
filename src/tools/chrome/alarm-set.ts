@@ -18,7 +18,7 @@ export function createAlarmSet(agentId: string) {
       'Set a Chrome alarm for scheduling future work. The alarm name is automatically namespaced to this agent. ' +
       'Always include a `prompt` describing what you should do when the alarm fires — this prompt will be executed ' +
       'as a full agent task with access to all your tools.',
-    parameters: z.object({
+    inputSchema: z.object({
       name: z.string().describe('Name for the alarm (will be prefixed with agentId)'),
       delayInMinutes: z
         .number()

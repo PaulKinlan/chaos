@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const notificationShow = tool({
   description:
     'Show a desktop notification with a title and message.',
-  parameters: z.object({
+  inputSchema: z.object({
     title: z.string().describe('The notification title'),
     message: z.string().describe('The notification body text'),
   }),
