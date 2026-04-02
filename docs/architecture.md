@@ -104,9 +104,9 @@ Each agent is a directory in OPFS:
    - Read CLAUDE.md (may have been self-edited last time)
    - Read last 30 activity journal entries
    - Read current context (active tab, recent bookmarks, etc.)
-   - Run agent loop with available tools
+   - Run agent loop with available tools (single-turn chat via `loop.ts`, or multi-step autonomous via `agentic-loop.ts`)
    - Write response, update journal, optionally update CLAUDE.md
-5. On scheduled alarm: agent wakes up, reads context, does work, goes back to sleep
+5. On scheduled alarm: agent wakes up, runs agentic loop (multi-step autonomous), does work, goes back to sleep
 
 ### Agent roles
 
@@ -315,6 +315,20 @@ Typing `@` opens a category picker. Typing a category name and then a space filt
 **Mention resolution in the agent loop** (`src/agents/loop.ts`): Before the AI call, mentions are parsed from the user message. For `@tab` mentions, the tab's page content is extracted via `chrome.scripting`. For `@bookmark` and `@history`, the URL is included (with content extraction if the page is open in a tab). For `@agent`, the agent's name, role, and visibility are included. Resolved context is appended to the user message.
 
 **Mention rendering**: In chat messages, `@type[title](id)` patterns are rendered as styled inline badges with category-colored backgrounds and SVG icons.
+
+### Agentic Loop
+
+The **agentic loop** (`src/agents/agentic-loop.ts`) is a multi-step autonomous execution loop for complex tasks. Unlike the single-turn chat loop (`loop.ts` which uses `streamText`), it uses `generateText` per step and keeps iterating until the agent decides it is done (responds with text and no tool calls), or hits a configurable max iteration limit (default 20).
+
+**Used by:** scheduled tasks (alarms), hooks, context menu actions, and explicit agentic chat requests from the UI.
+
+Each outer iteration:
+1. Calls `generateText` with the full conversation history and tools (inner `maxSteps: 5` for multi-tool-call chains within a step)
+2. Checks if any tool calls were made
+3. If tools were called: appends response messages to history, adds a continuation prompt, and loops
+4. If no tools were called: the agent is done, returns the final text
+
+Progress updates are streamed to the UI via an `onProgress` callback and port messages (`agenticProgress`, `agenticDone`). The UI shows step indicators ("Step 2 of 20: Thinking...") and tool call cards during execution, with a stop button to abort via `AbortSignal`.
 
 ### Browser Permissions
 

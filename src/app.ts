@@ -587,6 +587,64 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       addChatErrorMessage(msg.error as string);
       break;
 
+    case 'agenticStart':
+      isChatStreaming = true;
+      currentStreamContent = '';
+      currentStreamEl = addChatAssistantMessage('');
+      chatTyping.classList.add('visible');
+      chatBtnSend.disabled = true;
+      break;
+
+    case 'agenticProgress': {
+      const progressType = msg.progressType as string;
+      const iteration = msg.iteration as number;
+      const totalIterations = msg.totalIterations as number;
+      const progressContent = msg.content as string;
+
+      if (progressType === 'thinking') {
+        // Show step indicator
+        if (currentStreamEl) {
+          const stepLabel = `**Step ${iteration} of ${totalIterations}:** Thinking...\n\n`;
+          currentStreamContent += stepLabel;
+          renderChatMarkdown(currentStreamEl, currentStreamContent);
+          chatScrollToBottom();
+        }
+      } else if (progressType === 'tool-call') {
+        const toolName = msg.toolName as string;
+        addToolCallCard(toolName, msg.toolArgs, msg.toolResult);
+      } else if (progressType === 'text' && progressContent) {
+        if (currentStreamEl) {
+          currentStreamContent += progressContent + '\n\n';
+          renderChatMarkdown(currentStreamEl, currentStreamContent);
+          chatScrollToBottom();
+        }
+      } else if (progressType === 'error') {
+        addChatErrorMessage(progressContent);
+      }
+      break;
+    }
+
+    case 'agenticDone':
+      isChatStreaming = false;
+      chatTyping.classList.remove('visible');
+      chatBtnSend.disabled = false;
+      if (currentStreamEl && msg.result) {
+        // Replace accumulated content with the final result
+        renderChatMarkdown(currentStreamEl, msg.result as string);
+      }
+      if (msg.result) {
+        conversationHistory.push({
+          role: 'assistant',
+          content: msg.result as string,
+          timestamp: new Date().toISOString(),
+        });
+        saveChatConversation();
+      }
+      currentStreamEl = null;
+      currentStreamContent = '';
+      chatScrollToBottom();
+      break;
+
     case 'extractedContent':
       if (msg.content) {
         const content = msg.content as { title: string; url: string; content: string };

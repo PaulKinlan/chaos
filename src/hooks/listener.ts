@@ -8,7 +8,7 @@
  */
 
 import { getHooks, updateHook } from '../storage/chrome-storage.js';
-import { runAgentLoop } from '../agents/loop.js';
+import { runAgenticLoop } from '../agents/agentic-loop.js';
 import type { Hook, HookTrigger } from '../storage/types.js';
 
 // ── Glob pattern matching ──
@@ -32,9 +32,9 @@ async function executeHook(hook: Hook, contextMessage: string): Promise<void> {
   try {
     const fullPrompt = `[Hook triggered: ${hook.description}]\n\nEvent context: ${contextMessage}\n\nInstructions: ${hook.prompt}`;
 
-    await runAgentLoop({
+    await runAgenticLoop({
       agentId: hook.agentId,
-      userMessage: fullPrompt,
+      task: fullPrompt,
     });
 
     // Update trigger stats

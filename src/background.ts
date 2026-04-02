@@ -17,6 +17,8 @@ import {
   updateAgentMeta,
 } from './agents/manager.js';
 import { runAgentLoop } from './agents/loop.js';
+import { runAgenticLoop } from './agents/agentic-loop.js';
+import type { ProgressUpdate } from './agents/agentic-loop.js';
 import {
   getApiKeys,
   setApiKeys,
@@ -195,12 +197,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   const userMsg = `The user sent you this content via context menu:\n\n${content}`;
 
-  // Run agent loop with the content
+  // Run agentic loop with the content (multi-step autonomous)
   try {
     startKeepalive();
-    const result = await runAgentLoop({
+    const result = await runAgenticLoop({
       agentId,
-      userMessage: userMsg,
+      task: userMsg,
     });
 
     // Save to conversation history so it appears in chat
@@ -273,6 +275,18 @@ chrome.runtime.onConnect.addListener((port) => {
         case 'chat':
           await handleChat(port, msg);
           break;
+
+        case 'agenticChat':
+          await handleAgenticChat(port, msg);
+          break;
+
+        case 'stopAgenticLoop': {
+          const controller = activeAbortControllers.get(port);
+          if (controller) {
+            controller.abort();
+          }
+          break;
+        }
 
         case 'extractContent':
           await handleExtractContent(port);
@@ -451,6 +465,71 @@ async function handleChat(
 
     if (!abortController.signal.aborted) {
       port.postMessage({ type: 'chatEnd', fullResponse });
+    }
+  } catch (err) {
+    if (!abortController.signal.aborted) {
+      const parsed = parseApiError(err);
+      port.postMessage({
+        type: 'chatError',
+        error: parsed.message,
+        provider: parsed.provider,
+        lastMessage: {
+          agentId: msg.agentId,
+          message: msg.message,
+          pageContext: msg.pageContext,
+        },
+      });
+    }
+  } finally {
+    activeAbortControllers.delete(port);
+    stopKeepalive();
+  }
+}
+
+async function handleAgenticChat(
+  port: chrome.runtime.Port,
+  msg: {
+    agentId: string;
+    message: string;
+    pageContext?: { title: string; url: string; content: string };
+    maxIterations?: number;
+  },
+): Promise<void> {
+  port.postMessage({ type: 'agenticStart' });
+
+  const abortController = new AbortController();
+  activeAbortControllers.set(port, abortController);
+  startKeepalive();
+
+  try {
+    const result = await runAgenticLoop({
+      agentId: msg.agentId,
+      task: msg.message,
+      pageContext: msg.pageContext,
+      maxIterations: msg.maxIterations,
+      signal: abortController.signal,
+      onProgress: (update: ProgressUpdate) => {
+        if (abortController.signal.aborted) return;
+        try {
+          port.postMessage({
+            type: 'agenticProgress',
+            progressType: update.type,
+            content: update.content,
+            toolName: update.toolName,
+            toolArgs: update.toolArgs,
+            toolResult: update.toolResult,
+            iteration: update.iteration,
+            totalIterations: update.totalIterations,
+          });
+        } catch {
+          // Port disconnected
+          abortController.abort();
+        }
+      },
+    });
+
+    if (!abortController.signal.aborted) {
+      port.postMessage({ type: 'agenticDone', result });
     }
   } catch (err) {
     if (!abortController.signal.aborted) {
@@ -907,9 +986,9 @@ async function handleOneShotMessage(
       const allTasks = await getScheduledTasks();
       const task = allTasks.find((t) => t.alarmId === alarmId);
       if (!task) return { error: 'Task not found' };
-      const result = await runAgentLoop({
+      const result = await runAgenticLoop({
         agentId: task.agentId,
-        userMessage: task.prompt,
+        task: task.prompt,
       });
       await updateScheduledTaskRun(task.alarmId, result || '(no output)');
       return { ran: true, result: (result || '').slice(0, 200) };
@@ -962,10 +1041,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const task = tasks.find((t) => t.alarmId === alarm.name);
 
     if (task) {
-      // Run a full agent loop with the stored prompt
-      const result = await runAgentLoop({
+      // Run a full agentic loop with the stored prompt (multi-step autonomous)
+      const result = await runAgenticLoop({
         agentId: task.agentId,
-        userMessage: task.prompt,
+        task: task.prompt,
       });
 
       // Update the task with run info
@@ -983,10 +1062,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       const colonIdx = alarm.name.indexOf(':');
       if (colonIdx > 0) {
         const agentId = alarm.name.slice(0, colonIdx);
-        await runAgentLoop({
+        await runAgenticLoop({
           agentId,
-          userMessage:
-            'You were woken up by a scheduled alarm. Check your TODO list and pending messages, then do any work that needs doing.',
+          task: 'You were woken up by a scheduled alarm. Check your TODO list and pending messages, then do any work that needs doing.',
         });
       } else {
         console.warn(`Unknown alarm with no scheduled task: ${alarm.name}`);
