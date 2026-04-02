@@ -603,36 +603,33 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       const progressContent = msg.content as string;
 
       if (progressType === 'thinking') {
-        // Add a visible step header as its own element
+        // Step header - full width, left aligned
         const stepEl = document.createElement('div');
-        stepEl.className = 'chat-message system';
-        stepEl.style.cssText = 'font-size:var(--text-xs);color:var(--accent-text);padding:var(--sp-2) var(--sp-4);background:var(--accent-subtle);border-radius:6px;margin:var(--sp-1) 0;';
+        stepEl.style.cssText = 'font-size:13px;color:var(--accent-text);padding:8px 16px;background:var(--accent-subtle);border-radius:8px;margin:8px 0 4px 0;font-weight:600;max-width:none;width:fit-content;';
         stepEl.textContent = `Step ${iteration} of ${totalIterations}`;
         chatMessagesDiv.appendChild(stepEl);
         chatScrollToBottom();
       } else if (progressType === 'tool-call') {
         const toolName = msg.toolName as string;
         const toolArgs = msg.toolArgs as Record<string, unknown> | undefined;
-        // Show a concise tool usage line
+        // Tool call card - readable size, full width
         const toolEl = document.createElement('div');
-        toolEl.className = 'chat-message tool-call';
-        toolEl.style.cssText = 'font-size:var(--text-xs);padding:var(--sp-2) var(--sp-4);border-left:3px solid var(--accent);margin:var(--sp-1) 0;background:var(--bg-surface);border-radius:0 6px 6px 0;max-width:100%;';
-        const argsPreview = toolArgs ? Object.entries(toolArgs).map(([k, v]) => {
-          const val = typeof v === 'string' ? (v.length > 60 ? v.slice(0, 60) + '...' : v) : JSON.stringify(v);
-          return `${k}: ${val}`;
-        }).join(', ') : '';
-        toolEl.innerHTML = `<span style="color:var(--accent-text);font-weight:600;">${escapeHtml(toolName)}</span>${argsPreview ? `<span style="color:var(--text-secondary);margin-left:var(--sp-2);">${escapeHtml(argsPreview)}</span>` : ''}`;
+        toolEl.style.cssText = 'font-size:13px;padding:10px 16px;border-left:3px solid var(--accent);margin:2px 0;background:var(--bg-surface);border-radius:0 8px 8px 0;max-width:none;line-height:1.5;';
+        const argsLines = toolArgs ? Object.entries(toolArgs).map(([k, v]) => {
+          const val = typeof v === 'string' ? (v.length > 80 ? v.slice(0, 80) + '...' : v) : JSON.stringify(v);
+          return `<div style="color:var(--text-secondary);margin-top:2px;"><span style="color:var(--text-muted);">${escapeHtml(k)}:</span> ${escapeHtml(val)}</div>`;
+        }).join('') : '';
+        toolEl.innerHTML = `<div style="color:var(--accent-text);font-weight:600;margin-bottom:2px;">${escapeHtml(toolName)}</div>${argsLines}`;
         chatMessagesDiv.appendChild(toolEl);
         chatScrollToBottom();
       } else if (progressType === 'tool-result') {
-        // Show a brief result indicator
+        // Brief result indicator
         const resultContent = msg.toolResult as string | Record<string, unknown> | undefined;
         if (resultContent) {
           const resultEl = document.createElement('div');
-          resultEl.className = 'chat-message system';
-          resultEl.style.cssText = 'font-size:var(--text-xs);color:var(--text-muted);padding:var(--sp-1) var(--sp-4);margin:0 0 var(--sp-1) 0;';
-          const preview = typeof resultContent === 'string' ? resultContent.slice(0, 100) : JSON.stringify(resultContent).slice(0, 100);
-          resultEl.textContent = `→ ${preview}${(typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent)).length > 100 ? '...' : ''}`;
+          resultEl.style.cssText = 'font-size:12px;color:var(--text-muted);padding:4px 16px 4px 20px;margin:0 0 4px 0;max-width:none;line-height:1.4;';
+          const preview = typeof resultContent === 'string' ? resultContent.slice(0, 150) : JSON.stringify(resultContent).slice(0, 150);
+          resultEl.textContent = `→ ${preview}${(typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent)).length > 150 ? '...' : ''}`;
           chatMessagesDiv.appendChild(resultEl);
           chatScrollToBottom();
         }
