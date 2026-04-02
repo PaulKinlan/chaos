@@ -26,6 +26,7 @@ export interface AgentLoopOptions {
   userMessage: string;
   pageContext?: { title: string; url: string; content: string };
   onChunk?: (chunk: string) => void;
+  onToolCall?: (call: { name: string; args: unknown; result: unknown }) => void;
   /** Tool lookup strategy. 'static' includes all tools (default). */
   toolLookupStrategy?: LookupStrategy;
 }
@@ -67,6 +68,34 @@ function wrapToolsWithPermissions(tools: ToolSet): ToolSet {
           return `Error: Permission denied for tool "${name}". This tool is set to "never" in your permissions.`;
         }
         return exec(...args);
+      },
+    } as typeof t;
+  }
+  return wrapped;
+}
+
+/**
+ * Wrap each tool's execute function to report tool calls via a callback.
+ * The callback receives the tool name, input args, and the result.
+ */
+function wrapToolsWithReporting(
+  tools: ToolSet,
+  onToolCall: (call: { name: string; args: unknown; result: unknown }) => void,
+): ToolSet {
+  const wrapped: ToolSet = {};
+  for (const [name, t] of Object.entries(tools)) {
+    const originalExecute = t.execute;
+    if (!originalExecute) {
+      wrapped[name] = t;
+      continue;
+    }
+    const exec = originalExecute;
+    wrapped[name] = {
+      ...t,
+      execute: async (...args: Parameters<typeof exec>) => {
+        const result = await exec(...args);
+        onToolCall({ name, args: args[0], result });
+        return result;
       },
     } as typeof t;
   }
@@ -429,7 +458,7 @@ async function resolveMentions(mentions: ParsedMention[]): Promise<string> {
 export async function runAgentLoop(
   options: AgentLoopOptions,
 ): Promise<string> {
-  const { agentId, pageContext, onChunk, toolLookupStrategy = 'static' } = options;
+  const { agentId, pageContext, onChunk, onToolCall, toolLookupStrategy = 'static' } = options;
   let { userMessage } = options;
 
   // 0. Resolve any @mentions in the user message
@@ -520,6 +549,11 @@ export async function runAgentLoop(
 
   // 4b. Wrap tools with permission checks
   tools = wrapToolsWithPermissions(tools);
+
+  // 4c. Wrap tools with reporting if callback provided
+  if (onToolCall) {
+    tools = wrapToolsWithReporting(tools, onToolCall);
+  }
 
   // 5. Log user message
   await appendActivityLog(agentId, {

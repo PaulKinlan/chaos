@@ -5,7 +5,7 @@
  * Features request permissions on first use and gracefully degrade if denied.
  */
 
-export type OptionalPermission = 'tabs' | 'bookmarks' | 'history' | 'scripting';
+export type OptionalPermission = 'tabs' | 'bookmarks' | 'history' | 'scripting' | 'notifications';
 
 /**
  * Check if a permission is already granted.

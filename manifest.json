@@ -45,7 +45,9 @@
       "matches": ["<all_urls>"],
       "resources": [
         "src/voice/recognition-frame.html",
-        "src/voice/recognition-frame.js"
+        "src/voice/recognition-frame.js",
+        "src/voice/beep.wav",
+        "src/voice/boop.wav"
       ]
     }
   ],

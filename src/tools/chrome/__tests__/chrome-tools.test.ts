@@ -69,7 +69,7 @@ describe('getChromeTools', () => {
     expect(keys).toContain('alarm_set');
     expect(keys).toContain('alarm_clear');
     expect(keys).toContain('alarm_list');
-    expect(keys).toHaveLength(12);
+    expect(keys).toHaveLength(18);
   });
 });
 

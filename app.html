@@ -774,6 +774,88 @@
       gap: var(--sp-2);
     }
 
+    /* Tool call cards */
+    .chat-message.tool-call {
+      align-self: flex-start;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      padding: 0;
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      max-width: 90%;
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .tool-call-header {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .tool-call-header:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .tool-call-icon {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      opacity: 0.6;
+    }
+
+    .tool-call-label {
+      font-family: var(--font-mono, monospace);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .tool-call-toggle {
+      flex-shrink: 0;
+      font-size: 10px;
+      opacity: 0.5;
+    }
+
+    .tool-call-details {
+      display: none;
+      padding: var(--sp-2) var(--sp-3);
+      border-top: 1px solid var(--border);
+    }
+
+    .chat-message.tool-call.expanded .tool-call-details {
+      display: block;
+    }
+
+    .tool-call-section {
+      margin-bottom: var(--sp-2);
+    }
+
+    .tool-call-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .tool-call-section pre {
+      margin: var(--sp-1) 0 0 0;
+      padding: var(--sp-2);
+      background: var(--bg-primary);
+      border-radius: var(--radius-sm, 4px);
+      overflow-x: auto;
+      font-size: var(--text-xs);
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .tool-call-section strong {
+      color: var(--text-secondary);
+    }
+
     .chat-typing {
       display: none;
       align-self: flex-start;
@@ -2256,6 +2338,17 @@
               </div>
               <div class="settings-actions">
                 <button class="btn btn-primary" id="btn-save-prefs">Save Preferences</button>
+              </div>
+            </div>
+            <div class="settings-card" style="grid-column: 1 / -1;">
+              <h3>Voice Input</h3>
+              <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Test your microphone and voice recognition. Global hotkey: Ctrl+Shift+U (Cmd+Shift+U on Mac).</p>
+              <div style="display:flex;align-items:center;gap:var(--sp-3);">
+                <button class="btn btn-ghost" id="btn-test-mic">
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  Test Microphone
+                </button>
+                <span id="mic-test-result" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
               </div>
             </div>
             <div class="settings-card" style="grid-column: 1 / -1;">

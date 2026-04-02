@@ -9,6 +9,16 @@
   let micStream = null;
   let lastInterimTranscript = '';
 
+  // Audio feedback - resolve paths relative to this frame's location
+  var basePath = document.currentScript ? document.currentScript.src.replace(/[^/]*$/, '') : '';
+  var beepAudio = new Audio(basePath + 'beep.wav');
+  var boopAudio = new Audio(basePath + 'boop.wav');
+  beepAudio.volume = 0.3;
+  boopAudio.volume = 0.3;
+
+  function playBeep() { beepAudio.play().catch(function() {}); }
+  function playBoop() { boopAudio.play().catch(function() {}); }
+
   init();
 
   async function init() {
@@ -36,6 +46,7 @@
 
     recognition.onstart = function () {
       statusText.textContent = 'Listening...';
+      playBeep();
       sendToParent({ type: 'recognition-started' });
     };
 
@@ -99,6 +110,8 @@
   }
 
   function stopRecognition() {
+    playBoop();
+
     // Send any pending interim text as final
     if (lastInterimTranscript) {
       sendToParent({

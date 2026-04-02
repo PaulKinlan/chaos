@@ -540,6 +540,14 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       }
       break;
 
+    case 'toolCall':
+      addToolCallCard(
+        msg.name as string,
+        msg.args as unknown,
+        msg.result as unknown,
+      );
+      break;
+
     case 'chatEnd':
       isChatStreaming = false;
       chatTyping.classList.remove('visible');
@@ -689,6 +697,57 @@ function addChatErrorMessage(error: string): void {
   const el = document.createElement('div');
   el.className = 'chat-message error';
   el.textContent = `Error: ${error}`;
+  chatMessagesDiv.appendChild(el);
+  chatScrollToBottom();
+}
+
+function addToolCallCard(name: string, args: unknown, result: unknown): void {
+  const el = document.createElement('div');
+  el.className = 'chat-message tool-call';
+
+  const header = document.createElement('div');
+  header.className = 'tool-call-header';
+
+  const icon = document.createElement('span');
+  icon.className = 'tool-call-icon';
+  icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>';
+
+  const label = document.createElement('span');
+  label.className = 'tool-call-label';
+  const argsStr = args && typeof args === 'object' ? JSON.stringify(args) : '';
+  const shortArgs = argsStr.length > 60 ? argsStr.slice(0, 60) + '...' : argsStr;
+  label.textContent = `${name}(${shortArgs})`;
+
+  const toggle = document.createElement('span');
+  toggle.className = 'tool-call-toggle';
+  toggle.textContent = '\u25B6';
+
+  header.appendChild(icon);
+  header.appendChild(label);
+  header.appendChild(toggle);
+
+  const details = document.createElement('div');
+  details.className = 'tool-call-details';
+
+  const argsSection = document.createElement('div');
+  argsSection.className = 'tool-call-section';
+  argsSection.innerHTML = `<strong>Args:</strong> <pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre>`;
+
+  const resultSection = document.createElement('div');
+  resultSection.className = 'tool-call-section';
+  const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+  resultSection.innerHTML = `<strong>Result:</strong> <pre>${escapeHtml(resultStr)}</pre>`;
+
+  details.appendChild(argsSection);
+  details.appendChild(resultSection);
+
+  header.addEventListener('click', () => {
+    el.classList.toggle('expanded');
+    toggle.textContent = el.classList.contains('expanded') ? '\u25BC' : '\u25B6';
+  });
+
+  el.appendChild(header);
+  el.appendChild(details);
   chatMessagesDiv.appendChild(el);
   chatScrollToBottom();
 }
@@ -1972,6 +2031,73 @@ document.getElementById('btn-save-prefs')!.addEventListener('click', async () =>
   applyTheme(theme);
   alert('Preferences saved.');
 });
+
+// ── Mic Test ──
+
+const btnTestMic = document.getElementById('btn-test-mic');
+const micTestResult = document.getElementById('mic-test-result');
+
+if (btnTestMic && micTestResult) {
+  let testIframe: HTMLIFrameElement | null = null;
+
+  btnTestMic.addEventListener('click', () => {
+    if (testIframe) {
+      // Stop test
+      testIframe.contentWindow?.postMessage({ target: 'chaos-recognition', type: 'stop' }, '*');
+      testIframe.remove();
+      testIframe = null;
+      btnTestMic.textContent = 'Test Microphone';
+      return;
+    }
+
+    micTestResult.textContent = 'Starting...';
+    micTestResult.style.color = 'var(--text-secondary)';
+
+    testIframe = document.createElement('iframe');
+    testIframe.src = chrome.runtime.getURL('src/voice/recognition-frame.html');
+    testIframe.allow = 'microphone';
+    testIframe.style.cssText = 'position:fixed;bottom:0;right:0;width:1px;height:1px;border:none;opacity:0;';
+    document.body.appendChild(testIframe);
+
+    btnTestMic.textContent = 'Stop Test';
+
+    const handler = (event: MessageEvent) => {
+      if (event.data?.source !== 'chaos-recognition') return;
+      switch (event.data.type) {
+        case 'recognition-started':
+          micTestResult.textContent = 'Mic working. Speak now...';
+          micTestResult.style.color = 'var(--success-text)';
+          break;
+        case 'recognition-result':
+          if (event.data.finalTranscript || event.data.interimTranscript) {
+            micTestResult.textContent = 'Heard: "' + (event.data.finalTranscript || event.data.interimTranscript).trim().slice(0, 60) + '"';
+            micTestResult.style.color = 'var(--success-text)';
+          }
+          break;
+        case 'recognition-error':
+          micTestResult.textContent = 'Error: ' + event.data.error;
+          micTestResult.style.color = 'var(--danger)';
+          break;
+        case 'recognition-ended':
+          window.removeEventListener('message', handler);
+          if (testIframe) {
+            testIframe.remove();
+            testIframe = null;
+          }
+          btnTestMic.textContent = 'Test Microphone';
+          break;
+      }
+    };
+    window.addEventListener('message', handler);
+
+    // Auto-stop after 10 seconds
+    setTimeout(() => {
+      if (testIframe) {
+        testIframe.contentWindow?.postMessage({ target: 'chaos-recognition', type: 'stop' }, '*');
+      }
+    }, 10000);
+  });
+}
 
 // ── Browser Permissions ──
 

@@ -364,6 +364,15 @@ async function handleChat(
           abortController.abort();
         }
       },
+      onToolCall: (call: { name: string; args: unknown; result: unknown }) => {
+        if (abortController.signal.aborted) return;
+        try {
+          port.postMessage({ type: 'toolCall', name: call.name, args: call.args, result: call.result });
+        } catch {
+          // Port disconnected
+          abortController.abort();
+        }
+      },
     });
 
     if (!abortController.signal.aborted) {

@@ -87,6 +87,42 @@ const chromeTools: ToolMeta[] = [
     category: 'chrome',
   },
   {
+    name: 'tab_focus',
+    description: 'Focus an existing browser tab by its ID, making it the active tab.',
+    keywords: ['tab', 'focus', 'activate', 'switch', 'select', 'bring', 'front'],
+    category: 'chrome',
+  },
+  {
+    name: 'tab_navigate',
+    description: 'Navigate an existing tab to a new URL without opening a new tab.',
+    keywords: ['tab', 'navigate', 'url', 'go', 'redirect', 'load', 'browse'],
+    category: 'chrome',
+  },
+  {
+    name: 'tab_screenshot',
+    description: 'Capture a screenshot of the currently active tab.',
+    keywords: ['tab', 'screenshot', 'capture', 'image', 'photo', 'snap', 'visible'],
+    category: 'chrome',
+  },
+  {
+    name: 'bookmark_remove',
+    description: 'Remove a bookmark by its ID.',
+    keywords: ['bookmark', 'remove', 'delete', 'unbookmark', 'unsave'],
+    category: 'chrome',
+  },
+  {
+    name: 'notification_show',
+    description: 'Show a desktop notification with a title and message.',
+    keywords: ['notification', 'notify', 'alert', 'show', 'desktop', 'message', 'popup'],
+    category: 'chrome',
+  },
+  {
+    name: 'clipboard_write',
+    description: 'Write text to the system clipboard.',
+    keywords: ['clipboard', 'copy', 'write', 'text', 'paste', 'clip'],
+    category: 'chrome',
+  },
+  {
     name: 'history_search',
     description: 'Search the browsing history by query.',
     keywords: ['history', 'search', 'browse', 'visited', 'past', 'previous', 'find'],
