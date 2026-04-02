@@ -10,7 +10,7 @@ import { streamText, stepCountIs, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { opfs } from '../storage/opfs.js';
 import { getAgentList, getApiKeys, getSettings } from '../storage/chrome-storage.js';
-import { createLanguageModel } from './provider-registry.js';
+import { createLanguageModel, getProviderSearchTools } from './provider-registry.js';
 import { getCommunicationTools } from '../tools/communication/index.js';
 import { getChromeTools } from '../tools/chrome/index.js';
 import { getWasmTools } from '../tools/wasm/index.js';
@@ -741,6 +741,7 @@ export async function runAgentLoop(
 
   // Build the full tool set (always available for resolution)
   const wasmTools = await getWasmTools();
+  const providerSearchTools = getProviderSearchTools(settings.activeProvider, apiKey);
   const unfilteredTools: ToolSet = {
     ...createAgentTools(agentId),
     ...(await getChromeTools(agentId)),
@@ -748,6 +749,7 @@ export async function runAgentLoop(
     ...wasmTools,
     ...getWebTools({ braveApiKey: apiKeys.brave }),
     ...getHookTools(agentId),
+    ...providerSearchTools,
   };
 
   // Filter tools based on agent's enabledTools/disabledTools config

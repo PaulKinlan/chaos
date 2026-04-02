@@ -40,6 +40,9 @@ let artifacts: ArtifactMeta[] = [];
 let activeAgentId: string | null = null;
 let activeView: string = 'chat';
 
+// Tracks a "Run Now" scheduled task so agenticDone can update its record
+let pendingRunNowAlarmId: string | null = null;
+
 // Chat state
 let port: chrome.runtime.Port | null = null;
 let isChatStreaming = false;
@@ -643,6 +646,15 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       currentStreamEl = null;
       currentStreamContent = '';
       chatScrollToBottom();
+
+      // If this was a "Run Now" scheduled task, update its run record
+      if (pendingRunNowAlarmId) {
+        const alarmId = pendingRunNowAlarmId;
+        pendingRunNowAlarmId = null;
+        sendMsg({ type: 'updateScheduledTaskRun', alarmId, result: ((msg.result as string) || '(no output)').slice(0, 200) })
+          .then(() => { if (activeView === 'tasks') loadTasks(); })
+          .catch(() => {});
+      }
       break;
 
     case 'extractedContent':
@@ -1622,22 +1634,36 @@ function renderTasks(): void {
       item.classList.toggle('expanded');
     });
 
-    // Run Now button
+    // Run Now button — switch to chat view and stream via agenticChat
     const runBtn = item.querySelector<HTMLButtonElement>('[data-run-task]');
     if (runBtn) {
-      runBtn.addEventListener('click', async () => {
+      runBtn.addEventListener('click', () => {
         const alarmId = runBtn.dataset.runTask!;
-        runBtn.disabled = true;
-        runBtn.textContent = 'Running...';
-        try {
-          await sendMsg({ type: 'runScheduledTask', alarmId });
-          runBtn.textContent = 'Done';
-          setTimeout(() => { runBtn.textContent = 'Run Now'; runBtn.disabled = false; }, 2000);
-          loadTasks(); // Refresh to show updated lastRunAt
-        } catch (err) {
-          runBtn.textContent = 'Failed';
-          setTimeout(() => { runBtn.textContent = 'Run Now'; runBtn.disabled = false; }, 2000);
+        const task = scheduledTasks.find((t) => t.alarmId === alarmId);
+        if (!task) return;
+
+        // Switch to chat view for this agent so the user sees progress
+        if (activeAgentId !== task.agentId) {
+          switchToAgent(task.agentId);
         }
+        activeView = 'chat';
+        sidebarItems.forEach((b) => {
+          b.classList.toggle('active', b.dataset.view === 'chat');
+        });
+        updateViewVisibility();
+
+        // Add a system message indicating the scheduled task is running
+        addChatSystemMessage(`Running scheduled task: ${task.description}`);
+
+        // Track this so the agenticDone handler can update the task record
+        pendingRunNowAlarmId = alarmId;
+
+        // Send via port-based agenticChat so progress streams into the chat
+        sendPortMessage({
+          type: 'agenticChat',
+          agentId: task.agentId,
+          message: task.prompt,
+        });
       });
     }
   });

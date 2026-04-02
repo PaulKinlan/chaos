@@ -9,7 +9,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
-import type { LanguageModel } from 'ai';
+import type { LanguageModel, ToolSet } from 'ai';
 
 // ── Types ──
 
@@ -182,4 +182,47 @@ export function createLanguageModel(
 ): LanguageModel {
   const provider = getProvider(providerId);
   return provider.createModel(apiKey, modelId ?? provider.defaultModel);
+}
+
+/**
+ * Get provider-native search tools for the active provider.
+ * These are server-side search tools handled by the provider's API,
+ * not custom tools we implement. Returns an empty object if the
+ * provider doesn't support native search.
+ */
+export function getProviderSearchTools(
+  providerId: ProviderId,
+  apiKey: string,
+): ToolSet {
+  try {
+    switch (providerId) {
+      case 'google': {
+        const google = createGoogleGenerativeAI({ apiKey });
+        return {
+          google_search: google.tools.googleSearch({}),
+        } as ToolSet;
+      }
+      case 'openai': {
+        const openai = createOpenAI({ apiKey });
+        return {
+          web_search: openai.tools.webSearchPreview({}),
+        } as ToolSet;
+      }
+      case 'anthropic': {
+        const anthropic = createAnthropic({ apiKey });
+        return {
+          web_search: anthropic.tools.webSearch_20260209({}),
+        } as ToolSet;
+      }
+      case 'openrouter':
+        // OpenRouter uses an OpenAI-compatible API but provider-specific
+        // tools may not be supported through the proxy. Skip gracefully.
+        return {};
+      default:
+        return {};
+    }
+  } catch {
+    // If the provider doesn't support search tools, return empty
+    return {};
+  }
 }

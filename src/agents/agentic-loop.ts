@@ -15,7 +15,7 @@ import { generateText, stepCountIs, tool, type ToolSet, type ModelMessage } from
 import { z } from 'zod';
 import { opfs } from '../storage/opfs.js';
 import { getAgentList, getApiKeys, getSettings } from '../storage/chrome-storage.js';
-import { createLanguageModel } from './provider-registry.js';
+import { createLanguageModel, getProviderSearchTools } from './provider-registry.js';
 import { getCommunicationTools } from '../tools/communication/index.js';
 import { getChromeTools } from '../tools/chrome/index.js';
 import { getWasmTools } from '../tools/wasm/index.js';
@@ -527,6 +527,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
   const isVisible = selfMeta && selfMeta.visibility !== 'private';
 
   const wasmTools = await getWasmTools();
+  const providerSearchTools = getProviderSearchTools(settings.activeProvider, apiKey);
   const unfilteredTools: ToolSet = {
     ...createAgentTools(agentId),
     ...(await getChromeTools(agentId)),
@@ -534,6 +535,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
     ...wasmTools,
     ...getWebTools({ braveApiKey: apiKeys.brave }),
     ...getHookTools(agentId),
+    ...providerSearchTools,
   };
 
   let tools = filterToolsByConfig(unfilteredTools, selfMeta);

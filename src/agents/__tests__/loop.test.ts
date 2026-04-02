@@ -91,6 +91,7 @@ const mockModel = { modelId: 'claude-sonnet-4-6' };
 
 vi.mock('../provider-registry.js', () => ({
   createLanguageModel: vi.fn(() => mockModel),
+  getProviderSearchTools: vi.fn(() => ({})),
 }));
 
 // ── Import after mocks ──

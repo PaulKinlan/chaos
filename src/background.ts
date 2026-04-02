@@ -991,6 +991,13 @@ async function handleOneShotMessage(
       return { ran: true, result: (result || '').slice(0, 200) };
     }
 
+    case 'updateScheduledTaskRun': {
+      const runAlarmId = msg.alarmId as string;
+      const runResult = msg.result as string;
+      await updateScheduledTaskRun(runAlarmId, runResult || '(no output)');
+      return { updated: true };
+    }
+
     case 'openDashboard': {
       const url = chrome.runtime.getURL('app.html');
       // Check if a new tab page is already open and focus it
