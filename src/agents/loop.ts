@@ -102,6 +102,50 @@ function wrapToolsWithReporting(
   return wrapped;
 }
 
+// ── Tool filtering by agent config ──
+
+/** Minimum tools every agent must have, regardless of config. */
+const MINIMUM_TOOLS = ['read_file', 'list_directory'];
+
+/**
+ * Filter tools based on an agent's enabledTools/disabledTools configuration.
+ * - If enabledTools is set, only those tools (plus minimum required) are included.
+ * - If disabledTools is set, those tools are excluded (except minimum required).
+ * - If neither is set, all tools are included.
+ */
+function filterToolsByConfig(tools: ToolSet, agentMeta?: AgentMeta): ToolSet {
+  if (!agentMeta) return tools;
+
+  const { enabledTools, disabledTools } = agentMeta;
+
+  // No filtering configured
+  if (!enabledTools && !disabledTools) return tools;
+
+  const filtered: ToolSet = {};
+
+  for (const [name, t] of Object.entries(tools)) {
+    // Always include minimum required tools
+    if (MINIMUM_TOOLS.includes(name)) {
+      filtered[name] = t;
+      continue;
+    }
+
+    // If enabledTools is set, only include tools in that list
+    if (enabledTools && enabledTools.length > 0) {
+      if (!enabledTools.includes(name)) continue;
+    }
+
+    // If disabledTools is set, exclude tools in that list
+    if (disabledTools && disabledTools.length > 0) {
+      if (disabledTools.includes(name)) continue;
+    }
+
+    filtered[name] = t;
+  }
+
+  return filtered;
+}
+
 // ── File tools for agents ──
 
 function createAgentTools(agentId: string): ToolSet {
@@ -203,6 +247,203 @@ function createAgentTools(agentId: string): ToolSet {
       execute: async ({ path, content }) => {
         await opfs.appendFile(`${agentRoot}/${path}`, content);
         return `Appended to: ${path}`;
+      },
+    }),
+
+    grep_file: tool({
+      description:
+        'Search file contents for a text pattern. If path is a file, search that file and return matching lines with line numbers. If path is a directory (or omitted), recursively search all files and return file:line:content. Uses simple string matching (not regex). Limited to 50 matches.',
+      parameters: z.object({
+        pattern: z.string().describe('Text pattern to search for'),
+        path: z.string().default('.').describe('File or directory path relative to agent root (defaults to root)'),
+      }),
+      execute: async ({ pattern, path }) => {
+        const fullPath = path === '.' ? agentRoot : `${agentRoot}/${path}`;
+        const results: string[] = [];
+        const MAX_MATCHES = 50;
+
+        async function searchFile(filePath: string, displayPath: string): Promise<void> {
+          try {
+            const content = await opfs.readFile(filePath);
+            const lines = content.split('\n');
+            for (let i = 0; i < lines.length && results.length < MAX_MATCHES; i++) {
+              if (lines[i].includes(pattern)) {
+                results.push(`${displayPath}:${i + 1}:${lines[i]}`);
+              }
+            }
+          } catch {
+            // Skip files that can't be read
+          }
+        }
+
+        async function searchDir(dirPath: string, displayPrefix: string): Promise<void> {
+          try {
+            const entries = await opfs.listDir(dirPath);
+            for (const entry of entries) {
+              if (results.length >= MAX_MATCHES) break;
+              const childPath = `${dirPath}/${entry}`;
+              const childDisplay = displayPrefix ? `${displayPrefix}/${entry}` : entry;
+              // Try as file first, then as directory
+              try {
+                await opfs.readFile(childPath);
+                await searchFile(childPath, childDisplay);
+              } catch {
+                // Might be a directory
+                try {
+                  await opfs.listDir(childPath);
+                  await searchDir(childPath, childDisplay);
+                } catch {
+                  // Skip
+                }
+              }
+            }
+          } catch {
+            // Not a directory or doesn't exist
+          }
+        }
+
+        // Check if path is a file or directory
+        try {
+          const content = await opfs.readFile(fullPath);
+          // It's a file - search it directly
+          const lines = content.split('\n');
+          for (let i = 0; i < lines.length && results.length < MAX_MATCHES; i++) {
+            if (lines[i].includes(pattern)) {
+              results.push(`${i + 1}:${lines[i]}`);
+            }
+          }
+        } catch {
+          // Not a file, try as directory
+          await searchDir(fullPath, '');
+        }
+
+        if (results.length === 0) {
+          return `No matches found for "${pattern}"`;
+        }
+        const suffix = results.length >= MAX_MATCHES ? `\n(limited to ${MAX_MATCHES} matches)` : '';
+        return results.join('\n') + suffix;
+      },
+    }),
+
+    find_files: tool({
+      description:
+        'Find files by name pattern. Recursively lists all files and filters by a simple glob pattern where * matches anything. Returns matching file paths.',
+      parameters: z.object({
+        pattern: z.string().describe('File name pattern (e.g. "*.md", "TODO*")'),
+        path: z.string().default('.').describe('Directory path relative to agent root (defaults to root)'),
+      }),
+      execute: async ({ pattern, path }) => {
+        const fullPath = path === '.' ? agentRoot : `${agentRoot}/${path}`;
+        const matches: string[] = [];
+
+        // Convert simple glob to regex: * -> .*, escape dots
+        const regexStr = '^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$';
+        const regex = new RegExp(regexStr);
+
+        async function walk(dirPath: string, displayPrefix: string): Promise<void> {
+          try {
+            const entries = await opfs.listDir(dirPath);
+            for (const entry of entries) {
+              const childPath = `${dirPath}/${entry}`;
+              const childDisplay = displayPrefix ? `${displayPrefix}/${entry}` : entry;
+              // Check if it matches the pattern
+              if (regex.test(entry)) {
+                matches.push(childDisplay);
+              }
+              // Try to recurse into it as a directory
+              try {
+                await opfs.listDir(childPath);
+                await walk(childPath, childDisplay);
+              } catch {
+                // Not a directory, skip
+              }
+            }
+          } catch {
+            // Not a directory or doesn't exist
+          }
+        }
+
+        await walk(fullPath, '');
+        if (matches.length === 0) {
+          return `No files matching "${pattern}" found`;
+        }
+        return matches.join('\n');
+      },
+    }),
+
+    delete_file: tool({
+      description:
+        'Delete a file from your private storage. Cannot delete CLAUDE.md (protected).',
+      parameters: z.object({
+        path: z.string().describe('File path relative to agent root'),
+      }),
+      execute: async ({ path }) => {
+        if (path === 'CLAUDE.md' || path === './CLAUDE.md') {
+          return 'Error: Cannot delete CLAUDE.md — this file is protected.';
+        }
+        try {
+          await opfs.delete(`${agentRoot}/${path}`);
+          return `Deleted: ${path}`;
+        } catch {
+          return `Error: Could not delete ${path} (file may not exist)`;
+        }
+      },
+    }),
+
+    rename_file: tool({
+      description:
+        'Rename or move a file within your private storage. Reads the old file, writes to the new path, then deletes the old file.',
+      parameters: z.object({
+        oldPath: z.string().describe('Current file path relative to agent root'),
+        newPath: z.string().describe('New file path relative to agent root'),
+      }),
+      execute: async ({ oldPath, newPath }) => {
+        try {
+          const content = await opfs.readFile(`${agentRoot}/${oldPath}`);
+          await opfs.writeFile(`${agentRoot}/${newPath}`, content);
+          await opfs.delete(`${agentRoot}/${oldPath}`);
+          return `Renamed: ${oldPath} → ${newPath}`;
+        } catch {
+          return `Error: Could not rename ${oldPath} to ${newPath}`;
+        }
+      },
+    }),
+
+    file_info: tool({
+      description:
+        'Get metadata about a file or directory: whether it exists, approximate size, and type (file or directory).',
+      parameters: z.object({
+        path: z.string().describe('File or directory path relative to agent root'),
+      }),
+      execute: async ({ path }) => {
+        const fullPath = `${agentRoot}/${path}`;
+        const fileExists = await opfs.exists(fullPath);
+        if (!fileExists) {
+          return JSON.stringify({ exists: false, path });
+        }
+        // Try as file
+        try {
+          const content = await opfs.readFile(fullPath);
+          return JSON.stringify({
+            exists: true,
+            path,
+            type: 'file',
+            size: content.length,
+          });
+        } catch {
+          // Try as directory
+          try {
+            const entries = await opfs.listDir(fullPath);
+            return JSON.stringify({
+              exists: true,
+              path,
+              type: 'directory',
+              entries: entries.length,
+            });
+          } catch {
+            return JSON.stringify({ exists: true, path, type: 'unknown' });
+          }
+        }
       },
     }),
   };
@@ -499,13 +740,16 @@ export async function runAgentLoop(
 
   // Build the full tool set (always available for resolution)
   const wasmTools = await getWasmTools();
-  const allTools: ToolSet = {
+  const unfilteredTools: ToolSet = {
     ...createAgentTools(agentId),
     ...(await getChromeTools(agentId)),
     ...(isVisible ? getCommunicationTools(agentId) : {}),
     ...wasmTools,
     ...getWebTools(),
   };
+
+  // Filter tools based on agent's enabledTools/disabledTools config
+  const allTools = filterToolsByConfig(unfilteredTools, selfMeta);
 
   // Determine which tools to pass based on lookup strategy
   let tools: ToolSet;

@@ -731,6 +731,18 @@ async function handleOneShotMessage(
       return { updated: true };
     }
 
+    case 'updateAgentTools': {
+      const updates: Partial<{ enabledTools: string[]; disabledTools: string[] }> = {};
+      if (msg.enabledTools !== undefined) {
+        updates.enabledTools = msg.enabledTools as string[] | undefined;
+      }
+      if (msg.disabledTools !== undefined) {
+        updates.disabledTools = msg.disabledTools as string[] | undefined;
+      }
+      await updateAgentMeta(msg.agentId as string, updates);
+      return { updated: true };
+    }
+
     case 'getMessages': {
       const messages = await getMessages();
       return { messages };

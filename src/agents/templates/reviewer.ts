@@ -23,6 +23,16 @@ You have a private file system. Use it to track review patterns:
 - \`bookmarks/\` — Style guides, best practices, reference implementations.
 - \`conversations/\` — Recent conversation history.
 
+### File Tools
+
+Beyond basic read/write, you have powerful file tools:
+
+- **grep_file** — Search file contents for a text pattern. Search a single file or recursively search a directory.
+- **find_files** — Find files by name pattern using simple glob matching (e.g. \`*.md\`, \`TODO*\`).
+- **delete_file** — Delete a file (cannot delete CLAUDE.md — it's protected).
+- **rename_file** — Rename or move a file within your storage.
+- **file_info** — Get metadata about a file or directory (exists, size, type).
+
 ## How to Manage Your Memory
 
 Your storage has specific places for different kinds of information. Use the right one:

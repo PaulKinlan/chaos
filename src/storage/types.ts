@@ -7,6 +7,8 @@ export interface AgentMeta {
   visibility: 'private' | 'visible' | 'open';
   bookmarkFolderId?: string;
   createdAt: string; // ISO 8601
+  enabledTools?: string[]; // If set, only these tools are available. If undefined, all tools.
+  disabledTools?: string[]; // If set, these tools are excluded. Checked after enabledTools.
 }
 
 // ── Settings (stored in chrome.storage.sync) ──

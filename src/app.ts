@@ -17,6 +17,8 @@ import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys, ScheduledTas
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
+import { toolRegistry } from './tools/lookup/registry.js';
+import type { ToolMeta } from './tools/lookup/types.js';
 
 // ── Configure marked ──
 
@@ -1895,6 +1897,17 @@ async function loadAgentSettings(): Promise<void> {
       </div>
 
       <div class="agent-settings-section">
+        <h3>Tools</h3>
+        <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">
+          Configure which tools this agent can use. read_file and list_directory are always enabled.
+        </p>
+        <div id="agent-tools-config"></div>
+        <div style="margin-top:var(--sp-3);">
+          <button class="btn btn-primary btn-sm" id="btn-save-tools">Save Tool Configuration</button>
+        </div>
+      </div>
+
+      <div class="agent-settings-section">
         <h3>CLAUDE.md</h3>
         <textarea class="claude-md-editor" id="agent-claude-md">${escapeHtml(claudeMd)}</textarea>
         <div style="margin-top:var(--sp-3);">
@@ -1949,6 +1962,70 @@ async function loadAgentSettings(): Promise<void> {
       const newVis = (e.target as HTMLSelectElement).value;
       await sendMsg({ type: 'updateAgentVisibility', agentId: meta.id, visibility: newVis });
       sendPortMessage({ type: 'listAgents' });
+    });
+
+    // Render tools configuration
+    const MINIMUM_TOOLS = ['read_file', 'list_directory'];
+    const allRegisteredTools = toolRegistry.getAll();
+    const toolsByCategory = new Map<string, ToolMeta[]>();
+    for (const t of allRegisteredTools) {
+      const cat = t.category;
+      if (!toolsByCategory.has(cat)) toolsByCategory.set(cat, []);
+      toolsByCategory.get(cat)!.push(t);
+    }
+
+    // Determine which tools are currently disabled
+    const disabledSet = new Set<string>(meta.disabledTools ?? []);
+
+    const toolsContainer = document.getElementById('agent-tools-config')!;
+    const categoryOrder = ['file', 'chrome', 'web', 'communication', 'wasm'];
+    const categoryLabels: Record<string, string> = {
+      file: 'File',
+      chrome: 'Chrome',
+      web: 'Web',
+      communication: 'Communication',
+      wasm: 'WASM',
+    };
+
+    let toolsHtml = '';
+    for (const cat of categoryOrder) {
+      const tools = toolsByCategory.get(cat);
+      if (!tools || tools.length === 0) continue;
+      toolsHtml += `<div class="tools-category">`;
+      toolsHtml += `<div class="tools-category-label">${categoryLabels[cat] || cat}</div>`;
+      toolsHtml += `<div class="tools-grid">`;
+      for (const t of tools) {
+        const isMinimum = MINIMUM_TOOLS.includes(t.name);
+        const isChecked = isMinimum || !disabledSet.has(t.name);
+        toolsHtml += `<label class="tool-toggle">`;
+        toolsHtml += `<input type="checkbox" data-tool-name="${escapeHtml(t.name)}" ${isChecked ? 'checked' : ''} ${isMinimum ? 'disabled' : ''}>`;
+        toolsHtml += `<span class="tool-toggle-name">${escapeHtml(t.name)}</span>`;
+        toolsHtml += `<span class="tool-toggle-desc">${escapeHtml(t.description)}</span>`;
+        if (isMinimum) {
+          toolsHtml += `<span class="tool-toggle-required">(required)</span>`;
+        }
+        toolsHtml += `</label>`;
+      }
+      toolsHtml += `</div></div>`;
+    }
+    toolsContainer.innerHTML = toolsHtml;
+
+    // Save tools configuration
+    document.getElementById('btn-save-tools')!.addEventListener('click', async () => {
+      const checkboxes = toolsContainer.querySelectorAll<HTMLInputElement>('input[data-tool-name]');
+      const disabled: string[] = [];
+      checkboxes.forEach((cb) => {
+        if (!cb.checked && !MINIMUM_TOOLS.includes(cb.dataset.toolName!)) {
+          disabled.push(cb.dataset.toolName!);
+        }
+      });
+      await sendMsg({
+        type: 'updateAgentTools',
+        agentId: meta.id,
+        disabledTools: disabled.length > 0 ? disabled : undefined,
+        enabledTools: undefined,
+      });
+      addChatSystemMessage('Tool configuration saved.');
     });
 
     // Save CLAUDE.md

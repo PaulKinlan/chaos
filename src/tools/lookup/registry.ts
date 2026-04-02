@@ -186,6 +186,36 @@ const fileTools: ToolMeta[] = [
     keywords: ['file', 'append', 'add', 'log', 'journal', 'write', 'concat'],
     category: 'file',
   },
+  {
+    name: 'grep_file',
+    description: 'Search file contents for a text pattern. Returns matching lines with line numbers.',
+    keywords: ['grep', 'search', 'find', 'pattern', 'match', 'content', 'text', 'file'],
+    category: 'file',
+  },
+  {
+    name: 'find_files',
+    description: 'Find files by name pattern using simple glob matching.',
+    keywords: ['find', 'files', 'search', 'glob', 'pattern', 'name', 'locate', 'discover'],
+    category: 'file',
+  },
+  {
+    name: 'delete_file',
+    description: 'Delete a file from the agent private storage.',
+    keywords: ['file', 'delete', 'remove', 'clean', 'erase'],
+    category: 'file',
+  },
+  {
+    name: 'rename_file',
+    description: 'Rename or move a file within the agent private storage.',
+    keywords: ['file', 'rename', 'move', 'relocate', 'reorganize'],
+    category: 'file',
+  },
+  {
+    name: 'file_info',
+    description: 'Get metadata about a file or directory: exists, size, type.',
+    keywords: ['file', 'info', 'metadata', 'size', 'exists', 'stat', 'type'],
+    category: 'file',
+  },
 ];
 
 /** Communication tools */
