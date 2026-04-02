@@ -543,14 +543,50 @@ async function loadBrowserPermissions(): Promise<void> {
     btn.addEventListener('click', async () => {
       const permName = btn.dataset.perm! as chrome.runtime.ManifestPermissions;
       const needsHost = btn.dataset.needsHost === 'true';
+      const label = btn.parentElement?.querySelector('span')?.textContent || permName;
       const request: chrome.permissions.Permissions = { permissions: [permName] };
       if (needsHost) request.origins = ['<all_urls>'];
-      const granted = await chrome.permissions.request(request);
-      if (granted) {
-        btn.textContent = 'Enabled';
-        btn.style.borderColor = '#16a34a';
-        btn.style.background = '#14532d';
-        btn.style.color = '#86efac';
+      try {
+        const granted = await chrome.permissions.request(request);
+        if (granted) {
+          btn.textContent = 'Enabled';
+          btn.style.borderColor = '#16a34a';
+          btn.style.background = '#14532d';
+          btn.style.color = '#86efac';
+        } else {
+          btn.textContent = 'Denied';
+          btn.style.borderColor = '#dc2626';
+          btn.style.background = '#450a0a';
+          btn.style.color = '#fca5a5';
+          // Show inline error
+          const errMsg = document.createElement('div');
+          errMsg.textContent = `"${label}" permission was denied. Your browser or IT policy may be blocking this.`;
+          errMsg.style.cssText = 'font-size:11px;color:#fca5a5;margin-top:4px;padding:4px 8px;background:#450a0a;border-radius:4px;';
+          btn.parentElement?.appendChild(errMsg);
+          setTimeout(() => {
+            errMsg.remove();
+            btn.textContent = 'Enable';
+            btn.style.borderColor = '#2563eb';
+            btn.style.background = '#1e3a5f';
+            btn.style.color = '#93c5fd';
+          }, 5000);
+        }
+      } catch (err) {
+        btn.textContent = 'Error';
+        btn.style.borderColor = '#dc2626';
+        btn.style.background = '#450a0a';
+        btn.style.color = '#fca5a5';
+        const errMsg = document.createElement('div');
+        errMsg.textContent = `Failed to request "${label}": ${err instanceof Error ? err.message : String(err)}`;
+        errMsg.style.cssText = 'font-size:11px;color:#fca5a5;margin-top:4px;padding:4px 8px;background:#450a0a;border-radius:4px;';
+        btn.parentElement?.appendChild(errMsg);
+        setTimeout(() => {
+          errMsg.remove();
+          btn.textContent = 'Enable';
+          btn.style.borderColor = '#2563eb';
+          btn.style.background = '#1e3a5f';
+          btn.style.color = '#93c5fd';
+        }, 5000);
       }
     });
   });
