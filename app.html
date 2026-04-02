@@ -1181,6 +1181,46 @@
     /* ══════════════════════════════════════
        Tasks View
        ══════════════════════════════════════ */
+    .tasks-section {
+      margin-bottom: var(--sp-6);
+    }
+
+    .tasks-section-header h3 {
+      font-size: var(--text-base);
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0 0 var(--sp-1) 0;
+    }
+
+    .tasks-section-subtitle {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin: 0 0 var(--sp-3) 0;
+      line-height: 1.4;
+    }
+
+    .tasks-section-empty {
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+      padding: var(--sp-3) 0;
+    }
+
+    .task-schedule-badge {
+      display: flex;
+      gap: var(--sp-2);
+      margin-top: var(--sp-1);
+    }
+
+    .badge-info {
+      background: var(--info-subtle);
+      color: var(--info-text);
+    }
+
+    .badge-active {
+      background: var(--success-subtle);
+      color: var(--success);
+    }
+
     .data-table {
       width: 100%;
       border-collapse: collapse;
@@ -1651,6 +1691,7 @@
       border-radius: 6px;
       padding: var(--sp-3) var(--sp-4);
       margin-bottom: var(--sp-2);
+      cursor: pointer;
     }
 
     .scheduled-task-info {
@@ -1671,6 +1712,14 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      max-height: 1.4em;
+      transition: max-height 0.2s ease;
+    }
+
+    .scheduled-task-item.expanded .scheduled-task-info .task-prompt {
+      max-height: none;
+      white-space: normal;
+      text-overflow: unset;
     }
 
     .scheduled-task-info .task-last-run {
@@ -2255,24 +2304,13 @@
               <option value="failed">Failed</option>
             </select>
           </div>
-          <table class="data-table" id="tasks-table">
-            <thead>
-              <tr>
-                <th>Subject</th>
-                <th>Status</th>
-                <th>Dependencies</th>
-                <th>Created</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody id="tasks-tbody"></tbody>
-          </table>
+          <div id="tasks-unified-content"></div>
           <div class="empty-state" id="tasks-empty" style="display:none;">
             <div class="empty-state-icon">
               <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg>
             </div>
-            <h3>No tasks</h3>
-            <p>Tasks will appear here when this agent creates them.</p>
+            <h3>No tasks yet</h3>
+            <p>No tasks yet. Scheduled tasks are created when you ask your agent to do something on a timer (like "check my bookmarks every morning"). Collaborative tasks appear when agents create work items for each other.</p>
           </div>
         </div>
       </div>

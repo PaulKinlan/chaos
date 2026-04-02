@@ -31,6 +31,7 @@ marked.setOptions({
 
 let agents: AgentMeta[] = [];
 let tasks: Task[] = [];
+let scheduledTasks: ScheduledTask[] = [];
 let messages: AgentMessage[] = [];
 let artifacts: ArtifactMeta[] = [];
 
@@ -1424,8 +1425,12 @@ function renderMentionBadges(text: string): string {
 async function loadTasks(): Promise<void> {
   showPanelLoading('view-tasks');
   try {
-    const result = await sendMsg<{ tasks: Task[] }>({ type: 'getTaskState' });
-    tasks = result.tasks;
+    const [collabResult, schedResult] = await Promise.all([
+      sendMsg<{ tasks: Task[] }>({ type: 'getTaskState' }),
+      sendMsg<{ tasks: ScheduledTask[] }>({ type: 'getScheduledTasks' }),
+    ]);
+    tasks = collabResult.tasks;
+    scheduledTasks = schedResult.tasks || [];
     renderTasks();
   } catch (err) {
     showPanelError('view-tasks', `Failed to load tasks: ${err instanceof Error ? err.message : String(err)}`);
@@ -1435,45 +1440,116 @@ async function loadTasks(): Promise<void> {
 }
 
 function renderTasks(): void {
-  const tbody = document.getElementById('tasks-tbody')!;
+  const container = document.getElementById('tasks-unified-content')!;
   const empty = document.getElementById('tasks-empty')!;
-  const table = document.getElementById('tasks-table')!;
 
+  // Filter scheduled tasks to active agent
+  const agentScheduled = scheduledTasks.filter((t) => t.agentId === activeAgentId);
+
+  // Filter collaborative tasks to active agent
   const filterStatus = (document.getElementById('tasks-filter-status') as HTMLSelectElement).value;
-
-  // Filter to active agent
-  let filtered = tasks.filter((t) => t.owner === activeAgentId);
+  let agentCollab = tasks.filter((t) => t.owner === activeAgentId);
   if (filterStatus) {
-    filtered = filtered.filter((t) => t.status === filterStatus);
+    agentCollab = agentCollab.filter((t) => t.status === filterStatus);
   }
 
-  if (filtered.length === 0) {
-    table.style.display = 'none';
-    empty.textContent = tasks.filter((t) => t.owner === activeAgentId).length === 0
-      ? 'No scheduled tasks yet. Ask your agent to do something on a timer or schedule, like "check my bookmarks every morning" or "remind me to review my notes on Friday". Tasks appear here when the agent sets up recurring or one-shot work.'
-      : 'No tasks match the current filters.';
+  // Show global empty state if both are empty
+  if (agentScheduled.length === 0 && agentCollab.length === 0 && !filterStatus) {
+    container.style.display = 'none';
     empty.style.display = '';
     return;
   }
 
-  table.style.display = '';
+  container.style.display = '';
   empty.style.display = 'none';
 
-  tbody.innerHTML = filtered
-    .map(
-      (t) => `
-    <tr class="clickable" data-task-id="${escapeHtml(t.id)}">
-      <td>${escapeHtml(t.subject)}</td>
-      <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status.replace('_', ' '))}</span></td>
-      <td>${t.blockedBy && t.blockedBy.length > 0 ? t.blockedBy.map((id) => escapeHtml(taskSubject(id))).join(', ') : '<span style="color:var(--text-muted)">None</span>'}</td>
-      <td class="col-time">${formatTime(t.createdAt)}</td>
-      <td class="col-time">${formatTime(t.updatedAt)}</td>
-    </tr>
-  `,
-    )
-    .join('');
+  let html = '';
 
-  tbody.querySelectorAll<HTMLTableRowElement>('tr.clickable').forEach((row) => {
+  // ── Scheduled Tasks section ──
+  html += `<div class="tasks-section">`;
+  html += `<div class="tasks-section-header">
+    <h3>Scheduled Tasks</h3>
+    <p class="tasks-section-subtitle">Recurring and one-shot tasks this agent runs automatically</p>
+  </div>`;
+
+  if (agentScheduled.length === 0) {
+    html += `<p class="tasks-section-empty">No scheduled tasks. Ask your agent to do something on a timer, like "check my bookmarks every morning".</p>`;
+  } else {
+    html += agentScheduled.map((t) => {
+      const scheduleLabel = t.schedule.type === 'recurring'
+        ? `Every ${t.schedule.periodInMinutes && t.schedule.periodInMinutes >= 60 ? Math.round(t.schedule.periodInMinutes / 60) + ' hours' : (t.schedule.periodInMinutes || '?') + ' min'}`
+        : 'One-shot';
+      return `
+      <div class="scheduled-task-item" data-alarm-id="${escapeHtml(t.alarmId)}">
+        <div class="scheduled-task-info">
+          <div class="task-desc">${escapeHtml(t.description)}</div>
+          <div class="task-schedule-badge"><span class="badge badge-info">${escapeHtml(scheduleLabel)}</span> <span class="badge badge-active">Active</span></div>
+          <div class="task-prompt">${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
+          ${t.lastRunAt ? `<div class="task-last-run">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) + (t.lastResult.length > 80 ? '...' : '') : ''}</div>` : ''}
+        </div>
+        <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}">Cancel</button>
+      </div>`;
+    }).join('');
+  }
+  html += `</div>`;
+
+  // ── Collaborative Tasks section ──
+  html += `<div class="tasks-section">`;
+  html += `<div class="tasks-section-header">
+    <h3>Collaborative Tasks</h3>
+    <p class="tasks-section-subtitle">Tasks created for or by this agent in the shared task board</p>
+  </div>`;
+
+  if (agentCollab.length === 0) {
+    const reason = tasks.filter((t) => t.owner === activeAgentId).length === 0
+      ? 'No collaborative tasks yet. These appear when agents create work items for each other.'
+      : 'No tasks match the current filters.';
+    html += `<p class="tasks-section-empty">${reason}</p>`;
+  } else {
+    html += `<table class="data-table" id="tasks-table">
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Status</th>
+          <th>Dependencies</th>
+          <th>Created</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>`;
+    html += agentCollab.map((t) => `
+      <tr class="clickable" data-task-id="${escapeHtml(t.id)}">
+        <td>${escapeHtml(t.subject)}</td>
+        <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status.replace('_', ' '))}</span></td>
+        <td>${t.blockedBy && t.blockedBy.length > 0 ? t.blockedBy.map((id) => escapeHtml(taskSubject(id))).join(', ') : '<span style="color:var(--text-muted)">None</span>'}</td>
+        <td class="col-time">${formatTime(t.createdAt)}</td>
+        <td class="col-time">${formatTime(t.updatedAt)}</td>
+      </tr>`).join('');
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+
+  container.innerHTML = html;
+
+  // Wire up cancel buttons for scheduled tasks
+  container.querySelectorAll<HTMLButtonElement>('[data-cancel-task]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const alarmId = btn.dataset.cancelTask!;
+      await sendMsg({ type: 'cancelScheduledTask', alarmId });
+      loadTasks();
+    });
+  });
+
+  // Wire up click-to-expand for scheduled tasks
+  container.querySelectorAll<HTMLDivElement>('.scheduled-task-item').forEach((item) => {
+    item.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-cancel-task]')) return;
+      item.classList.toggle('expanded');
+    });
+  });
+
+  // Wire up collaborative task rows
+  container.querySelectorAll<HTMLTableRowElement>('tr.clickable').forEach((row) => {
     row.addEventListener('click', () => {
       showTaskDetail(row.dataset.taskId!);
     });
@@ -1864,9 +1940,6 @@ async function loadAgentSettings(): Promise<void> {
       meta: AgentMeta;
     }>({ type: 'getAgentDetail', agentId: activeAgentId });
 
-    const tasksResult = await sendMsg<{ tasks: ScheduledTask[] }>({ type: 'getScheduledTasks' });
-    const scheduledTasks = (tasksResult.tasks || []).filter((t) => t.agentId === activeAgentId);
-
     const meta = result.meta;
     const claudeMd = result.claudeMd || '';
 
@@ -1916,11 +1989,6 @@ async function loadAgentSettings(): Promise<void> {
       </div>
 
       <div class="agent-settings-section">
-        <h3>Scheduled Tasks</h3>
-        <div id="agent-scheduled-tasks"></div>
-      </div>
-
-      <div class="agent-settings-section">
         <h3>Danger Zone</h3>
         <div class="danger-zone">
           <p>Permanently delete this agent and all its data.</p>
@@ -1928,34 +1996,6 @@ async function loadAgentSettings(): Promise<void> {
         </div>
       </div>
     `;
-
-    // Render scheduled tasks
-    const scheduledContainer = document.getElementById('agent-scheduled-tasks')!;
-    if (scheduledTasks.length === 0) {
-      scheduledContainer.innerHTML = '<p style="color:var(--text-muted);font-size:var(--text-sm);">No scheduled tasks.</p>';
-    } else {
-      scheduledContainer.innerHTML = scheduledTasks
-        .map(
-          (t) => `
-          <div class="scheduled-task-item">
-            <div class="scheduled-task-info">
-              <div class="task-desc">${escapeHtml(t.description)} (${t.schedule.type}${t.schedule.periodInMinutes ? `, every ${t.schedule.periodInMinutes}m` : ''})</div>
-              <div class="task-prompt">Prompt: ${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
-              ${t.lastRunAt ? `<div class="task-last-run">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' \u2014 ' + escapeHtml(t.lastResult.slice(0, 80)) : ''}</div>` : ''}
-            </div>
-            <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}">Cancel</button>
-          </div>`,
-        )
-        .join('');
-
-      scheduledContainer.querySelectorAll('[data-cancel-task]').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          const alarmId = (btn as HTMLButtonElement).dataset.cancelTask!;
-          await sendMsg({ type: 'cancelScheduledTask', alarmId });
-          loadAgentSettings();
-        });
-      });
-    }
 
     // Visibility change
     document.getElementById('agent-vis-select')!.addEventListener('change', async (e) => {
