@@ -1438,14 +1438,14 @@
           <select id="chat-agent-select">
             <option value="">Select agent...</option>
           </select>
-          <button class="btn btn-ghost btn-sm" id="chat-btn-read-page" title="Read current tab">&#128196; Read Page</button>
-          <button class="btn btn-ghost btn-sm" id="chat-btn-clear" title="Clear conversation">&#128465; Clear</button>
+          <button class="btn btn-ghost btn-sm" id="chat-btn-read-page" title="Read current tab"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>Read Page</button>
+          <button class="btn btn-ghost btn-sm" id="chat-btn-clear" title="Clear conversation"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Clear</button>
           <button class="btn btn-primary btn-sm" id="chat-btn-new-agent">+ New Agent</button>
         </div>
 
         <div class="chat-page-context" id="chat-page-context">
           <span id="chat-page-context-text"></span>
-          <span class="dismiss" id="chat-btn-dismiss-context">&times;</span>
+          <span class="dismiss" id="chat-btn-dismiss-context"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
         </div>
 
         <div class="chat-messages" id="chat-messages"></div>
@@ -1457,9 +1457,9 @@
         <div class="chat-input-area">
           <div class="chat-input-wrapper">
             <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
-            <button id="chat-btn-mic" title="Voice input" class="chat-btn-mic">&#127908;</button>
+            <button id="chat-btn-mic" title="Voice input" class="chat-btn-mic"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
           </div>
-          <button id="chat-btn-send" class="chat-btn-send" title="Send">&#9654;</button>
+          <button id="chat-btn-send" class="chat-btn-send" title="Send"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
         </div>
       </div>
     </div>
@@ -1473,7 +1473,7 @@
       <div class="agent-grid" id="agent-grid"></div>
       <div class="agent-detail" id="agent-detail"></div>
       <div class="empty-state" id="agents-empty" style="display:none;">
-        <div class="empty-state-icon">&#129302;</div>
+        <div class="empty-state-icon"><svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="8.5" cy="16" r="1"/><circle cx="15.5" cy="16" r="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
         <h3>No agents yet</h3>
         <p>Create your first agent to get started.</p>
       </div>
@@ -1510,7 +1510,7 @@
         <tbody id="tasks-tbody"></tbody>
       </table>
       <div class="empty-state" id="tasks-empty" style="display:none;">
-        <div class="empty-state-icon">&#128203;</div>
+        <div class="empty-state-icon"><svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg></div>
         <h3>No tasks</h3>
         <p>Tasks will appear here when agents create them.</p>
       </div>
@@ -1529,7 +1529,7 @@
       </div>
       <div class="message-list" id="message-list"></div>
       <div class="empty-state" id="messages-empty" style="display:none;">
-        <div class="empty-state-icon">&#128172;</div>
+        <div class="empty-state-icon"><svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
         <h3>No messages</h3>
         <p>Inter-agent messages will appear here.</p>
       </div>
@@ -1547,7 +1547,7 @@
       </div>
       <div class="artifact-grid" id="artifact-grid"></div>
       <div class="empty-state" id="artifacts-empty" style="display:none;">
-        <div class="empty-state-icon">&#128230;</div>
+        <div class="empty-state-icon"><svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
         <h3>No artifacts</h3>
         <p>Shared artifacts will appear here when agents publish them.</p>
       </div>
@@ -1686,7 +1686,7 @@
   <!-- ═══ Task Detail Modal ═══ -->
   <div class="modal-overlay task-detail-modal" id="task-detail-modal">
     <div class="modal">
-      <button class="modal-close" id="task-detail-close">&times;</button>
+      <button class="modal-close" id="task-detail-close"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       <div id="task-detail-content"></div>
     </div>
   </div>
@@ -1694,7 +1694,7 @@
   <!-- ═══ Artifact Detail Modal ═══ -->
   <div class="modal-overlay" id="artifact-detail-modal">
     <div class="modal">
-      <button class="modal-close" id="artifact-detail-close">&times;</button>
+      <button class="modal-close" id="artifact-detail-close"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       <div id="artifact-detail-content"></div>
     </div>
   </div>

@@ -1002,11 +1002,11 @@ function renderFileTree(entries: FileEntry[], container: HTMLElement, depth: num
       const childContainer = document.createElement('div');
       childContainer.style.display = 'none';
 
-      item.innerHTML = `<span class="icon">&#9654;</span><span class="name">${escapeHtml(entry.name)}/</span>`;
+      item.innerHTML = `<span class="icon"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span><span class="name">${escapeHtml(entry.name)}/</span>`;
       item.addEventListener('click', () => {
         expanded = !expanded;
         childContainer.style.display = expanded ? 'block' : 'none';
-        item.querySelector('.icon')!.innerHTML = expanded ? '&#9660;' : '&#9654;';
+        item.querySelector('.icon')!.innerHTML = expanded ? '<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/></svg>' : '<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
       });
 
       container.appendChild(item);
@@ -1017,7 +1017,7 @@ function renderFileTree(entries: FileEntry[], container: HTMLElement, depth: num
       }
     } else {
       const sizeStr = entry.size != null ? formatFileSize(entry.size) : '';
-      item.innerHTML = `<span class="icon">&#128196;</span><span class="name">${escapeHtml(entry.name)}</span><span class="size">${sizeStr}</span>`;
+      item.innerHTML = `<span class="icon"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span><span class="name">${escapeHtml(entry.name)}</span><span class="size">${sizeStr}</span>`;
       item.addEventListener('click', () => {
         if (filesAgentId) {
           sendMessage({ type: 'readAgentFile', agentId: filesAgentId, path: entry.path });

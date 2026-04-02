@@ -1226,7 +1226,7 @@ function renderFileTree(entries: FileEntry[], agentId: string, depth = 0): void 
     else if (depth === 2) item.classList.add('files-indent-2');
     else if (depth >= 3) item.classList.add('files-indent-3');
 
-    const icon = entry.kind === 'directory' ? '\uD83D\uDCC1' : '\uD83D\uDCC4';
+    const icon = entry.kind === 'directory' ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>' : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
     const sizeStr = entry.size !== undefined ? formatFileSize(entry.size) : '';
 
     item.innerHTML = `<span class="icon">${icon}</span><span class="name">${escapeHtml(entry.name)}</span>${sizeStr ? `<span class="size">${sizeStr}</span>` : ''}`;
