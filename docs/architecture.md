@@ -97,8 +97,8 @@ Each agent is a directory in OPFS:
 
 ### Agent lifecycle
 
-1. User creates agent (name, base personality, optional focus area)
-2. Agent gets a CLAUDE.md built from template + user customizations
+1. User creates agent (name, picks a role template)
+2. Agent gets a CLAUDE.md bootstrapped from a **role template** (traits, focus, default tools). The template gives it a starting personality but the agent adapts from there via self-editing CLAUDE.md. The agent loop from emaila.gent is preserved: read instructions, do work, update own instructions based on what it learns.
 3. Agent gets a dedicated bookmark folder in Chrome
 4. On each interaction:
    - Read CLAUDE.md (may have been self-edited last time)
@@ -107,6 +107,57 @@ Each agent is a directory in OPFS:
    - Run agent loop with available tools
    - Write response, update journal, optionally update CLAUDE.md
 5. On scheduled alarm: agent wakes up, reads context, does work, goes back to sleep
+
+### Agent roles
+
+Agents can have roles that define their focus and capabilities (inspired by [docker-agent-test](https://github.com/PaulKinlan/docker-agent-test)):
+
+- **researcher** - web research, summarization, tracking topics
+- **coder** - writing code, debugging, building things
+- **writer** - drafting content, editing, tone
+- **planner** - scheduling, coordination, reminders
+- **reviewer** - critiquing work, catching issues
+- Custom roles defined by the user
+
+Roles shape the agent's default CLAUDE.md personality and which tools it prioritizes, but any agent can use any tool.
+
+### Agent privacy and visibility
+
+Agents are private by default. The user controls visibility:
+
+- **Private**: other agents don't know this agent exists. Its memory, journal, and conversations are completely hidden.
+- **Visible**: other agents can see this agent's name and role, and can send it messages via the message bus. They cannot read its memory or journal directly.
+- **Open**: other agents can see this agent and read its shared artifacts (files the agent explicitly publishes to a shared space). Memory and journal remain private.
+
+The user can change visibility at any time per agent.
+
+### Inter-agent communication
+
+Agents don't reach into each other's storage. Instead, they communicate through a structured message bus (inspired by [docker-agent-test](https://github.com/PaulKinlan/docker-agent-test)'s email-based protocol):
+
+```
+/shared/
+  messages/           # Message queue (JSONL, append-only)
+  artifacts/          # Shared files agents publish for others
+  tasks.jsonl         # Shared task board with dependency DAG
+```
+
+**Message protocol:**
+- Agent sends a message: `{ from, to, subject, body, timestamp }`
+- Messages can be directed (to a specific agent) or broadcast (to all visible agents)
+- Receiving agent picks up messages on next wake (alarm or user interaction)
+- Messages are structured, not free-form email. The schema is versioned.
+
+**Task coordination:**
+- Shared task board with status tracking (pending, in_progress, completed, failed)
+- Tasks can declare `blocked_by` dependencies
+- Agents only see tasks assigned to them or unassigned
+- Useful for multi-agent workflows: "researcher gathers data, writer drafts post, reviewer checks it"
+
+**Artifact sharing:**
+- Agents publish files to `/shared/artifacts/` with metadata (description, producer, timestamp)
+- Other visible agents can discover and read shared artifacts
+- The agent's private OPFS volume remains private. Only explicitly shared files are visible.
 
 ### Agent capabilities
 
@@ -120,6 +171,9 @@ Agents can:
 - Execute WASM tools (text processing, data conversion, etc.)
 - Update their own personality and instructions
 - Track patterns in user behavior and make suggestions
+- Send and receive messages to/from other agents
+- Publish and consume shared artifacts
+- Coordinate on shared tasks with dependency tracking
 
 ## Tool lookup service
 
@@ -138,6 +192,25 @@ This means:
 - New tools can be added without updating agent prompts
 - Tools can be ranked by relevance, capability, and user preference
 - The lookup service itself can learn which tools work best for which intents
+
+### Implementation: embedding search first, LLM fallback
+
+The default implementation uses **local embedding search**:
+
+1. Each tool has a description and example intents stored as embeddings
+2. Agent's intent is embedded and compared via cosine similarity
+3. Top-k tools returned to the agent
+
+The interface is abstract so we can swap in an LLM-based resolver if local embeddings aren't accurate enough. The LLM approach would send the intent + a tool manifest to the model and let it pick. More accurate, but slower and costs tokens.
+
+```typescript
+interface ToolLookup {
+  resolve(intent: string, context?: ToolContext): Promise<Tool[]>;
+}
+
+class EmbeddingToolLookup implements ToolLookup { ... }
+class LLMToolLookup implements ToolLookup { ... }
+```
 
 ### Tool categories
 
@@ -197,11 +270,21 @@ This means:
 - **marked.js** with GFM enabled
 - Post-process with DOMPurify
 
+## UI
+
+The primary interface is the **side panel**, always accessible without losing context. But CHAOS should also be able to open a **full tab** for richer, more expressive UIs. Think of it this way: the side panel is for quick interactions and monitoring, the full tab is the operating system view.
+
+The vision: this could *be* the interface for Chrome in the future. Not a bolt-on assistant, but the primary way you interact with the browser.
+
+- **Side panel**: persistent conversation with the active agent, context from current tab, quick actions
+- **Full tab** (`chrome-extension://id/app.html`): dashboard view of all agents, shared task board, artifact browser, agent configuration, rich visualizations of agent activity
+- **Popup**: minimal, just agent switcher and quick status
+- **Context menu**: right-click to send selected text or page to an agent
+
 ## What's NOT in scope (yet)
 
 - Multi-user (this is single-user, your browser, your agents)
 - Server-side anything (fully client-side, API keys stored locally)
-- Inter-agent communication (agents are isolated, like emaila.gent)
 - Publishing/sharing agents
 - Mobile (Chrome extension = desktop only)
 
