@@ -44,6 +44,7 @@ const anthropicProvider: ProviderConfig = {
   models: [
     { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6' },
     { id: 'claude-opus-4-6', displayName: 'Claude Opus 4.6' },
+    { id: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5' },
   ],
   features: {
     supportsVision: true,
@@ -59,8 +60,11 @@ const anthropicProvider: ProviderConfig = {
 const googleProvider: ProviderConfig = {
   id: 'google',
   displayName: 'Google (Gemini)',
-  defaultModel: 'gemini-2.5-flash',
+  defaultModel: 'gemini-3.1-pro-preview',
   models: [
+    { id: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro (Preview)' },
+    { id: 'gemini-3.1-flash-lite-preview', displayName: 'Gemini 3.1 Flash Lite (Preview)' },
+    { id: 'gemini-3-flash', displayName: 'Gemini 3 Flash' },
     { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
     { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
   ],
@@ -71,17 +75,19 @@ const googleProvider: ProviderConfig = {
   },
   createModel: (apiKey, modelId) => {
     const provider = createGoogleGenerativeAI({ apiKey });
-    return provider(modelId ?? 'gemini-2.5-flash');
+    return provider(modelId ?? 'gemini-3.1-pro-preview');
   },
 };
 
 const openaiProvider: ProviderConfig = {
   id: 'openai',
   displayName: 'OpenAI',
-  defaultModel: 'gpt-4.1',
+  defaultModel: 'gpt-5.4',
   models: [
-    { id: 'gpt-4.1', displayName: 'GPT-4.1' },
-    { id: 'gpt-4.1-mini', displayName: 'GPT-4.1 Mini' },
+    { id: 'gpt-5.4', displayName: 'GPT-5.4' },
+    { id: 'gpt-5.4-mini', displayName: 'GPT-5.4 Mini' },
+    { id: 'gpt-5.4-nano', displayName: 'GPT-5.4 Nano' },
+    { id: 'gpt-5.3-codex', displayName: 'GPT-5.3 Codex' },
   ],
   features: {
     supportsVision: true,
@@ -90,7 +96,7 @@ const openaiProvider: ProviderConfig = {
   },
   createModel: (apiKey, modelId) => {
     const provider = createOpenAI({ apiKey });
-    return provider(modelId ?? 'gpt-4.1');
+    return provider(modelId ?? 'gpt-5.4');
   },
 };
 
@@ -102,8 +108,11 @@ const openrouterProvider: ProviderConfig = {
     // OpenRouter supports many models — these are common defaults.
     // Users can specify any model ID supported by OpenRouter.
     { id: 'anthropic/claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (via OpenRouter)' },
-    { id: 'google/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash (via OpenRouter)' },
-    { id: 'openai/gpt-4.1', displayName: 'GPT-4.1 (via OpenRouter)' },
+    { id: 'anthropic/claude-opus-4-6', displayName: 'Claude Opus 4.6 (via OpenRouter)' },
+    { id: 'google/gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro (via OpenRouter)' },
+    { id: 'google/gemini-3-flash', displayName: 'Gemini 3 Flash (via OpenRouter)' },
+    { id: 'openai/gpt-5.4', displayName: 'GPT-5.4 (via OpenRouter)' },
+    { id: 'openai/gpt-5.4-mini', displayName: 'GPT-5.4 Mini (via OpenRouter)' },
   ],
   features: {
     supportsVision: true,
