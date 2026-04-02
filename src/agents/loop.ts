@@ -14,8 +14,10 @@ import { createLanguageModel } from './provider-registry.js';
 import { getCommunicationTools } from '../tools/communication/index.js';
 import { getChromeTools } from '../tools/chrome/index.js';
 import { getWasmTools } from '../tools/wasm/index.js';
+import { getWebTools } from '../tools/web/index.js';
 import type { AgentMeta } from '../storage/types.js';
 import { createToolLookup, type LookupStrategy, type ToolMeta } from '../tools/lookup/index.js';
+import { checkPermission } from '../tools/permissions.js';
 
 // ── Types ──
 
@@ -40,6 +42,36 @@ interface ActivityLogEntry {
 const AGENTS_ROOT = 'agents';
 const ACTIVITY_LOG = 'activity-log.jsonl';
 const JOURNAL_LINES = 30;
+
+// ── Permission-wrapped tools ──
+
+/**
+ * Wrap each tool's execute function to check permission before executing.
+ * If permission is 'never', the tool returns an error message.
+ * If permission is 'ask', it currently defaults to 'always' (see permissions.ts TODO).
+ */
+function wrapToolsWithPermissions(tools: ToolSet): ToolSet {
+  const wrapped: ToolSet = {};
+  for (const [name, t] of Object.entries(tools)) {
+    const originalExecute = t.execute;
+    if (!originalExecute) {
+      wrapped[name] = t;
+      continue;
+    }
+    const exec = originalExecute;
+    wrapped[name] = {
+      ...t,
+      execute: async (...args: Parameters<typeof exec>) => {
+        const allowed = await checkPermission(name);
+        if (!allowed) {
+          return `Error: Permission denied for tool "${name}". This tool is set to "never" in your permissions.`;
+        }
+        return exec(...args);
+      },
+    } as typeof t;
+  }
+  return wrapped;
+}
 
 // ── File tools for agents ──
 
@@ -305,6 +337,7 @@ export async function runAgentLoop(
     ...getChromeTools(agentId),
     ...(isVisible ? getCommunicationTools(agentId) : {}),
     ...wasmTools,
+    ...getWebTools(),
   };
 
   // Determine which tools to pass based on lookup strategy
@@ -315,7 +348,9 @@ export async function runAgentLoop(
   } else {
     // Start with only the lookup_tools meta-tool; resolved tools are
     // injected dynamically when the agent calls lookup_tools
-    const lookup = createToolLookup(toolLookupStrategy);
+    // Pass the OpenAI key for embedding lookup (text-embedding-3-small)
+    const embeddingApiKey = apiKeys.openai || apiKey;
+    const lookup = createToolLookup(toolLookupStrategy, { apiKey: embeddingApiKey });
 
     tools = {
       lookup_tools: tool({
@@ -344,6 +379,9 @@ export async function runAgentLoop(
       }),
     };
   }
+
+  // 4b. Wrap tools with permission checks
+  tools = wrapToolsWithPermissions(tools);
 
   // 5. Log user message
   await appendActivityLog(agentId, {

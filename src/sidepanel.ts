@@ -8,6 +8,8 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { AgentMeta, ApiKeys } from './storage/types.js';
+import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
+import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 
 // ── Configure marked ──
 
@@ -23,6 +25,7 @@ const messagesDiv = document.getElementById('messages') as HTMLDivElement;
 const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
 const btnSend = document.getElementById('btn-send') as HTMLButtonElement;
 const btnReadPage = document.getElementById('btn-read-page') as HTMLButtonElement;
+const btnClearChat = document.getElementById('btn-clear-chat') as HTMLButtonElement;
 const btnNewAgent = document.getElementById('btn-new-agent') as HTMLButtonElement;
 const btnSettings = document.getElementById('btn-settings') as HTMLButtonElement;
 const typingIndicator = document.getElementById('typing-indicator') as HTMLDivElement;
@@ -56,21 +59,54 @@ let isStreaming = false;
 let pageContext: { title: string; url: string; content: string } | null = null;
 let currentStreamEl: HTMLDivElement | null = null;
 let currentStreamContent = '';
+let reconnectAttempts = 0;
+
+// Conversation history for persistence
+interface ConversationEntry {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  pageContext?: { title: string; url: string };
+}
+
+let conversationHistory: ConversationEntry[] = [];
+const MAX_RECONNECT_RETRIES = 3;
+let isCreatingAgent = false;
 
 // ── Port connection ──
 
 function connectPort(): chrome.runtime.Port {
   const p = chrome.runtime.connect({ name: 'chaos-sidepanel' });
 
-  p.onMessage.addListener(handlePortMessage);
+  p.onMessage.addListener((msg: Record<string, unknown>) => {
+    handlePortMessage(msg);
+    // Check setup state when apiKeys arrive
+    if (msg.type === 'apiKeys') {
+      checkApiKeysForSetup(msg.keys as ApiKeys);
+    }
+  });
 
   p.onDisconnect.addListener(() => {
-    console.log('Port disconnected, reconnecting...');
+    console.log('Port disconnected');
     port = null;
-    // Reconnect after a short delay
-    setTimeout(() => {
-      port = connectPort();
-    }, 500);
+
+    if (reconnectAttempts < MAX_RECONNECT_RETRIES) {
+      const delay = Math.pow(2, reconnectAttempts) * 1000; // 1s, 2s, 4s
+      reconnectAttempts++;
+      addSystemMessage(`Connection lost. Reconnecting... (attempt ${reconnectAttempts}/${MAX_RECONNECT_RETRIES})`);
+      setTimeout(() => {
+        try {
+          port = connectPort();
+          reconnectAttempts = 0;
+          addSystemMessage('Reconnected.');
+          sendMessage({ type: 'listAgents' });
+        } catch {
+          // Will be handled by next disconnect
+        }
+      }, delay);
+    } else {
+      addSystemMessage('Could not reconnect to the background service. Please reload the side panel.');
+    }
   });
 
   return p;
@@ -129,6 +165,15 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       if (currentStreamEl && msg.fullResponse) {
         renderMarkdown(currentStreamEl, msg.fullResponse as string);
       }
+      // Save assistant response to conversation history
+      if (msg.fullResponse) {
+        conversationHistory.push({
+          role: 'assistant',
+          content: msg.fullResponse as string,
+          timestamp: new Date().toISOString(),
+        });
+        saveConversation();
+      }
       currentStreamEl = null;
       currentStreamContent = '';
       scrollToBottom();
@@ -138,8 +183,17 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       isStreaming = false;
       typingIndicator.classList.remove('visible');
       btnSend.disabled = false;
+      // Remove the streaming message element if it exists
+      if (currentStreamEl) {
+        currentStreamEl.remove();
+      }
       currentStreamEl = null;
-      addSystemMessage(`Error: ${msg.error}`);
+      currentStreamContent = '';
+      addErrorMessage(
+        msg.error as string,
+        msg.provider as string | undefined,
+        msg.lastMessage as { agentId: string; message: string; pageContext?: unknown } | undefined,
+      );
       break;
 
     case 'extractedContent':
@@ -161,7 +215,34 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     case 'apiKeysSaved':
       settingsModal.classList.remove('visible');
       addSystemMessage('API keys saved.');
-      checkSetupState();
+      sendMessage({ type: 'getApiKeys' });
+      break;
+
+    case 'conversationLoaded': {
+      const loadedMessages = msg.messages as ConversationEntry[];
+      conversationHistory = loadedMessages;
+      // Re-render the conversation in the UI
+      messagesDiv.innerHTML = '';
+      for (const entry of loadedMessages) {
+        if (entry.role === 'user') {
+          addUserMessage(entry.content);
+        } else if (entry.role === 'assistant') {
+          addAssistantMessage(entry.content);
+        } else if (entry.role === 'system') {
+          addSystemMessage(entry.content);
+        }
+      }
+      break;
+    }
+
+    case 'conversationSaved':
+      // Silent acknowledgement
+      break;
+
+    case 'conversationCleared':
+      conversationHistory = [];
+      messagesDiv.innerHTML = '';
+      addSystemMessage('Conversation cleared.');
       break;
 
     case 'error':
@@ -189,6 +270,11 @@ function populateAgentSelect(agents: AgentMeta[]): void {
     agentSelect.value = agents[0].id;
     activeAgentId = agents[0].id;
   }
+
+  // Load conversation for the active agent
+  if (activeAgentId) {
+    sendMessage({ type: 'getConversation', agentId: activeAgentId });
+  }
 }
 
 function addAgentOption(agent: AgentMeta): void {
@@ -199,12 +285,18 @@ function addAgentOption(agent: AgentMeta): void {
 }
 
 agentSelect.addEventListener('change', () => {
+  // Save current conversation before switching
+  saveConversation();
+
   activeAgentId = agentSelect.value || null;
   messagesDiv.innerHTML = '';
+  conversationHistory = [];
   pageContext = null;
   pageContextBar.classList.remove('visible');
+
   if (activeAgentId) {
-    addSystemMessage(`Switched to agent.`);
+    // Load conversation for the new agent
+    sendMessage({ type: 'getConversation', agentId: activeAgentId });
   }
 });
 
@@ -237,9 +329,68 @@ function addSystemMessage(text: string): void {
   scrollToBottom();
 }
 
+function addErrorMessage(
+  error: string,
+  provider?: string,
+  lastMessage?: { agentId: string; message: string; pageContext?: unknown },
+): void {
+  const el = document.createElement('div');
+  el.className = 'message error';
+
+  const icon = document.createElement('span');
+  icon.className = 'error-icon';
+  icon.textContent = '\u26A0'; // warning sign
+  el.appendChild(icon);
+
+  const textEl = document.createElement('span');
+  const providerText = provider ? ` (${provider})` : '';
+  textEl.textContent = `${error}${providerText}`;
+  el.appendChild(textEl);
+
+  if (lastMessage) {
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'btn btn-sm btn-retry';
+    retryBtn.textContent = 'Retry';
+    retryBtn.addEventListener('click', () => {
+      el.remove();
+      const msg: Record<string, unknown> = {
+        type: 'chat',
+        agentId: lastMessage.agentId,
+        message: lastMessage.message,
+      };
+      if (lastMessage.pageContext) {
+        msg.pageContext = lastMessage.pageContext;
+      }
+      sendMessage(msg);
+    });
+    el.appendChild(retryBtn);
+  }
+
+  messagesDiv.appendChild(el);
+  scrollToBottom();
+}
+
+function showLoadingState(message: string): HTMLDivElement {
+  const el = document.createElement('div');
+  el.className = 'message system loading';
+  el.textContent = message;
+  messagesDiv.appendChild(el);
+  scrollToBottom();
+  return el;
+}
+
 function renderMarkdown(el: HTMLDivElement, content: string): void {
   const rawHtml = marked.parse(content) as string;
-  el.innerHTML = DOMPurify.sanitize(rawHtml);
+  const sanitized = DOMPurify.sanitize(rawHtml);
+
+  if (needsSandbox(rawHtml)) {
+    // Rich content with scripts/styles/forms/iframes: render in sandboxed iframe
+    el.innerHTML = '';
+    renderInSandbox(sanitized, el);
+  } else {
+    // Plain markdown: render directly (simpler, faster)
+    el.innerHTML = sanitized;
+  }
 }
 
 function scrollToBottom(): void {
@@ -261,6 +412,13 @@ function sendChatMessage(): void {
   chatInput.value = '';
   autoResize();
 
+  // Save user message to conversation history
+  const entry: ConversationEntry = {
+    role: 'user',
+    content: text,
+    timestamp: new Date().toISOString(),
+  };
+
   const msg: Record<string, unknown> = {
     type: 'chat',
     agentId: activeAgentId,
@@ -270,12 +428,30 @@ function sendChatMessage(): void {
   // Attach page context if available
   if (pageContext) {
     msg.pageContext = pageContext;
+    entry.pageContext = { title: pageContext.title, url: pageContext.url };
     // Clear page context after using it
     pageContext = null;
     pageContextBar.classList.remove('visible');
   }
 
+  conversationHistory.push(entry);
   sendMessage(msg);
+}
+
+/** Save conversation to IndexedDB via background. */
+function saveConversation(): void {
+  if (!activeAgentId || conversationHistory.length === 0) return;
+  sendMessage({
+    type: 'saveConversation',
+    agentId: activeAgentId,
+    messages: conversationHistory,
+  });
+}
+
+/** Clear conversation for the active agent. */
+function clearConversation(): void {
+  if (!activeAgentId) return;
+  sendMessage({ type: 'clearConversation', agentId: activeAgentId });
 }
 
 btnSend.addEventListener('click', sendChatMessage);
@@ -302,6 +478,12 @@ btnReadPage.addEventListener('click', () => {
   sendMessage({ type: 'extractContent' });
 });
 
+// ── Clear conversation ──
+
+btnClearChat.addEventListener('click', () => {
+  clearConversation();
+});
+
 // ── Dismiss page context ──
 
 btnDismissContext.addEventListener('click', () => {
@@ -311,13 +493,35 @@ btnDismissContext.addEventListener('click', () => {
 
 // ── Settings modal ──
 
+async function loadSidePanelPermissions(): Promise<void> {
+  const container = document.getElementById('sp-permissions');
+  if (!container) return;
+  const perms = await getAllPermissions();
+  const toolNames = Object.keys(DEFAULT_PERMISSIONS).sort();
+  container.innerHTML = toolNames
+    .map((name) => {
+      const level = perms[name] ?? 'ask';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:12px;">
+        <span style="font-family:monospace;color:#ccc;">${name}</span>
+        <select class="sp-perm-select" data-tool="${name}" style="background:#0d0d0d;color:#e0e0e0;border:1px solid #333;border-radius:4px;padding:2px 6px;font-size:11px;">
+          <option value="always"${level === 'always' ? ' selected' : ''}>Always</option>
+          <option value="ask"${level === 'ask' ? ' selected' : ''}>Ask</option>
+          <option value="never"${level === 'never' ? ' selected' : ''}>Never</option>
+        </select>
+      </div>`;
+    })
+    .join('');
+}
+
 btnSettings.addEventListener('click', () => {
   sendMessage({ type: 'getApiKeys' });
+  loadSidePanelPermissions();
   settingsModal.classList.add('visible');
 });
 
 btnOpenSettings.addEventListener('click', () => {
   sendMessage({ type: 'getApiKeys' });
+  loadSidePanelPermissions();
   settingsModal.classList.add('visible');
 });
 
@@ -325,7 +529,7 @@ btnSettingsCancel.addEventListener('click', () => {
   settingsModal.classList.remove('visible');
 });
 
-btnSettingsSave.addEventListener('click', () => {
+btnSettingsSave.addEventListener('click', async () => {
   const keys: Record<string, string> = {};
   if (keyAnthropicInput.value.trim()) keys.anthropic = keyAnthropicInput.value.trim();
   if (keyGoogleInput.value.trim()) keys.google = keyGoogleInput.value.trim();
@@ -333,6 +537,14 @@ btnSettingsSave.addEventListener('click', () => {
   if (keyOpenrouterInput.value.trim()) keys.openrouter = keyOpenrouterInput.value.trim();
 
   sendMessage({ type: 'setApiKeys', keys });
+
+  // Save tool permissions
+  const selects = document.querySelectorAll<HTMLSelectElement>('.sp-perm-select');
+  for (const sel of selects) {
+    const toolName = sel.dataset.tool!;
+    const level = sel.value as PermissionLevel;
+    await setPermission(toolName, level);
+  }
 });
 
 function populateApiKeys(keys: ApiKeys): void {
@@ -361,7 +573,17 @@ btnCreateConfirm.addEventListener('click', () => {
     return;
   }
   const role = agentRoleSelect.value;
+  isCreatingAgent = true;
+  const loadingEl = showLoadingState('Creating agent...');
   sendMessage({ type: 'createAgent', name, role });
+  // Loading state is cleared when agentCreated message arrives
+  const clearLoading = (msg: Record<string, unknown>) => {
+    if (msg.type === 'agentCreated' || msg.type === 'error') {
+      isCreatingAgent = false;
+      loadingEl.remove();
+    }
+  };
+  port?.onMessage.addListener(clearLoading);
 });
 
 // Close modals on overlay click
@@ -375,16 +597,6 @@ createAgentModal.addEventListener('click', (e) => {
 
 // ── Setup state check ──
 
-async function checkSetupState(): Promise<void> {
-  // Check if any API key is configured
-  sendMessage({ type: 'getApiKeys' });
-}
-
-// Listen for apiKeys to determine setup state
-const origHandler = handlePortMessage;
-// We handle this inline in the main handler - check if keys exist
-// and show/hide setup prompt accordingly
-
 function checkApiKeysForSetup(keys: ApiKeys): void {
   const hasKey = !!(keys.anthropic || keys.google || keys.openai || keys.openrouter);
   if (hasKey) {
@@ -393,11 +605,6 @@ function checkApiKeysForSetup(keys: ApiKeys): void {
     setupPrompt.classList.add('visible');
   }
 }
-
-// Patch handler to also check setup state when apiKeys arrive
-const _origOnMessage = handlePortMessage;
-// Already handled in the main handler — the setup check happens
-// when we get the agent list on load
 
 // ── Initialization ──
 
@@ -409,21 +616,6 @@ function init(): void {
 
   // Check API keys for setup prompt
   sendMessage({ type: 'getApiKeys' });
-
-  // We need to check setup state when apiKeys arrive.
-  // Patch the apiKeys case to also check setup.
-  const checkSetup = (msg: Record<string, unknown>) => {
-    if (msg.type === 'apiKeys') {
-      checkApiKeysForSetup(msg.keys as ApiKeys);
-    }
-  };
-
-  // Re-wire port message listener to include setup check
-  port.onMessage.removeListener(handlePortMessage);
-  port.onMessage.addListener((msg: Record<string, unknown>) => {
-    handlePortMessage(msg);
-    checkSetup(msg);
-  });
 }
 
 init();

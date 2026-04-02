@@ -256,7 +256,23 @@ const wasmTools: ToolMeta[] = [
   },
 ];
 
+/** Web tools */
+const webTools: ToolMeta[] = [
+  {
+    name: 'fetch_page',
+    description: 'Fetch a web page by URL and return its main content as markdown.',
+    keywords: ['fetch', 'page', 'url', 'web', 'download', 'html', 'markdown', 'scrape', 'content'],
+    category: 'web',
+  },
+  {
+    name: 'web_search',
+    description: 'Search the web. Delegates to tab-based browsing for results.',
+    keywords: ['search', 'web', 'google', 'query', 'find', 'lookup', 'internet'],
+    category: 'web',
+  },
+];
+
 // Register all tools
-for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools]) {
+for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools, ...webTools]) {
   toolRegistry.register(meta);
 }

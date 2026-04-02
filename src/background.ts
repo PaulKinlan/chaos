@@ -22,6 +22,13 @@ import { getMessages } from './storage/shared.js';
 import { getTaskState } from './storage/shared.js';
 import { listArtifacts } from './storage/shared.js';
 import { opfs } from './storage/opfs.js';
+import {
+  getConversation,
+  setConversation,
+  listConversations,
+  deleteConversation,
+} from './storage/idb.js';
+import type { Conversation, ConversationMessage } from './storage/types.js';
 
 // ── Side panel behavior ──
 
@@ -108,10 +115,38 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 });
 
+// ── Active agent loop tracking (for keepalive and cancellation) ──
+
+let activeLoopCount = 0;
+const activeAbortControllers = new Map<chrome.runtime.Port, AbortController>();
+
+function startKeepalive(): void {
+  activeLoopCount++;
+  if (activeLoopCount === 1) {
+    chrome.alarms.create('chaos-keepalive', { periodInMinutes: 0.4 });
+  }
+}
+
+function stopKeepalive(): void {
+  activeLoopCount = Math.max(0, activeLoopCount - 1);
+  if (activeLoopCount === 0) {
+    chrome.alarms.clear('chaos-keepalive');
+  }
+}
+
 // ── Port-based streaming communication ──
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'chaos-sidepanel') return;
+
+  port.onDisconnect.addListener(() => {
+    // Cancel any active agent loop for this port
+    const controller = activeAbortControllers.get(port);
+    if (controller) {
+      controller.abort();
+      activeAbortControllers.delete(port);
+    }
+  });
 
   port.onMessage.addListener(async (msg) => {
     try {
@@ -144,6 +179,18 @@ chrome.runtime.onConnect.addListener((port) => {
           await handleSetApiKeys(port, msg);
           break;
 
+        case 'saveConversation':
+          await handleSaveConversation(port, msg);
+          break;
+
+        case 'getConversation':
+          await handleGetConversation(port, msg);
+          break;
+
+        case 'clearConversation':
+          await handleClearConversation(port, msg);
+          break;
+
         default:
           port.postMessage({
             type: 'error',
@@ -159,6 +206,45 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// ── Error parsing ──
+
+/**
+ * Parse an API error to produce a user-friendly message and identify the provider.
+ */
+function parseApiError(err: unknown): { message: string; provider?: string } {
+  const raw = err instanceof Error ? err.message : String(err);
+
+  // Try to extract provider from common error patterns
+  let provider: string | undefined;
+  if (raw.includes('anthropic') || raw.includes('claude')) provider = 'Anthropic';
+  else if (raw.includes('openai') || raw.includes('gpt')) provider = 'OpenAI';
+  else if (raw.includes('google') || raw.includes('gemini')) provider = 'Google';
+  else if (raw.includes('openrouter')) provider = 'OpenRouter';
+
+  // Check for provider name in the "No API key configured" message
+  const providerMatch = raw.match(/No API key configured for provider:\s*(\w+)/);
+  if (providerMatch) {
+    provider = providerMatch[1];
+    return { message: `No API key set for ${provider}. Add one in Settings.`, provider };
+  }
+
+  // Parse HTTP status codes
+  if (raw.includes('401') || raw.toLowerCase().includes('unauthorized') || raw.toLowerCase().includes('invalid api key')) {
+    return { message: 'Invalid API key. Check your key in Settings.', provider };
+  }
+  if (raw.includes('429') || raw.toLowerCase().includes('rate limit')) {
+    return { message: 'Rate limit exceeded. Wait a moment and try again.', provider };
+  }
+  if (raw.includes('500') || raw.includes('502') || raw.includes('503')) {
+    return { message: 'The API server is experiencing issues. Try again later.', provider };
+  }
+  if (raw.toLowerCase().includes('fetch') || raw.toLowerCase().includes('network') || raw.toLowerCase().includes('econnrefused')) {
+    return { message: 'Network error. Check your internet connection.', provider };
+  }
+
+  return { message: raw, provider };
+}
+
 // ── Message handlers ──
 
 async function handleChat(
@@ -171,26 +257,46 @@ async function handleChat(
 ): Promise<void> {
   port.postMessage({ type: 'chatStart' });
 
+  const abortController = new AbortController();
+  activeAbortControllers.set(port, abortController);
+  startKeepalive();
+
   try {
     const fullResponse = await runAgentLoop({
       agentId: msg.agentId,
       userMessage: msg.message,
       pageContext: msg.pageContext,
       onChunk: (chunk: string) => {
+        if (abortController.signal.aborted) return;
         try {
           port.postMessage({ type: 'chatChunk', chunk });
         } catch {
-          // Port may have disconnected
+          // Port disconnected — abort the loop
+          abortController.abort();
         }
       },
     });
 
-    port.postMessage({ type: 'chatEnd', fullResponse });
+    if (!abortController.signal.aborted) {
+      port.postMessage({ type: 'chatEnd', fullResponse });
+    }
   } catch (err) {
-    port.postMessage({
-      type: 'chatError',
-      error: err instanceof Error ? err.message : String(err),
-    });
+    if (!abortController.signal.aborted) {
+      const parsed = parseApiError(err);
+      port.postMessage({
+        type: 'chatError',
+        error: parsed.message,
+        provider: parsed.provider,
+        lastMessage: {
+          agentId: msg.agentId,
+          message: msg.message,
+          pageContext: msg.pageContext,
+        },
+      });
+    }
+  } finally {
+    activeAbortControllers.delete(port);
+    stopKeepalive();
   }
 }
 
@@ -261,6 +367,42 @@ async function handleSetApiKeys(
 ): Promise<void> {
   await setApiKeys(msg.keys);
   port.postMessage({ type: 'apiKeysSaved' });
+}
+
+// ── Conversation persistence handlers ──
+
+async function handleSaveConversation(
+  port: chrome.runtime.Port,
+  msg: { agentId: string; messages: ConversationMessage[] },
+): Promise<void> {
+  const conv: Conversation = {
+    id: msg.agentId, // One conversation per agent (keyed by agentId)
+    agentId: msg.agentId,
+    timestamp: new Date().toISOString(),
+    messages: msg.messages,
+  };
+  await setConversation(conv);
+  port.postMessage({ type: 'conversationSaved', agentId: msg.agentId });
+}
+
+async function handleGetConversation(
+  port: chrome.runtime.Port,
+  msg: { agentId: string },
+): Promise<void> {
+  const conv = await getConversation(msg.agentId);
+  port.postMessage({
+    type: 'conversationLoaded',
+    agentId: msg.agentId,
+    messages: conv?.messages ?? [],
+  });
+}
+
+async function handleClearConversation(
+  port: chrome.runtime.Port,
+  msg: { agentId: string },
+): Promise<void> {
+  await deleteConversation(msg.agentId);
+  port.postMessage({ type: 'conversationCleared', agentId: msg.agentId });
 }
 
 // ── One-shot message handling (for dashboard and popup) ──
@@ -378,6 +520,9 @@ async function handleOneShotMessage(
 // ── Alarm handling for scheduled agent wake-ups ──
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  // Ignore keepalive alarm — it only exists to prevent SW termination
+  if (alarm.name === 'chaos-keepalive') return;
+
   // Alarm names follow the pattern: chaos-agent-{agentId}
   if (!alarm.name.startsWith('chaos-agent-')) return;
 
@@ -392,5 +537,93 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     });
   } catch (err) {
     console.error(`Alarm handler failed for agent ${agentId}:`, err);
+  }
+});
+
+// ── Bookmark watcher ──
+
+chrome.bookmarks.onCreated.addListener(async (_id, bookmark) => {
+  // Only care about actual bookmarks (with URLs), not folders
+  if (!bookmark.url || !bookmark.parentId) return;
+
+  try {
+    // Check if this bookmark is in any agent's CHAOS folder
+    const agents = await listAgents();
+    let matchingAgent: { id: string; name: string } | null = null;
+
+    for (const agent of agents) {
+      if (!agent.bookmarkFolderId) continue;
+      if (bookmark.parentId === agent.bookmarkFolderId) {
+        matchingAgent = agent;
+        break;
+      }
+    }
+
+    if (!matchingAgent) return;
+
+    console.log(
+      `Bookmark added to agent "${matchingAgent.name}": ${bookmark.title} — ${bookmark.url}`,
+    );
+
+    // Fetch page content
+    let content = '';
+    let title = bookmark.title || '';
+
+    try {
+      // Try fetching the page directly
+      const response = await fetch(bookmark.url);
+      if (response.ok) {
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        title = doc.querySelector('title')?.textContent?.trim() || title;
+
+        // Remove non-content elements
+        for (const sel of ['script', 'style', 'nav', 'footer', 'noscript', 'svg', 'iframe']) {
+          doc.querySelectorAll(sel).forEach((el) => el.remove());
+        }
+
+        const mainEl =
+          doc.querySelector('main') ??
+          doc.querySelector('article') ??
+          doc.querySelector('[role="main"]') ??
+          doc.body;
+
+        content = mainEl?.textContent?.trim() ?? '';
+
+        // Truncate long content
+        if (content.length > 10000) {
+          content = content.slice(0, 10000) + '\n\n[Content truncated]';
+        }
+      }
+    } catch {
+      content = `(Could not fetch content from ${bookmark.url})`;
+    }
+
+    // Save to agent's bookmarks/ OPFS directory
+    const safeTitle = (title || 'untitled')
+      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .slice(0, 80);
+    const filePath = `agents/${matchingAgent.id}/bookmarks/${safeTitle}.md`;
+    const markdown = `# ${title}\n\n- **URL:** ${bookmark.url}\n- **Bookmarked:** ${new Date().toISOString()}\n\n## Content\n\n${content}`;
+
+    await opfs.writeFile(filePath, markdown);
+
+    // Log in activity journal
+    const logEntry = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      role: 'system' as const,
+      summary: `Bookmark added: "${title}" — ${bookmark.url}`,
+    });
+    await opfs.appendFile(
+      `agents/${matchingAgent.id}/activity-log.jsonl`,
+      logEntry + '\n',
+    );
+
+    console.log(`Saved bookmark content to ${filePath}`);
+  } catch (err) {
+    console.error('Bookmark watcher error:', err);
   }
 });

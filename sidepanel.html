@@ -466,6 +466,7 @@
     </select>
     <div class="header-actions">
       <button class="icon-btn" id="btn-read-page" title="Read this page">&#128196;</button>
+      <button class="icon-btn" id="btn-clear-chat" title="Clear conversation">&#128465;</button>
       <button class="icon-btn" id="btn-new-agent" title="Create agent">+</button>
       <button class="icon-btn" id="btn-settings" title="Settings">&#9881;</button>
     </div>
@@ -510,6 +511,8 @@
       <input type="password" id="key-openai" placeholder="sk-...">
       <label for="key-openrouter">OpenRouter</label>
       <input type="password" id="key-openrouter" placeholder="sk-or-...">
+      <h2 style="margin-top:20px;font-size:14px;">Tool Permissions</h2>
+      <div id="sp-permissions" style="max-height:200px;overflow-y:auto;margin-top:8px;"></div>
       <div class="modal-actions">
         <button class="btn-secondary" id="btn-settings-cancel">Cancel</button>
         <button class="btn-primary" id="btn-settings-save">Save</button>
