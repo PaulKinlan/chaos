@@ -119,6 +119,9 @@ beforeEach(() => {
         set: vi.fn(async () => {}),
       },
     },
+    permissions: {
+      contains: vi.fn(async () => true),
+    },
   };
 });
 

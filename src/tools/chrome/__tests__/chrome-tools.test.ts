@@ -33,6 +33,9 @@ const mockChrome = {
     clear: vi.fn(),
     getAll: vi.fn(),
   },
+  permissions: {
+    contains: vi.fn(async () => true),
+  },
 };
 
 // Install mock globally
@@ -41,8 +44,8 @@ vi.stubGlobal('chrome', mockChrome);
 const AGENT_ID = 'test-agent';
 
 describe('getChromeTools', () => {
-  it('returns all expected tool keys', () => {
-    const tools = getChromeTools(AGENT_ID);
+  it('returns all expected tool keys', async () => {
+    const tools = await getChromeTools(AGENT_ID);
     const keys = Object.keys(tools);
     expect(keys).toContain('tab_read');
     expect(keys).toContain('tab_open');
@@ -72,7 +75,7 @@ describe('tab_read', () => {
       excerpt: 'Hello',
     });
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_read.execute!(
       { tabId: undefined },
       { toolCallId: 'test', messages: [] },
@@ -101,7 +104,7 @@ describe('tab_read', () => {
       excerpt: 'excerpt',
     });
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_read.execute!(
       { tabId: 99 },
       { toolCallId: 'test', messages: [] },
@@ -117,7 +120,7 @@ describe('tab_read', () => {
   it('handles error when no active tab found', async () => {
     mockChrome.tabs.query.mockResolvedValue([{}]); // no id
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_read.execute!(
       { tabId: undefined },
       { toolCallId: 'test', messages: [] },
@@ -129,7 +132,7 @@ describe('tab_read', () => {
   it('handles content script communication error', async () => {
     mockChrome.tabs.sendMessage.mockRejectedValue(new Error('No content script'));
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_read.execute!(
       { tabId: 5 },
       { toolCallId: 'test', messages: [] },
@@ -148,7 +151,7 @@ describe('tab_open', () => {
       pendingUrl: 'https://example.com',
     });
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_open.execute!(
       { url: 'https://example.com', active: false },
       { toolCallId: 'test', messages: [] },
@@ -164,7 +167,7 @@ describe('tab_open', () => {
   it('handles creation failure', async () => {
     mockChrome.tabs.create.mockRejectedValue(new Error('Invalid URL'));
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_open.execute!(
       { url: 'bad-url', active: false },
       { toolCallId: 'test', messages: [] },
@@ -180,7 +183,7 @@ describe('tab_close', () => {
   it('closes a tab by ID', async () => {
     mockChrome.tabs.remove.mockResolvedValue(undefined);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_close.execute!(
       { tabId: 7 },
       { toolCallId: 'test', messages: [] },
@@ -193,7 +196,7 @@ describe('tab_close', () => {
   it('handles tab not found', async () => {
     mockChrome.tabs.remove.mockRejectedValue(new Error('Tab not found'));
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_close.execute!(
       { tabId: 999 },
       { toolCallId: 'test', messages: [] },
@@ -216,7 +219,7 @@ describe('tab_list', () => {
       { id: 2, title: 'Tab 2', url: 'https://b.com', active: false },
     ]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_list.execute!(
       { query: undefined },
       { toolCallId: 'test', messages: [] },
@@ -234,7 +237,7 @@ describe('tab_list', () => {
       { id: 2, title: 'Google', url: 'https://google.com', active: true },
     ]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_list.execute!(
       { query: 'github' },
       { toolCallId: 'test', messages: [] },
@@ -253,7 +256,7 @@ describe('tab_group', () => {
     mockChrome.tabs.group.mockResolvedValue(5);
     mockChrome.tabGroups.update.mockResolvedValue({});
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_group.execute!(
       { tabIds: [1, 2], title: 'Research', color: 'blue' },
       { toolCallId: 'test', messages: [] },
@@ -270,7 +273,7 @@ describe('tab_group', () => {
   it('handles group creation failure', async () => {
     mockChrome.tabs.group.mockRejectedValue(new Error('Invalid tab IDs'));
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_group.execute!(
       { tabIds: [999], title: 'Bad' },
       { toolCallId: 'test', messages: [] },
@@ -293,7 +296,7 @@ describe('bookmark_add', () => {
       url: 'https://example.com',
     });
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.bookmark_add.execute!(
       { url: 'https://example.com', title: 'Test' },
       { toolCallId: 'test', messages: [] },
@@ -313,7 +316,7 @@ describe('bookmark_add', () => {
       .mockResolvedValueOnce({ id: '300', title: `CHAOS: ${AGENT_ID}` }) // folder creation
       .mockResolvedValueOnce({ id: '301', title: 'New BM', url: 'https://new.com' }); // bookmark creation
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.bookmark_add.execute!(
       { url: 'https://new.com', title: 'New BM' },
       { toolCallId: 'test', messages: [] },
@@ -333,7 +336,7 @@ describe('bookmark_add', () => {
     ]);
     mockChrome.bookmarks.create.mockRejectedValue(new Error('Quota exceeded'));
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.bookmark_add.execute!(
       { url: 'https://fail.com', title: 'Fail' },
       { toolCallId: 'test', messages: [] },
@@ -352,7 +355,7 @@ describe('bookmark_search', () => {
       { title: 'Folder', dateAdded: 1700000000000 }, // no url, should be filtered
     ]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.bookmark_search.execute!(
       { query: 'result' },
       { toolCallId: 'test', messages: [] },
@@ -375,7 +378,7 @@ describe('bookmark_list', () => {
       { title: 'BM2', url: 'https://b.com', dateAdded: 1700000000000 },
     ]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.bookmark_list.execute!(
       {},
       { toolCallId: 'test', messages: [] },
@@ -387,7 +390,7 @@ describe('bookmark_list', () => {
   it('returns empty array when agent folder does not exist', async () => {
     mockChrome.bookmarks.search.mockResolvedValue([]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.bookmark_list.execute!(
       {},
       { toolCallId: 'test', messages: [] },
@@ -410,7 +413,7 @@ describe('history_search', () => {
       },
     ]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.history_search.execute!(
       { query: 'visited', maxResults: 20, startTime: undefined },
       { toolCallId: 'test', messages: [] },
@@ -427,7 +430,7 @@ describe('history_search', () => {
   it('passes startTime when provided', async () => {
     mockChrome.history.search.mockResolvedValue([]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     await tools.history_search.execute!(
       { query: 'test', maxResults: 10, startTime: 1700000000000 },
       { toolCallId: 'test', messages: [] },
@@ -447,7 +450,7 @@ describe('alarm_set', () => {
   it('sets an alarm with agentId prefix', async () => {
     mockChrome.alarms.create.mockResolvedValue(undefined);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.alarm_set.execute!(
       { name: 'check-mail', delayInMinutes: 5, periodInMinutes: undefined },
       { toolCallId: 'test', messages: [] },
@@ -463,7 +466,7 @@ describe('alarm_set', () => {
   it('defaults to 1 minute delay when no timing specified', async () => {
     mockChrome.alarms.create.mockResolvedValue(undefined);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     await tools.alarm_set.execute!(
       { name: 'default', delayInMinutes: undefined, periodInMinutes: undefined },
       { toolCallId: 'test', messages: [] },
@@ -482,7 +485,7 @@ describe('alarm_clear', () => {
   it('clears an alarm with agentId prefix', async () => {
     mockChrome.alarms.clear.mockResolvedValue(true);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.alarm_clear.execute!(
       { name: 'check-mail' },
       { toolCallId: 'test', messages: [] },
@@ -503,7 +506,7 @@ describe('alarm_list', () => {
       { name: 'other-agent:alarm3', scheduledTime: 1700002000000 },
     ]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.alarm_list.execute!(
       {},
       { toolCallId: 'test', messages: [] },
@@ -517,7 +520,7 @@ describe('alarm_list', () => {
   it('returns empty array when no alarms exist', async () => {
     mockChrome.alarms.getAll.mockResolvedValue([]);
 
-    const tools = getChromeTools(AGENT_ID);
+    const tools = await getChromeTools(AGENT_ID);
     const result = await tools.alarm_list.execute!(
       {},
       { toolCallId: 'test', messages: [] },

@@ -334,7 +334,7 @@ export async function runAgentLoop(
   const wasmTools = await getWasmTools();
   const allTools: ToolSet = {
     ...createAgentTools(agentId),
-    ...getChromeTools(agentId),
+    ...(await getChromeTools(agentId)),
     ...(isVisible ? getCommunicationTools(agentId) : {}),
     ...wasmTools,
     ...getWebTools(),

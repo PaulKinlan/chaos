@@ -5,16 +5,19 @@
   "description": "Multiple personal AI agents that live in your browser, learn about you, and act on your behalf.",
   "permissions": [
     "activeTab",
-    "tabs",
-    "bookmarks",
-    "alarms",
-    "history",
     "storage",
     "sidePanel",
-    "scripting",
+    "alarms",
     "contextMenus"
   ],
-  "host_permissions": [
+  "optional_permissions": [
+    "tabs",
+    "bookmarks",
+    "history",
+    "scripting"
+  ],
+  "host_permissions": [],
+  "optional_host_permissions": [
     "<all_urls>"
   ],
   "background": {
@@ -28,12 +31,5 @@
     "default_popup": "popup.html",
     "default_title": "CHAOS"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["src/content/extractor.ts"],
-      "run_at": "document_idle"
-    }
-  ],
   "icons": {}
 }

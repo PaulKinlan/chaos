@@ -202,6 +202,10 @@ export function setupIntegrationMocks() {
       clear: vi.fn(async () => true),
       getAll: vi.fn(async () => []),
     },
+    permissions: {
+      contains: vi.fn(async () => true),
+      request: vi.fn(async () => true),
+    },
     sidePanel: {
       setPanelBehavior: vi.fn(),
     },

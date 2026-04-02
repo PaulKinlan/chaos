@@ -107,7 +107,7 @@ describe('Agent Loop Tools', () => {
       const agent = await createAgent('ChromeAgent', 'neutral');
       // Agent is private by default
 
-      const chromeTools = getChromeTools(agent.id);
+      const chromeTools = await getChromeTools(agent.id);
 
       expect(chromeTools).toHaveProperty('tab_read');
       expect(chromeTools).toHaveProperty('tab_open');

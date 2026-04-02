@@ -29,6 +29,11 @@ import {
   deleteConversation,
 } from './storage/idb.js';
 import type { Conversation, ConversationMessage } from './storage/types.js';
+import {
+  hasPermission,
+  ensureContentExtraction,
+  ensurePermission,
+} from './permissions.js';
 
 // ── Side panel behavior ──
 
@@ -302,6 +307,22 @@ async function handleChat(
 
 async function handleExtractContent(port: chrome.runtime.Port): Promise<void> {
   try {
+    // Check we have the needed permissions
+    const hasScripting = await chrome.permissions.contains({
+      permissions: ['scripting'],
+      origins: ['<all_urls>'],
+    });
+
+    if (!hasScripting) {
+      port.postMessage({
+        type: 'extractedContent',
+        content: null,
+        error: 'Permission needed: enable "Read page content" in CHAOS settings to use this feature.',
+        needsPermission: 'scripting',
+      });
+      return;
+    }
+
     const [tab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
@@ -316,9 +337,33 @@ async function handleExtractContent(port: chrome.runtime.Port): Promise<void> {
       return;
     }
 
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      type: 'extractContent',
-    });
+    // Try sending message first (script may already be injected)
+    let response: unknown;
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, {
+        type: 'extractContent',
+      });
+    } catch {
+      // Content script not injected yet - inject dynamically
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['src/content/extractor.ts'],
+        });
+        // Retry after injection
+        await new Promise((r) => setTimeout(r, 200));
+        response = await chrome.tabs.sendMessage(tab.id, {
+          type: 'extractContent',
+        });
+      } catch (injectErr) {
+        port.postMessage({
+          type: 'extractedContent',
+          content: null,
+          error: `Cannot read this page: ${injectErr instanceof Error ? injectErr.message : String(injectErr)}`,
+        });
+        return;
+      }
+    }
 
     port.postMessage({
       type: 'extractedContent',
@@ -541,8 +586,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 // ── Bookmark watcher ──
+// Only register if bookmarks permission is available
+// (listener registration itself is safe even without permission,
+//  but the API calls inside will fail if not granted)
 
-chrome.bookmarks.onCreated.addListener(async (_id, bookmark) => {
+chrome.bookmarks?.onCreated?.addListener(async (_id, bookmark) => {
   // Only care about actual bookmarks (with URLs), not folders
   if (!bookmark.url || !bookmark.parentId) return;
 

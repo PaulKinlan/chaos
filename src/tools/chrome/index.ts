@@ -18,24 +18,42 @@ import { historySearch } from './history-search.js';
 import { createAlarmSet } from './alarm-set.js';
 import { createAlarmClear } from './alarm-clear.js';
 import { createAlarmList } from './alarm-list.js';
+import { hasPermission } from '../../permissions.js';
 
 /**
- * Returns all Chrome API tools as a ToolSet record.
+ * Returns Chrome API tools as a ToolSet record.
+ * Only includes tools for which the required permissions are granted.
  * Tools that need agent-scoping (bookmarks, alarms) have the agentId baked in.
+ * Alarms use a required permission so are always included.
  */
-export function getChromeTools(agentId: string): ToolSet {
-  return {
-    tab_read: tabRead,
-    tab_open: tabOpen,
-    tab_close: tabClose,
-    tab_list: tabList,
-    tab_group: tabGroup,
-    bookmark_add: createBookmarkAdd(agentId),
-    bookmark_search: bookmarkSearch,
-    bookmark_list: createBookmarkList(agentId),
-    history_search: historySearch,
+export async function getChromeTools(agentId: string): Promise<ToolSet> {
+  const tools: ToolSet = {
+    // Alarms only need the 'alarms' permission which is required
     alarm_set: createAlarmSet(agentId),
     alarm_clear: createAlarmClear(agentId),
     alarm_list: createAlarmList(agentId),
   };
+
+  // Tab tools need 'tabs' permission
+  if (await hasPermission('tabs')) {
+    tools.tab_read = tabRead;
+    tools.tab_open = tabOpen;
+    tools.tab_close = tabClose;
+    tools.tab_list = tabList;
+    tools.tab_group = tabGroup;
+  }
+
+  // Bookmark tools need 'bookmarks' permission
+  if (await hasPermission('bookmarks')) {
+    tools.bookmark_add = createBookmarkAdd(agentId);
+    tools.bookmark_search = bookmarkSearch;
+    tools.bookmark_list = createBookmarkList(agentId);
+  }
+
+  // History tools need 'history' permission
+  if (await hasPermission('history')) {
+    tools.history_search = historySearch;
+  }
+
+  return tools;
 }
