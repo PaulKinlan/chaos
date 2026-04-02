@@ -263,6 +263,24 @@ function updateViewVisibility(): void {
 // ══════════════════════════════════════════
 
 const sidebarItems = document.querySelectorAll<HTMLButtonElement>('.sidebar-item');
+const sidebarEl = document.getElementById('sidebar')!;
+const sidebarToggle = document.getElementById('sidebar-toggle');
+
+// Sidebar collapse/expand toggle
+if (sidebarToggle) {
+  sidebarToggle.addEventListener('click', () => {
+    sidebarEl.classList.toggle('collapsed');
+    // Persist preference
+    chrome.storage.local.set({ 'chaos:sidebarCollapsed': sidebarEl.classList.contains('collapsed') });
+  });
+
+  // Restore persisted state
+  chrome.storage.local.get('chaos:sidebarCollapsed').then((result) => {
+    if (result['chaos:sidebarCollapsed']) {
+      sidebarEl.classList.add('collapsed');
+    }
+  });
+}
 
 sidebarItems.forEach((btn) => {
   btn.addEventListener('click', () => {

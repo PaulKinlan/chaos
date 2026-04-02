@@ -87,7 +87,7 @@
     .app-shell {
       display: grid;
       grid-template-rows: var(--agent-tabs-height) 1fr;
-      grid-template-columns: var(--sidebar-width) 1fr;
+      grid-template-columns: auto 1fr;
       height: 100vh;
       overflow: hidden;
     }
@@ -227,6 +227,50 @@
       border-right: 1px solid var(--border-subtle);
       overflow-y: auto;
       overflow-x: hidden;
+      width: var(--sidebar-width);
+      transition: width var(--duration-normal) var(--ease-out);
+    }
+
+    .sidebar.collapsed {
+      width: var(--sidebar-collapsed);
+    }
+
+    .sidebar.collapsed .sidebar-item .label {
+      display: none;
+    }
+
+    .sidebar.collapsed .sidebar-item {
+      justify-content: center;
+      padding: var(--sp-2);
+    }
+
+    .sidebar-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      border-top: 1px solid var(--border-subtle);
+      color: var(--text-tertiary);
+      cursor: pointer;
+      padding: var(--sp-2);
+      min-height: 36px;
+      transition: color var(--duration-fast) var(--ease-out);
+      flex-shrink: 0;
+    }
+
+    .sidebar-toggle:hover {
+      color: var(--text-primary);
+    }
+
+    .sidebar-toggle svg {
+      width: 16px;
+      height: 16px;
+      transition: transform var(--duration-normal) var(--ease-out);
+    }
+
+    .sidebar.collapsed .sidebar-toggle svg {
+      transform: rotate(180deg);
     }
 
     .sidebar-nav {
@@ -1645,6 +1689,9 @@
           <span class="label">Agent</span>
         </button>
       </div>
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Collapse sidebar">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+      </button>
     </nav>
 
     <!-- ══════ Main Content Area ══════ -->
