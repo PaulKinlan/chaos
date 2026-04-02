@@ -210,7 +210,53 @@ const communicationTools: ToolMeta[] = [
   },
 ];
 
+/** WASM tools */
+const wasmTools: ToolMeta[] = [
+  {
+    name: 'wasm_base64',
+    description: 'Encode or decode base64. Input format: "encode:<text>" or "decode:<base64string>".',
+    keywords: ['base64', 'encode', 'decode', 'binary', 'text', 'convert'],
+    category: 'wasm',
+  },
+  {
+    name: 'wasm_md5sum',
+    description: 'Compute the MD5 hash of the input text.',
+    keywords: ['md5', 'hash', 'checksum', 'digest', 'crypto'],
+    category: 'wasm',
+  },
+  {
+    name: 'wasm_sha256sum',
+    description: 'Compute the SHA-256 hash of the input text.',
+    keywords: ['sha256', 'hash', 'checksum', 'digest', 'crypto', 'sha'],
+    category: 'wasm',
+  },
+  {
+    name: 'wasm_wc',
+    description: 'Count lines, words, and characters in the input text.',
+    keywords: ['count', 'words', 'lines', 'characters', 'wc', 'length', 'stats'],
+    category: 'wasm',
+  },
+  {
+    name: 'wasm_sort',
+    description: 'Sort lines of text alphabetically.',
+    keywords: ['sort', 'order', 'alphabetical', 'arrange', 'lines'],
+    category: 'wasm',
+  },
+  {
+    name: 'wasm_uniq',
+    description: 'Remove consecutive duplicate lines from text.',
+    keywords: ['unique', 'deduplicate', 'uniq', 'distinct', 'lines', 'duplicates'],
+    category: 'wasm',
+  },
+  {
+    name: 'wasm_json_format',
+    description: 'Pretty-print JSON with 2-space indentation.',
+    keywords: ['json', 'format', 'pretty', 'print', 'indent', 'beautify'],
+    category: 'wasm',
+  },
+];
+
 // Register all tools
-for (const meta of [...chromeTools, ...fileTools, ...communicationTools]) {
+for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools]) {
   toolRegistry.register(meta);
 }

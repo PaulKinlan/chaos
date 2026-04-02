@@ -13,6 +13,7 @@ import { getAgentList, getApiKeys, getSettings } from '../storage/chrome-storage
 import { createLanguageModel } from './provider-registry.js';
 import { getCommunicationTools } from '../tools/communication/index.js';
 import { getChromeTools } from '../tools/chrome/index.js';
+import { getWasmTools } from '../tools/wasm/index.js';
 import type { AgentMeta } from '../storage/types.js';
 import { createToolLookup, type LookupStrategy, type ToolMeta } from '../tools/lookup/index.js';
 
@@ -298,10 +299,12 @@ export async function runAgentLoop(
   const isVisible = selfMeta && selfMeta.visibility !== 'private';
 
   // Build the full tool set (always available for resolution)
+  const wasmTools = await getWasmTools();
   const allTools: ToolSet = {
     ...createAgentTools(agentId),
     ...getChromeTools(agentId),
     ...(isVisible ? getCommunicationTools(agentId) : {}),
+    ...wasmTools,
   };
 
   // Determine which tools to pass based on lookup strategy

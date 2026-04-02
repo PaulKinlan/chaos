@@ -43,22 +43,31 @@ let dbPromise: Promise<IDBPDatabase<ChaosDBSchema>> | null = null;
 
 function getDB(): Promise<IDBPDatabase<ChaosDBSchema>> {
   if (!dbPromise) {
-    dbPromise = openDB<ChaosDBSchema>('chaos-db', 1, {
-      upgrade(db) {
-        // conversations
-        const convStore = db.createObjectStore('conversations', { keyPath: 'id' });
-        convStore.createIndex('by-agent', 'agentId');
+    dbPromise = openDB<ChaosDBSchema>('chaos-db', 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          // conversations
+          const convStore = db.createObjectStore('conversations', { keyPath: 'id' });
+          convStore.createIndex('by-agent', 'agentId');
 
-        // tool-configs
-        db.createObjectStore('tool-configs', { keyPath: 'id' });
+          // tool-configs
+          db.createObjectStore('tool-configs', { keyPath: 'id' });
 
-        // page-cache
-        const pageStore = db.createObjectStore('page-cache', { keyPath: 'url' });
-        pageStore.createIndex('by-agent', 'agentId');
+          // page-cache
+          const pageStore = db.createObjectStore('page-cache', { keyPath: 'url' });
+          pageStore.createIndex('by-agent', 'agentId');
 
-        // embeddings
-        const embStore = db.createObjectStore('embeddings', { keyPath: 'id' });
-        embStore.createIndex('by-source', 'sourceId');
+          // embeddings
+          const embStore = db.createObjectStore('embeddings', { keyPath: 'id' });
+          embStore.createIndex('by-source', 'sourceId');
+        }
+
+        if (oldVersion < 2) {
+          // wasm-tools store (added in v2)
+          if (!db.objectStoreNames.contains('wasm-tools')) {
+            db.createObjectStore('wasm-tools', { keyPath: 'name' });
+          }
+        }
       },
     });
   }
