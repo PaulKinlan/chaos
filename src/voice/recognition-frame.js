@@ -1,15 +1,19 @@
 // Recognition frame - runs SpeechRecognition in an iframe context.
 // Communicates with parent via postMessage.
+//
+// Note: We do NOT use getUserMedia. SpeechRecognition handles mic access
+// internally. getUserMedia was causing "Requested device not found" errors
+// on some systems and is unnecessary for transcription.
 
 (function () {
-  const statusText = document.getElementById('status-text');
-  const pulseEl = document.getElementById('pulse');
+  var statusText = document.getElementById('status-text');
+  var pulseEl = document.getElementById('pulse');
 
-  let recognition = null;
-  let micStream = null;
-  let lastInterimTranscript = '';
+  var recognition = null;
+  var lastInterimTranscript = '';
+  var isActive = true;
 
-  // Audio feedback - resolve paths relative to this frame's location
+  // Audio feedback - resolve paths relative to this script's location
   var basePath = document.currentScript ? document.currentScript.src.replace(/[^/]*$/, '') : '';
   var beepAudio = new Audio(basePath + 'beep.wav');
   var boopAudio = new Audio(basePath + 'boop.wav');
@@ -21,22 +25,19 @@
 
   init();
 
-  async function init() {
+  function init() {
     try {
-      await startRecognition();
+      startRecognition();
     } catch (err) {
-      showError(err.message);
+      showError(err.message || String(err));
+      sendToParent({ type: 'recognition-error', error: err.message || String(err), recoverable: false });
     }
   }
 
-  async function startRecognition() {
-    // Request mic access - this is what makes the iframe approach work
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+  function startRecognition() {
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      throw new Error('Speech Recognition not supported');
+      throw new Error('Speech Recognition not supported in this browser');
     }
 
     recognition = new SpeechRecognition();
@@ -51,10 +52,10 @@
     };
 
     recognition.onresult = function (event) {
-      let interimTranscript = '';
-      let finalTranscript = '';
+      var interimTranscript = '';
+      var finalTranscript = '';
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      for (var i = event.resultIndex; i < event.results.length; i++) {
         var transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
           finalTranscript += transcript;
@@ -65,9 +66,11 @@
 
       if (interimTranscript) {
         lastInterimTranscript = interimTranscript;
+        statusText.textContent = interimTranscript.slice(0, 40) + (interimTranscript.length > 40 ? '...' : '');
       }
       if (finalTranscript) {
         lastInterimTranscript = '';
+        statusText.textContent = 'Listening...';
       }
 
       sendToParent({
@@ -80,9 +83,16 @@
     recognition.onerror = function (event) {
       console.warn('CHAOS Recognition Frame: Error:', event.error);
 
-      // no-speech and aborted are normal - just restart via onend
+      // no-speech and aborted are normal - recognition auto-restarts via onend
       if (event.error === 'no-speech' || event.error === 'aborted') {
-        // Don't even tell the parent about no-speech - it's just silence
+        return;
+      }
+
+      // not-allowed means mic permission denied
+      if (event.error === 'not-allowed') {
+        showError('Microphone access denied');
+        sendToParent({ type: 'recognition-error', error: 'Microphone access denied. Check your browser permissions.', recoverable: false });
+        isActive = false;
         return;
       }
 
@@ -95,13 +105,12 @@
     };
 
     recognition.onend = function () {
-      // Restart if still active (browser stops after silence)
-      if (recognition) {
+      // Restart if still active (browser stops after silence periods)
+      if (isActive && recognition) {
         try {
           recognition.start();
         } catch (e) {
           sendToParent({ type: 'recognition-ended' });
-          cleanup();
         }
       }
     };
@@ -110,6 +119,7 @@
   }
 
   function stopRecognition() {
+    isActive = false;
     playBoop();
 
     // Send any pending interim text as final
@@ -133,17 +143,6 @@
     }
 
     sendToParent({ type: 'recognition-ended' });
-    cleanup();
-  }
-
-  function cleanup() {
-    if (micStream) {
-      micStream.getTracks().forEach(function (track) {
-        track.stop();
-      });
-      micStream = null;
-    }
-    recognition = null;
   }
 
   function showError(message) {
@@ -172,7 +171,11 @@
 
   // Clean up on unload
   window.addEventListener('beforeunload', function () {
-    cleanup();
+    isActive = false;
+    if (recognition) {
+      try { recognition.stop(); } catch (e) {}
+      recognition = null;
+    }
   });
 
   console.log('CHAOS Recognition Frame: Loaded');
