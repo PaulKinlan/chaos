@@ -227,18 +227,30 @@ export async function fetchModels(
 }
 
 async function fetchGoogleModels(apiKey: string): Promise<ModelOption[]> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1/models?key=${encodeURIComponent(apiKey)}`,
-  );
-  if (!res.ok) throw new Error(`Google models API: ${res.status}`);
-  const data = (await res.json()) as { models: { name: string; displayName?: string }[] };
-  return data.models
-    .filter((m) => m.name.includes('gemini'))
-    .map((m) => {
-      const id = m.name.replace(/^models\//, '');
-      return { value: id, label: m.displayName ?? id };
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
+  // Fetch from both v1 (stable) and v1beta (preview/latest) to get all models
+  const results: ModelOption[] = [];
+  const seen = new Set<string>();
+
+  for (const version of ['v1beta', 'v1']) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/${version}/models?key=${encodeURIComponent(apiKey)}`,
+      );
+      if (!res.ok) continue;
+      const data = (await res.json()) as { models: { name: string; displayName?: string }[] };
+      for (const m of data.models) {
+        if (!m.name.includes('gemini')) continue;
+        const id = m.name.replace(/^models\//, '');
+        if (seen.has(id)) continue;
+        seen.add(id);
+        results.push({ value: id, label: m.displayName ?? id });
+      }
+    } catch {
+      // Continue to next version
+    }
+  }
+
+  return results.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 async function fetchOpenAIModels(apiKey: string): Promise<ModelOption[]> {
