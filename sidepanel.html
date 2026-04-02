@@ -280,19 +280,55 @@
       flex-shrink: 0;
     }
 
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+    }
+
     .input-area textarea {
       flex: 1;
       background: #1a1a1a;
       color: #e0e0e0;
       border: 1px solid #333;
       border-radius: 8px;
-      padding: 8px 10px;
+      padding: 8px 36px 8px 10px;
       font-family: inherit;
       font-size: 13px;
       resize: none;
       outline: none;
       max-height: 120px;
       min-height: 36px;
+    }
+
+    .btn-mic {
+      position: absolute;
+      right: 4px;
+      bottom: 4px;
+      background: none !important;
+      border: none !important;
+      padding: 4px 6px !important;
+      font-size: 16px !important;
+      cursor: pointer;
+      color: #666;
+      border-radius: 4px !important;
+      transition: color 0.15s;
+    }
+
+    .btn-mic:hover {
+      color: #e0e0e0 !important;
+      background: none !important;
+    }
+
+    .btn-mic.recording {
+      color: #ef4444 !important;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
     }
 
     .input-area textarea:focus {
@@ -495,13 +531,24 @@
 
   <!-- Input area -->
   <div class="input-area">
-    <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
+    <div class="input-wrapper">
+      <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
+      <button id="btn-mic" title="Voice input" class="btn-mic">&#127908;</button>
+    </div>
     <button id="btn-send">&#9654;</button>
   </div>
 
   <!-- Settings modal -->
   <div class="modal-overlay" id="settings-modal">
     <div class="modal">
+      <h2>Provider</h2>
+      <label for="provider-select">Active AI Provider</label>
+      <select id="provider-select" style="width:100%;padding:8px;margin-bottom:12px;background:#0d0d0d;color:#e0e0e0;border:1px solid #333;border-radius:6px;">
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="google">Google (Gemini)</option>
+        <option value="openai">OpenAI</option>
+        <option value="openrouter">OpenRouter</option>
+      </select>
       <h2>API Keys</h2>
       <label for="key-anthropic">Anthropic</label>
       <input type="password" id="key-anthropic" placeholder="sk-ant-...">
@@ -511,7 +558,10 @@
       <input type="password" id="key-openai" placeholder="sk-...">
       <label for="key-openrouter">OpenRouter</label>
       <input type="password" id="key-openrouter" placeholder="sk-or-...">
-      <h2 style="margin-top:20px;font-size:14px;">Tool Permissions</h2>
+      <h2 style="margin-top:20px;font-size:14px;">Browser Permissions</h2>
+      <p style="font-size:11px;color:#999;margin-bottom:8px;">These permissions are optional. Enable them to unlock more agent capabilities.</p>
+      <div id="browser-permissions" style="margin-bottom:12px;"></div>
+      <h2 style="margin-top:12px;font-size:14px;">Tool Permissions</h2>
       <div id="sp-permissions" style="max-height:200px;overflow-y:auto;margin-top:8px;"></div>
       <div class="modal-actions">
         <button class="btn-secondary" id="btn-settings-cancel">Cancel</button>

@@ -7,9 +7,10 @@
 
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import type { AgentMeta, ApiKeys } from './storage/types.js';
+import type { AgentMeta, ApiKeys, Settings } from './storage/types.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
+import { hasPermission, hasHostPermissions } from './permissions.js';
 
 // ── Configure marked ──
 
@@ -28,6 +29,7 @@ const btnReadPage = document.getElementById('btn-read-page') as HTMLButtonElemen
 const btnClearChat = document.getElementById('btn-clear-chat') as HTMLButtonElement;
 const btnNewAgent = document.getElementById('btn-new-agent') as HTMLButtonElement;
 const btnSettings = document.getElementById('btn-settings') as HTMLButtonElement;
+const btnMic = document.getElementById('btn-mic') as HTMLButtonElement;
 const typingIndicator = document.getElementById('typing-indicator') as HTMLDivElement;
 const setupPrompt = document.getElementById('setup-prompt') as HTMLDivElement;
 const pageContextBar = document.getElementById('page-context') as HTMLDivElement;
@@ -39,6 +41,7 @@ const settingsModal = document.getElementById('settings-modal') as HTMLDivElemen
 const btnOpenSettings = document.getElementById('btn-open-settings') as HTMLButtonElement;
 const btnSettingsCancel = document.getElementById('btn-settings-cancel') as HTMLButtonElement;
 const btnSettingsSave = document.getElementById('btn-settings-save') as HTMLButtonElement;
+const providerSelect = document.getElementById('provider-select') as HTMLSelectElement;
 const keyAnthropicInput = document.getElementById('key-anthropic') as HTMLInputElement;
 const keyGoogleInput = document.getElementById('key-google') as HTMLInputElement;
 const keyOpenaiInput = document.getElementById('key-openai') as HTMLInputElement;
@@ -212,9 +215,17 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       populateApiKeys(msg.keys as ApiKeys);
       break;
 
+    case 'settings': {
+      const s = msg.settings as Record<string, string> | undefined;
+      if (s?.activeProvider) {
+        providerSelect.value = s.activeProvider;
+      }
+      break;
+    }
+
     case 'apiKeysSaved':
       settingsModal.classList.remove('visible');
-      addSystemMessage('API keys saved.');
+      addSystemMessage('Settings saved.');
       sendMessage({ type: 'getApiKeys' });
       break;
 
@@ -474,7 +485,17 @@ chatInput.addEventListener('input', autoResize);
 
 // ── Read page button ──
 
-btnReadPage.addEventListener('click', () => {
+btnReadPage.addEventListener('click', async () => {
+  // Check if we have the required permissions first
+  const hasScripting = await chrome.permissions.contains({ permissions: ['scripting'], origins: ['<all_urls>'] });
+  if (!hasScripting) {
+    // Request permission from the user
+    const granted = await chrome.permissions.request({ permissions: ['scripting'], origins: ['<all_urls>'] });
+    if (!granted) {
+      addSystemMessage('Permission denied. Enable "Read page content" in Settings to use this feature.');
+      return;
+    }
+  }
   sendMessage({ type: 'extractContent' });
 });
 
@@ -492,6 +513,48 @@ btnDismissContext.addEventListener('click', () => {
 });
 
 // ── Settings modal ──
+
+async function loadBrowserPermissions(): Promise<void> {
+  const container = document.getElementById('browser-permissions');
+  if (!container) return;
+
+  const browserPerms = [
+    { id: 'page-content', label: 'Read page content', permission: 'scripting' as const, needsHost: true },
+    { id: 'tabs', label: 'Tab management', permission: 'tabs' as const, needsHost: false },
+    { id: 'bookmarks', label: 'Bookmarks', permission: 'bookmarks' as const, needsHost: false },
+    { id: 'history', label: 'Browsing history', permission: 'history' as const, needsHost: false },
+  ];
+
+  const rows: string[] = [];
+  for (const perm of browserPerms) {
+    const granted = await hasPermission(perm.permission) && (!perm.needsHost || await hasHostPermissions());
+    rows.push(`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px;border-bottom:1px solid #222;">
+      <span style="color:#ccc;">${perm.label}</span>
+      <button class="browser-perm-btn" data-perm="${perm.permission}" data-needs-host="${perm.needsHost}"
+        style="padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer;border:1px solid ${granted ? '#16a34a' : '#2563eb'};background:${granted ? '#14532d' : '#1e3a5f'};color:${granted ? '#86efac' : '#93c5fd'};">
+        ${granted ? 'Enabled' : 'Enable'}
+      </button>
+    </div>`);
+  }
+  container.innerHTML = rows.join('');
+
+  // Wire up enable buttons
+  container.querySelectorAll<HTMLButtonElement>('.browser-perm-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const permName = btn.dataset.perm! as chrome.runtime.ManifestPermissions;
+      const needsHost = btn.dataset.needsHost === 'true';
+      const request: chrome.permissions.Permissions = { permissions: [permName] };
+      if (needsHost) request.origins = ['<all_urls>'];
+      const granted = await chrome.permissions.request(request);
+      if (granted) {
+        btn.textContent = 'Enabled';
+        btn.style.borderColor = '#16a34a';
+        btn.style.background = '#14532d';
+        btn.style.color = '#86efac';
+      }
+    });
+  });
+}
 
 async function loadSidePanelPermissions(): Promise<void> {
   const container = document.getElementById('sp-permissions');
@@ -513,17 +576,16 @@ async function loadSidePanelPermissions(): Promise<void> {
     .join('');
 }
 
-btnSettings.addEventListener('click', () => {
+function openSettings(): void {
   sendMessage({ type: 'getApiKeys' });
+  sendMessage({ type: 'getSettings' });
   loadSidePanelPermissions();
+  loadBrowserPermissions();
   settingsModal.classList.add('visible');
-});
+}
 
-btnOpenSettings.addEventListener('click', () => {
-  sendMessage({ type: 'getApiKeys' });
-  loadSidePanelPermissions();
-  settingsModal.classList.add('visible');
-});
+btnSettings.addEventListener('click', openSettings);
+btnOpenSettings.addEventListener('click', openSettings);
 
 btnSettingsCancel.addEventListener('click', () => {
   settingsModal.classList.remove('visible');
@@ -537,6 +599,7 @@ btnSettingsSave.addEventListener('click', async () => {
   if (keyOpenrouterInput.value.trim()) keys.openrouter = keyOpenrouterInput.value.trim();
 
   sendMessage({ type: 'setApiKeys', keys });
+  sendMessage({ type: 'setSettings', settings: { activeProvider: providerSelect.value } });
 
   // Save tool permissions
   const selects = document.querySelectorAll<HTMLSelectElement>('.sp-perm-select');
@@ -619,3 +682,73 @@ function init(): void {
 }
 
 init();
+
+// ── Speech-to-text ──
+
+const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+let recognition: any = null;
+let isRecording = false;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  let finalTranscript = '';
+
+  recognition.onresult = (event: any) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript + ' ';
+      } else {
+        interim = transcript;
+      }
+    }
+    // Update the input with final + interim text
+    const existingText = chatInput.value.substring(0, chatInput.value.length - (chatInput.dataset.lastInterim?.length || 0));
+    chatInput.value = existingText + finalTranscript + interim;
+    chatInput.dataset.lastInterim = interim;
+    chatInput.scrollTop = chatInput.scrollHeight;
+  };
+
+  recognition.onend = () => {
+    if (isRecording) {
+      // Restart if still recording (browser may stop after silence)
+      recognition.start();
+    } else {
+      btnMic.classList.remove('recording');
+      finalTranscript = '';
+      delete chatInput.dataset.lastInterim;
+    }
+  };
+
+  recognition.onerror = (event: any) => {
+    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+      addSystemMessage(`Speech recognition error: ${event.error}`);
+    }
+    isRecording = false;
+    btnMic.classList.remove('recording');
+    finalTranscript = '';
+    delete chatInput.dataset.lastInterim;
+  };
+
+  btnMic.addEventListener('click', () => {
+    if (isRecording) {
+      isRecording = false;
+      recognition.stop();
+      btnMic.classList.remove('recording');
+    } else {
+      isRecording = true;
+      finalTranscript = '';
+      chatInput.dataset.lastInterim = '';
+      recognition.start();
+      btnMic.classList.add('recording');
+    }
+  });
+} else {
+  // Hide mic button if speech recognition not supported
+  btnMic.style.display = 'none';
+}

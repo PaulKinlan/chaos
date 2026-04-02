@@ -184,6 +184,14 @@ chrome.runtime.onConnect.addListener((port) => {
           await handleSetApiKeys(port, msg);
           break;
 
+        case 'getSettings':
+          await handleGetSettings(port);
+          break;
+
+        case 'setSettings':
+          await handleSetSettings(port, msg);
+          break;
+
         case 'saveConversation':
           await handleSaveConversation(port, msg);
           break;
@@ -412,6 +420,24 @@ async function handleSetApiKeys(
 ): Promise<void> {
   await setApiKeys(msg.keys);
   port.postMessage({ type: 'apiKeysSaved' });
+}
+
+// ── Settings handlers ──
+
+async function handleGetSettings(port: chrome.runtime.Port): Promise<void> {
+  const { getSettings } = await import('./storage/chrome-storage.js');
+  const settings = await getSettings();
+  port.postMessage({ type: 'settings', settings });
+}
+
+async function handleSetSettings(
+  port: chrome.runtime.Port,
+  msg: { settings: Record<string, unknown> },
+): Promise<void> {
+  const { getSettings, setSettings } = await import('./storage/chrome-storage.js');
+  const current = await getSettings();
+  await setSettings({ ...current, ...msg.settings });
+  port.postMessage({ type: 'settingsSaved' });
 }
 
 // ── Conversation persistence handlers ──
