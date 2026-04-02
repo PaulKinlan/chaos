@@ -46,6 +46,7 @@ let pendingRunNowAlarmId: string | null = null;
 // Chat state
 let port: chrome.runtime.Port | null = null;
 let isChatStreaming = false;
+let lastAgenticText = '';
 let chatPageContext: { title: string; url: string; content: string } | null = null;
 let currentStreamEl: HTMLDivElement | null = null;
 let currentStreamContent = '';
@@ -635,9 +636,12 @@ function handlePortMessage(msg: Record<string, unknown>): void {
           chatScrollToBottom();
         }
       } else if (progressType === 'text' && progressContent) {
+        // Track last intermediate text to avoid duplicate on agenticDone
+        lastAgenticText = progressContent;
         // Show intermediate text as a regular assistant message
         const textEl = document.createElement('div');
         textEl.className = 'chat-message assistant';
+        textEl.dataset.agenticIntermediate = 'true';
         renderChatMarkdown(textEl, progressContent);
         chatMessagesDiv.appendChild(textEl);
         chatScrollToBottom();
@@ -653,17 +657,15 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       isChatStreaming = false;
       chatTyping.classList.remove('visible');
       chatBtnSend.disabled = false;
-      // Add the final result as the definitive assistant response
-      if (msg.result) {
+      // Only add final result if it's different from the last intermediate text
+      if (msg.result && (msg.result as string) !== lastAgenticText) {
         const finalEl = document.createElement('div');
         finalEl.className = 'chat-message assistant';
-        finalEl.style.borderTop = '2px solid var(--accent)';
-        finalEl.style.paddingTop = 'var(--sp-3)';
-        finalEl.style.marginTop = 'var(--sp-2)';
         renderChatMarkdown(finalEl, msg.result as string);
         chatMessagesDiv.appendChild(finalEl);
         chatScrollToBottom();
       }
+      lastAgenticText = '';
       if (msg.result) {
         conversationHistory.push({
           role: 'assistant',
