@@ -731,7 +731,7 @@ export async function runAgentLoop(
     );
   }
 
-  const model = createLanguageModel(settings.activeProvider, apiKey);
+  const model = createLanguageModel(settings.activeProvider, apiKey, settings.model);
 
   // 4. Define tools (file tools + communication tools if visible/open)
   const agents = await getAgentList();

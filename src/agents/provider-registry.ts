@@ -148,6 +148,136 @@ export function getDefaultProvider(): ProviderConfig {
   return providers.anthropic;
 }
 
+// ── Dynamic model fetching ──
+
+export interface ModelOption {
+  value: string;
+  label: string;
+}
+
+interface ModelCache {
+  models: ModelOption[];
+  timestamp: number;
+}
+
+const MODEL_CACHE_KEY = 'chaos_model_cache';
+const MODEL_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+async function getCachedModels(providerId: string): Promise<ModelOption[] | null> {
+  const result = await chrome.storage.local.get(MODEL_CACHE_KEY);
+  const cache = result[MODEL_CACHE_KEY] as Record<string, ModelCache> | undefined;
+  if (!cache?.[providerId]) return null;
+  const entry = cache[providerId];
+  if (Date.now() - entry.timestamp > MODEL_CACHE_TTL) return null;
+  return entry.models;
+}
+
+async function setCachedModels(providerId: string, models: ModelOption[]): Promise<void> {
+  const result = await chrome.storage.local.get(MODEL_CACHE_KEY);
+  const cache = (result[MODEL_CACHE_KEY] as Record<string, ModelCache> | undefined) ?? {};
+  cache[providerId] = { models, timestamp: Date.now() };
+  await chrome.storage.local.set({ [MODEL_CACHE_KEY]: cache });
+}
+
+/**
+ * Fetch available models from a provider's API.
+ * Results are cached in chrome.storage.local for 1 hour.
+ * Pass forceRefresh=true to bypass cache.
+ */
+export async function fetchModels(
+  providerId: string,
+  apiKey: string,
+  forceRefresh = false,
+): Promise<ModelOption[]> {
+  if (!forceRefresh) {
+    const cached = await getCachedModels(providerId);
+    if (cached) return cached;
+  }
+
+  let models: ModelOption[];
+
+  switch (providerId) {
+    case 'google':
+      models = await fetchGoogleModels(apiKey);
+      break;
+    case 'openai':
+      models = await fetchOpenAIModels(apiKey);
+      break;
+    case 'anthropic':
+      models = await fetchAnthropicModels(apiKey);
+      break;
+    case 'openrouter':
+      models = await fetchOpenRouterModels();
+      break;
+    default:
+      throw new Error(`Unknown provider for model fetching: ${providerId}`);
+  }
+
+  await setCachedModels(providerId, models);
+  return models;
+}
+
+async function fetchGoogleModels(apiKey: string): Promise<ModelOption[]> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1/models?key=${encodeURIComponent(apiKey)}`,
+  );
+  if (!res.ok) throw new Error(`Google models API: ${res.status}`);
+  const data = (await res.json()) as { models: { name: string; displayName?: string }[] };
+  return data.models
+    .filter((m) => m.name.includes('gemini'))
+    .map((m) => {
+      const id = m.name.replace(/^models\//, '');
+      return { value: id, label: m.displayName ?? id };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+async function fetchOpenAIModels(apiKey: string): Promise<ModelOption[]> {
+  const res = await fetch('https://api.openai.com/v1/models', {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) throw new Error(`OpenAI models API: ${res.status}`);
+  const data = (await res.json()) as { data: { id: string }[] };
+  const pattern = /^(gpt|o1|o3|o4)/;
+  return data.data
+    .filter((m) => pattern.test(m.id))
+    .map((m) => ({ value: m.id, label: m.id }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+async function fetchAnthropicModels(apiKey: string): Promise<ModelOption[]> {
+  const res = await fetch('https://api.anthropic.com/v1/models', {
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+  });
+  if (!res.ok) throw new Error(`Anthropic models API: ${res.status}`);
+  const data = (await res.json()) as { data: { id: string }[] };
+  return data.data
+    .filter((m) => m.id.includes('claude'))
+    .map((m) => ({ value: m.id, label: m.id }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+async function fetchOpenRouterModels(): Promise<ModelOption[]> {
+  const res = await fetch('https://openrouter.ai/api/v1/models');
+  if (!res.ok) throw new Error(`OpenRouter models API: ${res.status}`);
+  const data = (await res.json()) as { data: { id: string; name?: string }[] };
+  return data.data
+    .slice(0, 50)
+    .map((m) => ({ value: m.id, label: m.name ?? m.id }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Get hardcoded fallback models for a provider (used when API fetch fails or no API key). */
+export function getFallbackModels(providerId: string): ModelOption[] {
+  const provider = providers[providerId as ProviderId];
+  if (!provider) return [];
+  return provider.models.map((m) => ({ value: m.id, label: m.displayName }));
+}
+
 /**
  * Create a language model instance for the given provider and API key.
  * If modelId is not specified, uses the provider's default model.

@@ -17,6 +17,7 @@ export interface Settings {
   defaultAgentId?: string;
   activeProvider: 'anthropic' | 'openai' | 'google' | 'openrouter';
   theme: 'dark' | 'light' | 'system';
+  model?: string;
 }
 
 // ── API keys (stored in chrome.storage.local, never sync) ──

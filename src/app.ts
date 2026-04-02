@@ -18,6 +18,7 @@ import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionL
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
 import { toolRegistry } from './tools/lookup/registry.js';
+import { fetchModels, getFallbackModels, type ModelOption } from './agents/provider-registry.js';
 import type { ToolMeta } from './tools/lookup/types.js';
 
 // ── Configure marked ──
@@ -2114,13 +2115,65 @@ async function loadSettings(): Promise<void> {
     (document.getElementById('settings-key-brave') as HTMLInputElement).value =
       keys.brave || '';
 
-    // Load settings (provider, theme)
-    const settingsResult = await sendMsg<{ settings: { activeProvider: string; theme: string } }>({ type: 'getSettings' });
+    // Load settings (provider, theme, model)
+    const settingsResult = await sendMsg<{ settings: { activeProvider: string; theme: string; model?: string } }>({ type: 'getSettings' });
     const settings = settingsResult.settings;
     (document.getElementById('settings-provider') as HTMLSelectElement).value = settings.activeProvider || 'anthropic';
     (document.getElementById('theme-select') as HTMLSelectElement).value = settings.theme || 'system';
+
+    // Populate model selector
+    await populateModelSelect(settings.activeProvider || 'anthropic', keys, settings.model);
   } catch (err) {
     showPanelError('view-global-settings', `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+async function populateModelSelect(
+  providerId: string,
+  keys: ApiKeys,
+  selectedModel?: string,
+): Promise<void> {
+  const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
+  const customModelInput = document.getElementById('custom-model') as HTMLInputElement;
+
+  // Show loading state
+  modelSelect.innerHTML = '<option value="">Loading models...</option>';
+
+  let models: ModelOption[];
+  const apiKey = keys[providerId as keyof ApiKeys];
+
+  if (apiKey) {
+    try {
+      models = await fetchModels(providerId, apiKey);
+    } catch {
+      // Fallback to hardcoded models on fetch failure
+      models = getFallbackModels(providerId);
+    }
+  } else {
+    models = getFallbackModels(providerId);
+  }
+
+  // Populate select
+  modelSelect.innerHTML = '<option value="">(provider default)</option>';
+  for (const m of models) {
+    const opt = document.createElement('option');
+    opt.value = m.value;
+    opt.textContent = m.label;
+    modelSelect.appendChild(opt);
+  }
+
+  // Restore selection
+  if (selectedModel) {
+    // Check if selected model is in the list
+    const inList = models.some((m) => m.value === selectedModel);
+    if (inList) {
+      modelSelect.value = selectedModel;
+      customModelInput.value = '';
+    } else {
+      // Model not in list — put it in custom input
+      modelSelect.value = '';
+      customModelInput.value = selectedModel;
+    }
   }
 }
 
@@ -2149,10 +2202,57 @@ document.getElementById('btn-save-keys')!.addEventListener('click', async () => 
 document.getElementById('btn-save-prefs')!.addEventListener('click', async () => {
   const provider = (document.getElementById('settings-provider') as HTMLSelectElement).value;
   const theme = (document.getElementById('theme-select') as HTMLSelectElement).value as 'system' | 'light' | 'dark';
-  await sendMsg({ type: 'setSettings', settings: { activeProvider: provider, theme } });
+  const customModel = (document.getElementById('custom-model') as HTMLInputElement).value.trim();
+  const selectModel = (document.getElementById('model-select') as HTMLSelectElement).value;
+  const model = customModel || selectModel || undefined;
+  await sendMsg({ type: 'setSettings', settings: { activeProvider: provider, theme, model } });
   applyTheme(theme);
   alert('Preferences saved.');
 });
+
+// ── Provider change → refresh model list ──
+
+document.getElementById('settings-provider')!.addEventListener('change', async () => {
+  const providerId = (document.getElementById('settings-provider') as HTMLSelectElement).value;
+  const apiKeys = await getCurrentApiKeys();
+  await populateModelSelect(providerId, apiKeys);
+});
+
+document.getElementById('btn-refresh-models')!.addEventListener('click', async () => {
+  const providerId = (document.getElementById('settings-provider') as HTMLSelectElement).value;
+  const apiKeys = await getCurrentApiKeys();
+  const apiKey = apiKeys[providerId as keyof ApiKeys];
+  const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
+  modelSelect.innerHTML = '<option value="">Refreshing...</option>';
+
+  if (apiKey) {
+    try {
+      const models = await fetchModels(providerId, apiKey, true);
+      modelSelect.innerHTML = '<option value="">(provider default)</option>';
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m.value;
+        opt.textContent = m.label;
+        modelSelect.appendChild(opt);
+      }
+    } catch (err) {
+      modelSelect.innerHTML = '<option value="">Fetch failed — using defaults</option>';
+      const fallback = getFallbackModels(providerId);
+      for (const m of fallback) {
+        const opt = document.createElement('option');
+        opt.value = m.value;
+        opt.textContent = m.label;
+        modelSelect.appendChild(opt);
+      }
+    }
+  }
+});
+
+/** Helper to get current API keys from storage. */
+async function getCurrentApiKeys(): Promise<ApiKeys> {
+  const result = await sendMsg<{ keys: ApiKeys }>({ type: 'getApiKeys' });
+  return result.keys;
+}
 
 // ── Mic Test ──
 

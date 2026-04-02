@@ -2430,6 +2430,21 @@
                 </select>
               </div>
               <div class="settings-field">
+                <label for="model-select">Model</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <select id="model-select" style="flex:1;">
+                    <option value="">Select a model...</option>
+                  </select>
+                  <button class="btn btn-ghost btn-sm" id="btn-refresh-models" title="Refresh model list">
+                    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  </button>
+                </div>
+                <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">
+                  Or enter a custom model ID:
+                </p>
+                <input type="text" id="custom-model" placeholder="e.g. claude-sonnet-4-6" style="margin-top:4px;">
+              </div>
+              <div class="settings-field">
                 <label for="theme-select">Theme</label>
                 <select id="theme-select">
                   <option value="system">System (auto)</option>
