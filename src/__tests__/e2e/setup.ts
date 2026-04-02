@@ -7,6 +7,7 @@
 
 import puppeteer, { type Browser } from 'puppeteer';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
@@ -14,13 +15,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, '../../../dist');
 
 /**
- * Check if a Chrome/Chromium binary is available.
+ * Check if a Chrome/Chromium binary is available AND the extension is built.
  */
 export function isChromeAvailable(): boolean {
+  // Check extension is built
+  if (!fs.existsSync(path.join(EXTENSION_PATH, 'manifest.json'))) {
+    return false;
+  }
+
   try {
-    // Puppeteer's default Chrome or system Chrome
     const browserPath = puppeteer.executablePath();
-    if (browserPath) return true;
+    if (browserPath && fs.existsSync(browserPath)) return true;
   } catch {
     // Fall through
   }

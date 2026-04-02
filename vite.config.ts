@@ -21,4 +21,11 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    exclude: [
+      'node_modules/**',
+      'dist/**',
+      'src/__tests__/e2e/**',
+    ],
+  },
 });
