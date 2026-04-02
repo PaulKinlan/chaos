@@ -14,6 +14,7 @@ import { createLanguageModel } from './provider-registry.js';
 import { getCommunicationTools } from '../tools/communication/index.js';
 import { getChromeTools } from '../tools/chrome/index.js';
 import type { AgentMeta } from '../storage/types.js';
+import { createToolLookup, type LookupStrategy, type ToolMeta } from '../tools/lookup/index.js';
 
 // ── Types ──
 
@@ -22,6 +23,8 @@ export interface AgentLoopOptions {
   userMessage: string;
   pageContext?: { title: string; url: string; content: string };
   onChunk?: (chunk: string) => void;
+  /** Tool lookup strategy. 'static' includes all tools (default). */
+  toolLookupStrategy?: LookupStrategy;
 }
 
 interface ActivityLogEntry {
@@ -263,7 +266,7 @@ async function appendActivityLog(
 export async function runAgentLoop(
   options: AgentLoopOptions,
 ): Promise<string> {
-  const { agentId, userMessage, pageContext, onChunk } = options;
+  const { agentId, userMessage, pageContext, onChunk, toolLookupStrategy = 'static' } = options;
 
   // 1. Read agent's CLAUDE.md from OPFS
   const claudeMdPath = `${AGENTS_ROOT}/${agentId}/CLAUDE.md`;
@@ -294,11 +297,50 @@ export async function runAgentLoop(
   const selfMeta = agents.find((a) => a.id === agentId);
   const isVisible = selfMeta && selfMeta.visibility !== 'private';
 
-  const tools: ToolSet = {
+  // Build the full tool set (always available for resolution)
+  const allTools: ToolSet = {
     ...createAgentTools(agentId),
     ...getChromeTools(agentId),
     ...(isVisible ? getCommunicationTools(agentId) : {}),
   };
+
+  // Determine which tools to pass based on lookup strategy
+  let tools: ToolSet;
+  if (toolLookupStrategy === 'static') {
+    // Include all tools as before — no lookup needed
+    tools = allTools;
+  } else {
+    // Start with only the lookup_tools meta-tool; resolved tools are
+    // injected dynamically when the agent calls lookup_tools
+    const lookup = createToolLookup(toolLookupStrategy);
+
+    tools = {
+      lookup_tools: tool({
+        description:
+          'Describe what you need to do and this tool will return the most relevant tools. ' +
+          'Call this before attempting to use any other tool.',
+        parameters: z.object({
+          intent: z.string().describe('Natural language description of what you want to do'),
+          count: z.number().optional().default(5).describe('Number of tools to return'),
+        }),
+        execute: async ({ intent, count }) => {
+          const resolved = await lookup.resolve(intent, count);
+          // Inject the resolved tools into the active tool set so the
+          // agent can use them in subsequent steps
+          for (const meta of resolved) {
+            if (meta.name in allTools) {
+              tools[meta.name] = allTools[meta.name];
+            }
+          }
+          return resolved.map((m) => ({
+            name: m.name,
+            description: m.description,
+            category: m.category,
+          }));
+        },
+      }),
+    };
+  }
 
   // 5. Log user message
   await appendActivityLog(agentId, {
