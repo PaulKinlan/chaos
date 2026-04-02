@@ -483,22 +483,23 @@ function connectPort(): chrome.runtime.Port {
 
   p.onDisconnect.addListener(() => {
     port = null;
+    // Silently reconnect - service worker restarts are normal in MV3
     if (reconnectAttempts < MAX_RECONNECT_RETRIES) {
-      const delay = Math.pow(2, reconnectAttempts) * 1000;
+      const delay = Math.min(Math.pow(2, reconnectAttempts) * 500, 5000);
       reconnectAttempts++;
-      addChatSystemMessage(`Connection lost. Reconnecting... (attempt ${reconnectAttempts}/${MAX_RECONNECT_RETRIES})`);
       setTimeout(() => {
         try {
           port = connectPort();
           reconnectAttempts = 0;
-          addChatSystemMessage('Reconnected.');
+          // Silently refresh agent list
           sendPortMessage({ type: 'listAgents' });
         } catch {
           // Will be handled by next disconnect
         }
       }, delay);
     } else {
-      addChatSystemMessage('Could not reconnect. Please reload the page.');
+      // Only show a message after all retries fail
+      addChatSystemMessage('Connection lost. Please reload the page.');
     }
   });
 
