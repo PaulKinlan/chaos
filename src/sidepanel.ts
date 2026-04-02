@@ -137,6 +137,8 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       activeAgentId = agent.id;
       addSystemMessage(`Agent "${agent.name}" created.`);
       createAgentModal.classList.remove('visible');
+      // Refresh agent list everywhere (chat selector + agents panel)
+      sendMessage({ type: 'listAgents' });
       break;
     }
 
@@ -712,9 +714,11 @@ btnCreateConfirm.addEventListener('click', () => {
     return;
   }
   const role = agentRoleSelect.value;
+  const visibilityEl = document.getElementById('agent-visibility') as HTMLSelectElement | null;
+  const visibility = visibilityEl?.value || 'private';
   isCreatingAgent = true;
   const loadingEl = showLoadingState('Creating agent...');
-  sendMessage({ type: 'createAgent', name, role });
+  sendMessage({ type: 'createAgent', name, role, visibility });
   // Loading state is cleared when agentCreated message arrives
   const clearLoading = (msg: Record<string, unknown>) => {
     if (msg.type === 'agentCreated' || msg.type === 'error') {

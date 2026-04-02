@@ -1012,6 +1012,12 @@
         <option value="planner">Planner</option>
         <option value="reviewer">Reviewer</option>
       </select>
+      <label for="agent-visibility">Visibility</label>
+      <select id="agent-visibility">
+        <option value="private">Private (hidden from other agents)</option>
+        <option value="visible">Visible (can send/receive messages)</option>
+        <option value="open">Open (visible + shared artifacts)</option>
+      </select>
       <div class="modal-actions">
         <button class="btn-secondary" id="btn-create-cancel">Cancel</button>
         <button class="btn-primary" id="btn-create-confirm">Create</button>

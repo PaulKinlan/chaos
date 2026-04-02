@@ -272,12 +272,16 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       chatActiveAgentId = agent.id;
       addChatSystemMessage(`Agent "${agent.name}" created.`);
       createAgentModal.classList.remove('visible');
+      // Refresh the agents panel
+      loadAgents();
       break;
     }
 
     case 'agentDeleted':
       sendPortMessage({ type: 'listAgents' });
       addChatSystemMessage('Agent deleted.');
+      // Refresh the agents panel
+      loadAgents();
       break;
 
     case 'chatStart':

@@ -467,9 +467,13 @@ async function handleListAgents(port: chrome.runtime.Port): Promise<void> {
 
 async function handleCreateAgent(
   port: chrome.runtime.Port,
-  msg: { name: string; role: string },
+  msg: { name: string; role: string; visibility?: string },
 ): Promise<void> {
   const agent = await createAgent(msg.name, msg.role);
+  if (msg.visibility && msg.visibility !== 'private') {
+    await updateAgentMeta(agent.id, { visibility: msg.visibility as 'private' | 'visible' | 'open' });
+    agent.visibility = msg.visibility as 'private' | 'visible' | 'open';
+  }
   await refreshContextMenus();
   port.postMessage({ type: 'agentCreated', agent });
 }
