@@ -7,8 +7,10 @@
 
 import puppeteer, { type Browser } from 'puppeteer';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, '../../../dist');
 
 /**
