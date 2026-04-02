@@ -2,7 +2,7 @@
 
 Multiple personal AI agents that live in your browser, learn about you, and act on your behalf.
 
-Built on concepts from [emaila.gent](https://github.com/PaulKinlan/emaila.gent) (multi-agent learning system), [co-do](https://github.com/PaulKinlan/co-do) (sandboxed tool execution), [NotebookLM-Chrome](https://github.com/PaulKinlan/NotebookLM-Chrome) (content extraction and safe rendering), and [infinitron.com](https://infinitron.com).
+Built on concepts from [emaila.gent](https://github.com/PaulKinlan/emaila.gent) (multi-agent learning system), [co-do](https://github.com/PaulKinlan/co-do) (sandboxed tool execution), [NotebookLM-Chrome](https://github.com/PaulKinlan/NotebookLM-Chrome) (content extraction and safe rendering), and [infinatron.com](https://infinatron.com).
 
 See [docs/architecture.md](docs/architecture.md) for the full design and [docs/prd.md](docs/prd.md) for product requirements.
 
