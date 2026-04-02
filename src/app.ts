@@ -1,14 +1,14 @@
 /**
  * Dashboard UI (app.html)
  *
- * Full-tab new tab page and "operating system view" showing:
- * - Chat (primary, default tab) with full-width conversation interface
- * - Agents, Tasks, Messages, Artifacts dashboard tabs
- * - Files: OPFS file explorer for agent transparency
- * - Settings
+ * New layout model:
+ * - Top bar: Agent tabs (like browser tabs) with [+] to create
+ * - Left sidebar: View navigation (Chat, Tasks, Messages, Artifacts, Files, Agent Settings)
+ * - Main area: The selected view, filtered to the active agent
+ * - Global settings accessible via gear icon in top bar
  *
  * Chat uses a long-lived port (like sidepanel.ts) for streaming.
- * Dashboard tabs use chrome.runtime.sendMessage (one-shot request/response).
+ * Dashboard views use chrome.runtime.sendMessage (one-shot request/response).
  */
 
 import { marked } from 'marked';
@@ -31,11 +31,13 @@ let agents: AgentMeta[] = [];
 let tasks: Task[] = [];
 let messages: AgentMessage[] = [];
 let artifacts: ArtifactMeta[] = [];
-let expandedAgentId: string | null = null;
+
+// Active agent & view
+let activeAgentId: string | null = null;
+let activeView: string = 'chat';
 
 // Chat state
 let port: chrome.runtime.Port | null = null;
-let chatActiveAgentId: string | null = null;
 let isChatStreaming = false;
 let chatPageContext: { title: string; url: string; content: string } | null = null;
 let currentStreamEl: HTMLDivElement | null = null;
@@ -51,6 +53,9 @@ interface ConversationEntry {
 }
 
 let conversationHistory: ConversationEntry[] = [];
+
+// Context menu state
+let contextMenuAgentId: string | null = null;
 
 // ── Helpers ──
 
@@ -115,7 +120,7 @@ function statusBadgeClass(status: string): string {
   return `status-${status}`;
 }
 
-// ── One-shot messaging (for dashboard tabs) ──
+// ── One-shot messaging (for dashboard views) ──
 
 async function sendMsg<T = unknown>(msg: Record<string, unknown>): Promise<T> {
   const result = await (chrome.runtime.sendMessage(msg) as Promise<T & { error?: string }>);
@@ -162,59 +167,261 @@ function showPanelError(panelId: string, message: string): void {
 }
 
 // ══════════════════════════════════════════
-// ── Tab navigation
+// ── Agent Tabs
 // ══════════════════════════════════════════
 
-const tabButtons = document.querySelectorAll<HTMLButtonElement>('.topbar-tab');
-const tabPanels = document.querySelectorAll<HTMLDivElement>('.tab-panel');
+const agentTabsScroll = document.getElementById('agent-tabs-scroll')!;
 
-tabButtons.forEach((btn) => {
+function renderAgentTabs(): void {
+  agentTabsScroll.innerHTML = '';
+
+  for (const agent of agents) {
+    const tab = document.createElement('button');
+    tab.className = 'agent-tab' + (agent.id === activeAgentId ? ' active' : '');
+    tab.dataset.agentId = agent.id;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = agent.name;
+
+    const roleBadge = document.createElement('span');
+    roleBadge.className = `role-badge ${roleBadgeClass(agent.role)}`;
+    roleBadge.textContent = agent.role;
+
+    tab.appendChild(nameSpan);
+    tab.appendChild(roleBadge);
+
+    tab.addEventListener('click', () => {
+      switchToAgent(agent.id);
+    });
+
+    tab.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showAgentContextMenu(e, agent.id);
+    });
+
+    agentTabsScroll.appendChild(tab);
+  }
+}
+
+function switchToAgent(agentId: string): void {
+  if (activeAgentId === agentId) return;
+
+  // Save current conversation before switching
+  saveChatConversation();
+
+  activeAgentId = agentId;
+
+  // Update tab highlights
+  agentTabsScroll.querySelectorAll('.agent-tab').forEach((tab) => {
+    tab.classList.toggle('active', (tab as HTMLElement).dataset.agentId === agentId);
+  });
+
+  // Show sidebar (in case we were on no-agent state)
+  updateViewVisibility();
+
+  // Reset chat state
+  conversationHistory = [];
+  chatPageContext = null;
+  const chatPageContextBar = document.getElementById('chat-page-context')!;
+  chatPageContextBar.classList.remove('visible');
+  const chatMessagesDiv = document.getElementById('chat-messages')!;
+  chatMessagesDiv.innerHTML = '';
+
+  // Load conversation for new agent
+  if (port) {
+    sendPortMessage({ type: 'getConversation', agentId });
+  }
+
+  // Refresh current view data
+  loadCurrentViewData();
+}
+
+function updateViewVisibility(): void {
+  const noAgentPanel = document.getElementById('view-no-agent')!;
+  const viewPanels = document.querySelectorAll<HTMLDivElement>('.view-panel:not(#view-no-agent):not(#view-global-settings)');
+
+  if (!activeAgentId) {
+    // Show no-agent state, hide everything else
+    noAgentPanel.classList.add('active');
+    viewPanels.forEach((p) => p.classList.remove('active'));
+    document.getElementById('view-global-settings')!.classList.remove('active');
+    return;
+  }
+
+  noAgentPanel.classList.remove('active');
+  document.getElementById('view-global-settings')!.classList.remove('active');
+
+  // Show the active view
+  viewPanels.forEach((p) => {
+    const viewId = p.id.replace('view-', '');
+    p.classList.toggle('active', viewId === activeView);
+  });
+}
+
+// ══════════════════════════════════════════
+// ── Sidebar Navigation
+// ══════════════════════════════════════════
+
+const sidebarItems = document.querySelectorAll<HTMLButtonElement>('.sidebar-item');
+
+sidebarItems.forEach((btn) => {
   btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab!;
-    tabButtons.forEach((b) => b.classList.remove('active'));
-    tabPanels.forEach((p) => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(`panel-${tab}`)!.classList.add('active');
+    const view = btn.dataset.view!;
 
-    // Load data when switching tabs
-    switch (tab) {
-      case 'chat':
-        // Chat is always connected via port
-        break;
-      case 'agents':
-        loadAgents();
-        break;
-      case 'tasks':
-        loadTasks();
-        break;
-      case 'messages':
-        loadMessages();
-        break;
-      case 'artifacts':
-        loadArtifacts();
-        break;
-      case 'files':
-        loadFilesTab();
-        break;
-      case 'settings':
-        loadSettings();
-        loadPermissions();
-        break;
+    if (!activeAgentId && view !== 'global-settings') {
+      return; // Don't switch views if no agent selected
     }
+
+    activeView = view;
+
+    // Update sidebar highlights
+    sidebarItems.forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Show the correct panel
+    updateViewVisibility();
+
+    // Load data for the view
+    loadCurrentViewData();
   });
 });
 
+// Global settings button
+document.getElementById('btn-global-settings')!.addEventListener('click', () => {
+  activeView = 'global-settings';
+
+  // Deselect sidebar items
+  sidebarItems.forEach((b) => b.classList.remove('active'));
+
+  // Hide all views, show global settings
+  document.querySelectorAll<HTMLDivElement>('.view-panel').forEach((p) => p.classList.remove('active'));
+  document.getElementById('view-global-settings')!.classList.add('active');
+
+  loadSettings();
+  loadPermissions();
+});
+
+function loadCurrentViewData(): void {
+  switch (activeView) {
+    case 'chat':
+      // Chat is always connected via port
+      break;
+    case 'tasks':
+      loadTasks();
+      break;
+    case 'messages':
+      loadMessages();
+      break;
+    case 'artifacts':
+      loadArtifacts();
+      break;
+    case 'files':
+      loadFilesView();
+      break;
+    case 'agent-settings':
+      loadAgentSettings();
+      break;
+    case 'global-settings':
+      loadSettings();
+      loadPermissions();
+      break;
+  }
+}
+
 // ══════════════════════════════════════════
-// ── Chat Tab (port-based streaming)
+// ── Agent Tab Context Menu
 // ══════════════════════════════════════════
 
-const chatAgentSelect = document.getElementById('chat-agent-select') as HTMLSelectElement;
+const contextMenu = document.getElementById('agent-tab-context-menu')!;
+
+function showAgentContextMenu(e: MouseEvent, agentId: string): void {
+  contextMenuAgentId = agentId;
+  contextMenu.style.left = `${e.clientX}px`;
+  contextMenu.style.top = `${e.clientY}px`;
+  contextMenu.classList.add('visible');
+}
+
+function hideContextMenu(): void {
+  contextMenu.classList.remove('visible');
+  contextMenuAgentId = null;
+}
+
+document.addEventListener('click', () => hideContextMenu());
+document.addEventListener('contextmenu', (e) => {
+  if (!contextMenu.contains(e.target as Node)) {
+    hideContextMenu();
+  }
+});
+
+document.getElementById('ctx-rename-agent')!.addEventListener('click', () => {
+  if (!contextMenuAgentId) return;
+  const agent = agents.find((a) => a.id === contextMenuAgentId);
+  if (!agent) return;
+
+  const newName = prompt('Rename agent:', agent.name);
+  if (newName && newName.trim() && newName.trim() !== agent.name) {
+    sendMsg({ type: 'renameAgent', agentId: contextMenuAgentId, name: newName.trim() }).then(() => {
+      // Refresh agent list
+      sendPortMessage({ type: 'listAgents' });
+    }).catch(() => {
+      // Fallback: just refresh
+      sendPortMessage({ type: 'listAgents' });
+    });
+  }
+  hideContextMenu();
+});
+
+document.getElementById('ctx-visibility-agent')!.addEventListener('click', () => {
+  if (!contextMenuAgentId) return;
+  const agent = agents.find((a) => a.id === contextMenuAgentId);
+  if (!agent) return;
+
+  const options = ['private', 'visible', 'open'];
+  const currentIdx = options.indexOf(agent.visibility);
+  const nextVis = options[(currentIdx + 1) % options.length];
+
+  sendMsg({ type: 'updateAgentVisibility', agentId: contextMenuAgentId, visibility: nextVis }).then(() => {
+    sendPortMessage({ type: 'listAgents' });
+  }).catch(() => {
+    sendPortMessage({ type: 'listAgents' });
+  });
+  hideContextMenu();
+});
+
+document.getElementById('ctx-delete-agent')!.addEventListener('click', () => {
+  if (!contextMenuAgentId) return;
+  const agent = agents.find((a) => a.id === contextMenuAgentId);
+  if (!agent) return;
+
+  const deleteId = contextMenuAgentId;
+  hideContextMenu();
+
+  showConfirm(
+    'Delete Agent',
+    `Are you sure you want to delete "${agent.name}"? This cannot be undone.`,
+    async () => {
+      await sendMsg({ type: 'deleteAgent', agentId: deleteId });
+      if (activeAgentId === deleteId) {
+        activeAgentId = null;
+        activeView = 'chat';
+        sidebarItems.forEach((b) => {
+          b.classList.toggle('active', b.dataset.view === 'chat');
+        });
+      }
+      sendPortMessage({ type: 'listAgents' });
+    },
+  );
+});
+
+// ══════════════════════════════════════════
+// ── Chat (port-based streaming)
+// ══════════════════════════════════════════
+
 const chatMessagesDiv = document.getElementById('chat-messages') as HTMLDivElement;
 const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
 const chatBtnSend = document.getElementById('chat-btn-send') as HTMLButtonElement;
 const chatBtnReadPage = document.getElementById('chat-btn-read-page') as HTMLButtonElement;
 const chatBtnClear = document.getElementById('chat-btn-clear') as HTMLButtonElement;
-const chatBtnNewAgent = document.getElementById('chat-btn-new-agent') as HTMLButtonElement;
 const chatBtnMic = document.getElementById('chat-btn-mic') as HTMLButtonElement;
 const chatTyping = document.getElementById('chat-typing') as HTMLDivElement;
 const chatPageContextBar = document.getElementById('chat-page-context') as HTMLDivElement;
@@ -262,26 +469,23 @@ function sendPortMessage(msg: Record<string, unknown>): void {
 function handlePortMessage(msg: Record<string, unknown>): void {
   switch (msg.type) {
     case 'agentList':
-      populateChatAgentSelect(msg.agents as AgentMeta[]);
+      onAgentListReceived(msg.agents as AgentMeta[]);
       break;
 
     case 'agentCreated': {
       const agent = msg.agent as AgentMeta;
-      addChatAgentOption(agent);
-      chatAgentSelect.value = agent.id;
-      chatActiveAgentId = agent.id;
       addChatSystemMessage(`Agent "${agent.name}" created.`);
       createAgentModal.classList.remove('visible');
-      // Refresh the agents panel
-      loadAgents();
+      // Refresh agent list and switch to the new agent
+      sendPortMessage({ type: 'listAgents' });
+      // We'll switch to the new agent when the list comes back
+      activeAgentId = agent.id;
       break;
     }
 
     case 'agentDeleted':
       sendPortMessage({ type: 'listAgents' });
       addChatSystemMessage('Agent deleted.');
-      // Refresh the agents panel
-      loadAgents();
       break;
 
     case 'chatStart':
@@ -383,51 +587,32 @@ function handlePortMessage(msg: Record<string, unknown>): void {
   }
 }
 
-// ── Chat agent select ──
-
-function populateChatAgentSelect(agentList: AgentMeta[]): void {
-  // Also update the global agents array
+function onAgentListReceived(agentList: AgentMeta[]): void {
   agents = agentList;
-  populateAgentFilters();
+  renderAgentTabs();
 
-  while (chatAgentSelect.options.length > 1) {
-    chatAgentSelect.remove(1);
+  // If we have an active agent, make sure it still exists
+  if (activeAgentId && !agents.find((a) => a.id === activeAgentId)) {
+    activeAgentId = null;
   }
 
-  for (const agent of agentList) {
-    addChatAgentOption(agent);
+  // If no active agent but agents exist, select the first one
+  if (!activeAgentId && agents.length > 0) {
+    activeAgentId = agents[0].id;
   }
 
-  if (chatActiveAgentId) {
-    chatAgentSelect.value = chatActiveAgentId;
-  } else if (agentList.length > 0) {
-    chatAgentSelect.value = agentList[0].id;
-    chatActiveAgentId = agentList[0].id;
-  }
+  // Re-render tabs with correct active state
+  renderAgentTabs();
 
-  if (chatActiveAgentId) {
-    sendPortMessage({ type: 'getConversation', agentId: chatActiveAgentId });
+  // Update view visibility
+  if (activeAgentId) {
+    updateViewVisibility();
+    // Load conversation for the active agent
+    sendPortMessage({ type: 'getConversation', agentId: activeAgentId });
+  } else {
+    updateViewVisibility();
   }
 }
-
-function addChatAgentOption(agent: AgentMeta): void {
-  const opt = document.createElement('option');
-  opt.value = agent.id;
-  opt.textContent = `${agent.name} (${agent.role})`;
-  chatAgentSelect.appendChild(opt);
-}
-
-chatAgentSelect.addEventListener('change', () => {
-  saveChatConversation();
-  chatActiveAgentId = chatAgentSelect.value || null;
-  chatMessagesDiv.innerHTML = '';
-  conversationHistory = [];
-  chatPageContext = null;
-  chatPageContextBar.classList.remove('visible');
-  if (chatActiveAgentId) {
-    sendPortMessage({ type: 'getConversation', agentId: chatActiveAgentId });
-  }
-});
 
 // ── Chat message rendering ──
 
@@ -487,7 +672,7 @@ function sendChatMessage(): void {
   const text = chatInput.value.trim();
   if (!text || isChatStreaming) return;
 
-  if (!chatActiveAgentId) {
+  if (!activeAgentId) {
     addChatSystemMessage('Please select or create an agent first.');
     return;
   }
@@ -502,28 +687,28 @@ function sendChatMessage(): void {
     timestamp: new Date().toISOString(),
   };
 
-  const msg: Record<string, unknown> = {
+  const chatMsg: Record<string, unknown> = {
     type: 'chat',
-    agentId: chatActiveAgentId,
+    agentId: activeAgentId,
     message: text,
   };
 
   if (chatPageContext) {
-    msg.pageContext = chatPageContext;
+    chatMsg.pageContext = chatPageContext;
     entry.pageContext = { title: chatPageContext.title, url: chatPageContext.url };
     chatPageContext = null;
     chatPageContextBar.classList.remove('visible');
   }
 
   conversationHistory.push(entry);
-  sendPortMessage(msg);
+  sendPortMessage(chatMsg);
 }
 
 function saveChatConversation(): void {
-  if (!chatActiveAgentId || conversationHistory.length === 0) return;
+  if (!activeAgentId || conversationHistory.length === 0) return;
   sendPortMessage({
     type: 'saveConversation',
-    agentId: chatActiveAgentId,
+    agentId: activeAgentId,
     messages: conversationHistory,
   });
 }
@@ -551,7 +736,7 @@ chatBtnReadPage.addEventListener('click', async () => {
   if (!hasScripting) {
     const granted = await chrome.permissions.request({ permissions: ['scripting'], origins: ['<all_urls>'] });
     if (!granted) {
-      addChatSystemMessage('Permission denied. Enable "Read page content" in Settings to use this feature.');
+      addChatSystemMessage('Permission denied. Enable "Read page content" in Global Settings to use this feature.');
       return;
     }
   }
@@ -559,20 +744,13 @@ chatBtnReadPage.addEventListener('click', async () => {
 });
 
 chatBtnClear.addEventListener('click', () => {
-  if (!chatActiveAgentId) return;
-  sendPortMessage({ type: 'clearConversation', agentId: chatActiveAgentId });
+  if (!activeAgentId) return;
+  sendPortMessage({ type: 'clearConversation', agentId: activeAgentId });
 });
 
 chatBtnDismissContext.addEventListener('click', () => {
   chatPageContext = null;
   chatPageContextBar.classList.remove('visible');
-});
-
-chatBtnNewAgent.addEventListener('click', () => {
-  (document.getElementById('create-agent-name') as HTMLInputElement).value = '';
-  (document.getElementById('create-agent-role') as HTMLSelectElement).value = 'neutral';
-  createAgentModal.classList.add('visible');
-  (document.getElementById('create-agent-name') as HTMLInputElement).focus();
 });
 
 // ── Chat voice input ──
@@ -643,258 +821,19 @@ if (SpeechRecognition) {
 }
 
 // ══════════════════════════════════════════
-// ── Agents Tab
-// ══════════════════════════════════════════
-
-async function loadAgents(): Promise<void> {
-  showPanelLoading('panel-agents');
-  try {
-    const result = await sendMsg<{ agents: AgentMeta[] }>({ type: 'listAgents' });
-    agents = result.agents;
-    renderAgents();
-  } catch (err) {
-    showPanelError('panel-agents', `Failed to load agents: ${err instanceof Error ? err.message : String(err)}`);
-  } finally {
-    hidePanelLoading('panel-agents');
-  }
-}
-
-function renderAgents(): void {
-  const grid = document.getElementById('agent-grid')!;
-  const empty = document.getElementById('agents-empty')!;
-  const detail = document.getElementById('agent-detail')!;
-
-  if (agents.length === 0) {
-    grid.innerHTML = '';
-    detail.innerHTML = '';
-    detail.classList.remove('active');
-    empty.textContent = 'No agents yet \u2014 create one to get started.';
-    empty.style.display = '';
-    return;
-  }
-
-  empty.style.display = 'none';
-
-  grid.innerHTML = agents
-    .map(
-      (a) => `
-    <div class="agent-card" data-agent-id="${a.id}">
-      <div class="agent-card-header">
-        <span class="agent-card-name">${escapeHtml(a.name)}</span>
-        <div class="agent-card-badges">
-          <span class="badge ${roleBadgeClass(a.role)}">${escapeHtml(a.role)}</span>
-          <span class="badge ${visBadgeClass(a.visibility)}">${escapeHtml(a.visibility)}</span>
-        </div>
-      </div>
-      <div class="agent-card-meta">Created ${relativeTime(a.createdAt)}</div>
-    </div>
-  `,
-    )
-    .join('');
-
-  grid.querySelectorAll<HTMLDivElement>('.agent-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      const id = card.dataset.agentId!;
-      if (expandedAgentId === id) {
-        expandedAgentId = null;
-        detail.classList.remove('active');
-        detail.innerHTML = '';
-      } else {
-        expandedAgentId = id;
-        loadAgentDetail(id);
-      }
-    });
-  });
-}
-
-async function loadAgentDetail(agentId: string): Promise<void> {
-  const detail = document.getElementById('agent-detail')!;
-  detail.classList.add('active');
-  detail.innerHTML = '<div class="agent-detail-inner"><p style="color:#64748b;">Loading...</p></div>';
-
-  const result = await sendMsg<{
-    claudeMd: string;
-    journal: string[];
-    bookmarks: string[];
-    meta: AgentMeta;
-  }>({ type: 'getAgentDetail', agentId });
-
-  const tasksResult = await sendMsg<{ tasks: ScheduledTask[] }>({ type: 'getScheduledTasks' });
-  const scheduledTasks = (tasksResult.tasks || []).filter((t) => t.agentId === agentId);
-
-  const meta = result.meta;
-  const claudeMd = result.claudeMd || '(empty)';
-  const journal = result.journal || [];
-  const bookmarks = result.bookmarks || [];
-
-  const journalHtml =
-    journal.length > 0
-      ? journal
-          .map((entry) => {
-            try {
-              const parsed = JSON.parse(entry);
-              return `<div class="journal-entry">
-                <div class="journal-entry-time">${escapeHtml(formatTimeFull(parsed.timestamp || ''))}</div>
-                <div class="journal-entry-text">${escapeHtml(parsed.summary || parsed.action || JSON.stringify(parsed))}</div>
-              </div>`;
-            } catch {
-              return `<div class="journal-entry"><div class="journal-entry-text">${escapeHtml(entry)}</div></div>`;
-            }
-          })
-          .join('')
-      : '<p style="color:#64748b;font-size:13px;">No activity yet.</p>';
-
-  const bookmarksHtml =
-    bookmarks.length > 0
-      ? bookmarks
-          .map((b) => `<div class="bookmark-item">${escapeHtml(b)}</div>`)
-          .join('')
-      : '<p style="color:#64748b;font-size:13px;">No bookmarks.</p>';
-
-  const scheduledTasksHtml =
-    scheduledTasks.length > 0
-      ? scheduledTasks
-          .map(
-            (t) => `<div class="journal-entry" style="display:flex;justify-content:space-between;align-items:flex-start;">
-              <div>
-                <div class="journal-entry-time">${escapeHtml(t.description)} (${t.schedule.type}${t.schedule.periodInMinutes ? `, every ${t.schedule.periodInMinutes}m` : ''})</div>
-                <div class="journal-entry-text" style="font-size:12px;color:#94a3b8;">Prompt: ${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
-                ${t.lastRunAt ? `<div class="journal-entry-text" style="font-size:11px;color:#64748b;">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) : ''}</div>` : ''}
-              </div>
-              <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}" style="flex-shrink:0;margin-left:8px;">Cancel</button>
-            </div>`,
-          )
-          .join('')
-      : '<p style="color:#64748b;font-size:13px;">No scheduled tasks.</p>';
-
-  detail.innerHTML = `
-    <div class="agent-detail-inner">
-      <div class="agent-detail-header">
-        <span class="agent-detail-title">${escapeHtml(meta.name)}</span>
-        <div class="agent-detail-actions">
-          <label style="font-size:12px;color:#94a3b8;margin-right:4px;">Visibility:</label>
-          <select class="vis-select" id="vis-select-${meta.id}" data-agent-id="${meta.id}">
-            <option value="private"${meta.visibility === 'private' ? ' selected' : ''}>Private</option>
-            <option value="visible"${meta.visibility === 'visible' ? ' selected' : ''}>Visible</option>
-            <option value="open"${meta.visibility === 'open' ? ' selected' : ''}>Open</option>
-          </select>
-          <button class="btn btn-danger btn-sm" data-delete-agent="${meta.id}">Delete</button>
-        </div>
-      </div>
-      <div class="agent-detail-section">
-        <h4>CLAUDE.md</h4>
-        <div class="claude-md-content">${escapeHtml(claudeMd)}</div>
-      </div>
-      <div class="agent-detail-section">
-        <h4>Scheduled Tasks</h4>
-        <div class="scheduled-tasks-list">${scheduledTasksHtml}</div>
-      </div>
-      <div class="agent-detail-section">
-        <h4>Recent Activity</h4>
-        <div class="journal-entries">${journalHtml}</div>
-      </div>
-      <div class="agent-detail-section">
-        <h4>Bookmarks</h4>
-        <div class="bookmarks-list">${bookmarksHtml}</div>
-      </div>
-    </div>
-  `;
-
-  const visSelect = document.getElementById(`vis-select-${meta.id}`) as HTMLSelectElement;
-  visSelect.addEventListener('change', async () => {
-    await sendMsg({
-      type: 'updateAgentVisibility',
-      agentId: meta.id,
-      visibility: visSelect.value,
-    });
-    await loadAgents();
-    expandedAgentId = meta.id;
-    await loadAgentDetail(meta.id);
-  });
-
-  const deleteBtn = detail.querySelector(`[data-delete-agent="${meta.id}"]`) as HTMLButtonElement;
-  deleteBtn.addEventListener('click', () => {
-    showConfirm(
-      'Delete Agent',
-      `Are you sure you want to delete "${meta.name}"? This cannot be undone.`,
-      async () => {
-        await sendMsg({ type: 'deleteAgent', agentId: meta.id });
-        expandedAgentId = null;
-        detail.classList.remove('active');
-        detail.innerHTML = '';
-        await loadAgents();
-      },
-    );
-  });
-
-  // Cancel scheduled task buttons
-  detail.querySelectorAll('[data-cancel-task]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const alarmId = (btn as HTMLButtonElement).dataset.cancelTask!;
-      await sendMsg({ type: 'cancelScheduledTask', alarmId });
-      await loadAgentDetail(meta.id);
-    });
-  });
-}
-
-// ── Create Agent ──
-
-const createAgentModal = document.getElementById('create-agent-modal')!;
-const createCancelBtn = document.getElementById('btn-create-cancel')!;
-const createConfirmBtn = document.getElementById('btn-create-confirm')!;
-
-document.getElementById('btn-create-agent')!.addEventListener('click', () => {
-  (document.getElementById('create-agent-name') as HTMLInputElement).value = '';
-  (document.getElementById('create-agent-role') as HTMLSelectElement).value = 'neutral';
-  createAgentModal.classList.add('visible');
-  (document.getElementById('create-agent-name') as HTMLInputElement).focus();
-});
-
-createCancelBtn.addEventListener('click', () => {
-  createAgentModal.classList.remove('visible');
-});
-
-createConfirmBtn.addEventListener('click', async () => {
-  const nameInput = document.getElementById('create-agent-name') as HTMLInputElement;
-  const roleSelect = document.getElementById('create-agent-role') as HTMLSelectElement;
-  const visibilitySelect = document.getElementById('create-agent-visibility') as HTMLSelectElement;
-  const name = nameInput.value.trim();
-  if (!name) return;
-  const role = roleSelect.value;
-  const visibility = visibilitySelect?.value || 'private';
-  createAgentModal.classList.remove('visible');
-
-  // If we're on the chat tab, use port-based creation for instant feedback
-  if (port) {
-    sendPortMessage({ type: 'createAgent', name, role, visibility });
-  } else {
-    try {
-      await sendMsg({ type: 'createAgent', name, role, visibility });
-      await loadAgents();
-    } catch (err) {
-      showPanelError('panel-agents', `Failed to create agent: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-});
-
-createAgentModal.addEventListener('click', (e) => {
-  if (e.target === createAgentModal) createAgentModal.classList.remove('visible');
-});
-
-// ══════════════════════════════════════════
-// ── Tasks Tab
+// ── Tasks View
 // ══════════════════════════════════════════
 
 async function loadTasks(): Promise<void> {
-  showPanelLoading('panel-tasks');
+  showPanelLoading('view-tasks');
   try {
     const result = await sendMsg<{ tasks: Task[] }>({ type: 'getTaskState' });
     tasks = result.tasks;
     renderTasks();
   } catch (err) {
-    showPanelError('panel-tasks', `Failed to load tasks: ${err instanceof Error ? err.message : String(err)}`);
+    showPanelError('view-tasks', `Failed to load tasks: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    hidePanelLoading('panel-tasks');
+    hidePanelLoading('view-tasks');
   }
 }
 
@@ -903,20 +842,19 @@ function renderTasks(): void {
   const empty = document.getElementById('tasks-empty')!;
   const table = document.getElementById('tasks-table')!;
 
-  const filterAgent = (document.getElementById('tasks-filter-agent') as HTMLSelectElement).value;
   const filterStatus = (document.getElementById('tasks-filter-status') as HTMLSelectElement).value;
 
-  let filtered = tasks;
-  if (filterAgent) {
-    filtered = filtered.filter((t) => t.owner === filterAgent);
-  }
+  // Filter to active agent
+  let filtered = tasks.filter((t) => t.owner === activeAgentId);
   if (filterStatus) {
     filtered = filtered.filter((t) => t.status === filterStatus);
   }
 
   if (filtered.length === 0) {
     table.style.display = 'none';
-    empty.textContent = tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the current filters.';
+    empty.textContent = tasks.filter((t) => t.owner === activeAgentId).length === 0
+      ? 'No tasks for this agent yet.'
+      : 'No tasks match the current filters.';
     empty.style.display = '';
     return;
   }
@@ -929,9 +867,8 @@ function renderTasks(): void {
       (t) => `
     <tr class="clickable" data-task-id="${escapeHtml(t.id)}">
       <td>${escapeHtml(t.subject)}</td>
-      <td>${t.owner ? escapeHtml(agentName(t.owner)) : '<span style="color:#64748b">Unassigned</span>'}</td>
       <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status.replace('_', ' '))}</span></td>
-      <td>${t.blockedBy && t.blockedBy.length > 0 ? t.blockedBy.map((id) => escapeHtml(taskSubject(id))).join(', ') : '<span style="color:#64748b">None</span>'}</td>
+      <td>${t.blockedBy && t.blockedBy.length > 0 ? t.blockedBy.map((id) => escapeHtml(taskSubject(id))).join(', ') : '<span style="color:var(--text-muted)">None</span>'}</td>
       <td class="col-time">${formatTime(t.createdAt)}</td>
       <td class="col-time">${formatTime(t.updatedAt)}</td>
     </tr>
@@ -941,8 +878,7 @@ function renderTasks(): void {
 
   tbody.querySelectorAll<HTMLTableRowElement>('tr.clickable').forEach((row) => {
     row.addEventListener('click', () => {
-      const taskId = row.dataset.taskId!;
-      showTaskDetail(taskId);
+      showTaskDetail(row.dataset.taskId!);
     });
   });
 }
@@ -985,7 +921,6 @@ function showTaskDetail(taskId: string): void {
   modal.classList.add('visible');
 }
 
-document.getElementById('tasks-filter-agent')!.addEventListener('change', renderTasks);
 document.getElementById('tasks-filter-status')!.addEventListener('change', renderTasks);
 
 document.getElementById('task-detail-close')!.addEventListener('click', () => {
@@ -999,19 +934,19 @@ document.getElementById('task-detail-modal')!.addEventListener('click', (e) => {
 });
 
 // ══════════════════════════════════════════
-// ── Messages Tab
+// ── Messages View
 // ══════════════════════════════════════════
 
 async function loadMessages(): Promise<void> {
-  showPanelLoading('panel-messages');
+  showPanelLoading('view-messages');
   try {
     const result = await sendMsg<{ messages: AgentMessage[] }>({ type: 'getMessages' });
     messages = result.messages;
     renderMessages();
   } catch (err) {
-    showPanelError('panel-messages', `Failed to load messages: ${err instanceof Error ? err.message : String(err)}`);
+    showPanelError('view-messages', `Failed to load messages: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    hidePanelLoading('panel-messages');
+    hidePanelLoading('view-messages');
   }
 }
 
@@ -1019,22 +954,21 @@ function renderMessages(): void {
   const list = document.getElementById('message-list')!;
   const empty = document.getElementById('messages-empty')!;
 
-  const filterAgent = (document.getElementById('messages-filter-agent') as HTMLSelectElement).value;
   const searchText = (document.getElementById('messages-search') as HTMLInputElement).value
     .toLowerCase()
     .trim();
 
-  let filtered = messages;
-  if (filterAgent) {
-    filtered = filtered.filter((m) => m.from === filterAgent || m.to === filterAgent);
-  }
+  // Filter to active agent
+  let filtered = messages.filter((m) => m.from === activeAgentId || m.to === activeAgentId);
   if (searchText) {
     filtered = filtered.filter((m) => m.body.toLowerCase().includes(searchText));
   }
 
   if (filtered.length === 0) {
     list.innerHTML = '';
-    empty.textContent = messages.length === 0 ? 'No messages yet.' : 'No messages match the current filters.';
+    empty.textContent = messages.filter((m) => m.from === activeAgentId || m.to === activeAgentId).length === 0
+      ? 'No messages for this agent yet.'
+      : 'No messages match the current search.';
     empty.style.display = '';
     return;
   }
@@ -1061,23 +995,22 @@ function renderMessages(): void {
   list.scrollTop = list.scrollHeight;
 }
 
-document.getElementById('messages-filter-agent')!.addEventListener('change', renderMessages);
 document.getElementById('messages-search')!.addEventListener('input', renderMessages);
 
 // ══════════════════════════════════════════
-// ── Artifacts Tab
+// ── Artifacts View
 // ══════════════════════════════════════════
 
 async function loadArtifacts(): Promise<void> {
-  showPanelLoading('panel-artifacts');
+  showPanelLoading('view-artifacts');
   try {
     const result = await sendMsg<{ artifacts: ArtifactMeta[] }>({ type: 'getArtifacts' });
     artifacts = result.artifacts;
     renderArtifacts();
   } catch (err) {
-    showPanelError('panel-artifacts', `Failed to load artifacts: ${err instanceof Error ? err.message : String(err)}`);
+    showPanelError('view-artifacts', `Failed to load artifacts: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    hidePanelLoading('panel-artifacts');
+    hidePanelLoading('view-artifacts');
   }
 }
 
@@ -1085,16 +1018,12 @@ function renderArtifacts(): void {
   const grid = document.getElementById('artifact-grid')!;
   const empty = document.getElementById('artifacts-empty')!;
 
-  const filterAgent = (document.getElementById('artifacts-filter-agent') as HTMLSelectElement).value;
-
-  let filtered = artifacts;
-  if (filterAgent) {
-    filtered = filtered.filter((a) => a.agentId === filterAgent);
-  }
+  // Filter to active agent
+  const filtered = artifacts.filter((a) => a.agentId === activeAgentId);
 
   if (filtered.length === 0) {
     grid.innerHTML = '';
-    empty.textContent = artifacts.length === 0 ? 'No artifacts yet.' : 'No artifacts match the current filter.';
+    empty.textContent = 'No artifacts for this agent yet.';
     empty.style.display = '';
     return;
   }
@@ -1108,7 +1037,6 @@ function renderArtifacts(): void {
       <div class="artifact-card-name">${escapeHtml(a.path.split('/').pop() || a.path)}</div>
       <div class="artifact-card-desc">${escapeHtml(a.description)}</div>
       <div class="artifact-card-meta">
-        <span>${escapeHtml(agentName(a.agentId))}</span>
         <span>${formatTime(a.timestamp)}</span>
       </div>
     </div>
@@ -1154,7 +1082,7 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
     </div>
     <div class="task-detail-field">
       <div class="task-detail-label">Path</div>
-      <div class="task-detail-value" style="font-family:monospace;font-size:12px;">${escapeHtml(artifact.path)}</div>
+      <div class="task-detail-value" style="font-family:var(--font-mono);font-size:var(--text-xs);">${escapeHtml(artifact.path)}</div>
     </div>
     <div class="task-detail-field">
       <div class="task-detail-label">Created</div>
@@ -1179,10 +1107,8 @@ document.getElementById('artifact-detail-modal')!.addEventListener('click', (e) 
   }
 });
 
-document.getElementById('artifacts-filter-agent')!.addEventListener('change', renderArtifacts);
-
 // ══════════════════════════════════════════
-// ── Files Tab (OPFS File Explorer)
+// ── Files View (OPFS File Explorer)
 // ══════════════════════════════════════════
 
 interface FileEntry {
@@ -1193,7 +1119,6 @@ interface FileEntry {
   children?: FileEntry[];
 }
 
-const filesAgentSelect = document.getElementById('files-agent-select') as HTMLSelectElement;
 const filesTree = document.getElementById('files-tree') as HTMLDivElement;
 const filesViewerFilename = document.getElementById('files-viewer-filename') as HTMLSpanElement;
 const filesViewerContent = document.getElementById('files-viewer-content') as HTMLDivElement;
@@ -1202,40 +1127,22 @@ const filesBtnDownload = document.getElementById('files-btn-download') as HTMLBu
 let filesSelectedPath: string | null = null;
 let filesSelectedContent: string | null = null;
 
-function loadFilesTab(): void {
-  // Populate agent selector
-  while (filesAgentSelect.options.length > 1) {
-    filesAgentSelect.remove(1);
-  }
-  for (const agent of agents) {
-    const opt = document.createElement('option');
-    opt.value = agent.id;
-    opt.textContent = `${agent.name} (${agent.role})`;
-    filesAgentSelect.appendChild(opt);
-  }
+function loadFilesView(): void {
+  if (!activeAgentId) return;
+
+  filesTree.innerHTML = '<p style="color:var(--text-muted);padding:12px;">Loading...</p>';
+  filesViewerFilename.textContent = 'No file selected';
+  filesViewerContent.innerHTML = '<div class="files-viewer-empty">Select a file to view its contents.</div>';
+  filesBtnDownload.style.display = 'none';
+
+  sendMsg<{ files: FileEntry[] }>({ type: 'listAgentFiles', agentId: activeAgentId }).then((result) => {
+    renderFileTree(result.files, activeAgentId!, 0);
+  }).catch((err) => {
+    filesTree.innerHTML = `<p style="color:var(--danger-text);padding:12px;">Error: ${err instanceof Error ? err.message : String(err)}</p>`;
+  });
 }
 
-filesAgentSelect.addEventListener('change', async () => {
-  const agentId = filesAgentSelect.value;
-  if (!agentId) {
-    filesTree.innerHTML = '<div class="empty-state" style="padding:24px;"><p>Select an agent to browse its files.</p></div>';
-    filesViewerFilename.textContent = 'No file selected';
-    filesViewerContent.innerHTML = '<div class="files-viewer-empty">Select a file to view its contents.</div>';
-    filesBtnDownload.style.display = 'none';
-    return;
-  }
-
-  filesTree.innerHTML = '<p style="color:#64748b;padding:12px;">Loading...</p>';
-
-  try {
-    const result = await sendMsg<{ files: FileEntry[] }>({ type: 'listAgentFiles', agentId });
-    renderFileTree(result.files, agentId);
-  } catch (err) {
-    filesTree.innerHTML = `<p style="color:#f87171;padding:12px;">Error: ${err instanceof Error ? err.message : String(err)}</p>`;
-  }
-});
-
-function renderFileTree(entries: FileEntry[], agentId: string, depth = 0): void {
+function renderFileTree(entries: FileEntry[], agentId: string, depth: number): void {
   if (depth === 0) {
     filesTree.innerHTML = '';
   }
@@ -1258,14 +1165,15 @@ function renderFileTree(entries: FileEntry[], agentId: string, depth = 0): void 
     else if (depth === 2) item.classList.add('files-indent-2');
     else if (depth >= 3) item.classList.add('files-indent-3');
 
-    const icon = entry.kind === 'directory' ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>' : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    const icon = entry.kind === 'directory'
+      ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
+      : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
     const sizeStr = entry.size !== undefined ? formatFileSize(entry.size) : '';
 
     item.innerHTML = `<span class="icon">${icon}</span><span class="name">${escapeHtml(entry.name)}</span>${sizeStr ? `<span class="size">${sizeStr}</span>` : ''}`;
 
     if (entry.kind === 'file') {
       item.addEventListener('click', () => {
-        // Deselect previous
         filesTree.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
         item.classList.add('selected');
         loadFileContent(agentId, entry.path, entry.name);
@@ -1288,7 +1196,7 @@ function formatFileSize(bytes: number): string {
 
 async function loadFileContent(agentId: string, filePath: string, fileName: string): Promise<void> {
   filesViewerFilename.textContent = fileName;
-  filesViewerContent.innerHTML = '<p style="color:#64748b;">Loading...</p>';
+  filesViewerContent.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
   filesBtnDownload.style.display = 'none';
 
   try {
@@ -1300,12 +1208,10 @@ async function loadFileContent(agentId: string, filePath: string, fileName: stri
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
 
     if (ext === 'md') {
-      // Render markdown
       filesViewerContent.className = 'files-viewer-content markdown-view';
       const rawHtml = marked.parse(result.content) as string;
       filesViewerContent.innerHTML = DOMPurify.sanitize(rawHtml);
     } else if (ext === 'jsonl') {
-      // Render JSONL with syntax highlighting
       filesViewerContent.className = 'files-viewer-content';
       const lines = result.content.split('\n').filter((l) => l.trim());
       filesViewerContent.innerHTML = lines
@@ -1319,7 +1225,6 @@ async function loadFileContent(agentId: string, filePath: string, fileName: stri
         })
         .join('');
     } else {
-      // Raw text
       filesViewerContent.className = 'files-viewer-content raw-view';
       filesViewerContent.textContent = result.content;
     }
@@ -1342,11 +1247,148 @@ filesBtnDownload.addEventListener('click', () => {
 });
 
 // ══════════════════════════════════════════
-// ── Settings Tab
+// ── Agent Settings View (per-agent)
+// ══════════════════════════════════════════
+
+async function loadAgentSettings(): Promise<void> {
+  const container = document.getElementById('agent-settings-content')!;
+  if (!activeAgentId) {
+    container.innerHTML = '<div class="empty-state"><p>Select an agent to view its settings.</p></div>';
+    return;
+  }
+
+  container.innerHTML = '<div class="panel-spinner"><div class="spinner"></div><span>Loading...</span></div>';
+
+  try {
+    const result = await sendMsg<{
+      claudeMd: string;
+      journal: string[];
+      bookmarks: string[];
+      meta: AgentMeta;
+    }>({ type: 'getAgentDetail', agentId: activeAgentId });
+
+    const tasksResult = await sendMsg<{ tasks: ScheduledTask[] }>({ type: 'getScheduledTasks' });
+    const scheduledTasks = (tasksResult.tasks || []).filter((t) => t.agentId === activeAgentId);
+
+    const meta = result.meta;
+    const claudeMd = result.claudeMd || '';
+
+    container.innerHTML = `
+      <div class="section-header">
+        <h2>${escapeHtml(meta.name)} Settings</h2>
+      </div>
+
+      <div class="agent-meta-row">
+        <span class="meta-label">Role</span>
+        <span class="badge ${roleBadgeClass(meta.role)}">${escapeHtml(meta.role)}</span>
+        <span class="meta-label" style="margin-left:var(--sp-4);">Visibility</span>
+        <span class="badge ${visBadgeClass(meta.visibility)}">${escapeHtml(meta.visibility)}</span>
+        <span class="meta-label" style="margin-left:var(--sp-4);">Created</span>
+        <span>${formatTimeFull(meta.createdAt)}</span>
+      </div>
+
+      <div class="agent-settings-section">
+        <h3>Visibility</h3>
+        <div class="agent-settings-field">
+          <label for="agent-vis-select">Who can see this agent?</label>
+          <select id="agent-vis-select">
+            <option value="private"${meta.visibility === 'private' ? ' selected' : ''}>Private (hidden from other agents)</option>
+            <option value="visible"${meta.visibility === 'visible' ? ' selected' : ''}>Visible (can send/receive messages)</option>
+            <option value="open"${meta.visibility === 'open' ? ' selected' : ''}>Open (visible + shared artifacts)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="agent-settings-section">
+        <h3>CLAUDE.md</h3>
+        <textarea class="claude-md-editor" id="agent-claude-md">${escapeHtml(claudeMd)}</textarea>
+        <div style="margin-top:var(--sp-3);">
+          <button class="btn btn-primary btn-sm" id="btn-save-claude-md">Save CLAUDE.md</button>
+        </div>
+      </div>
+
+      <div class="agent-settings-section">
+        <h3>Scheduled Tasks</h3>
+        <div id="agent-scheduled-tasks"></div>
+      </div>
+
+      <div class="agent-settings-section">
+        <h3>Danger Zone</h3>
+        <div class="danger-zone">
+          <p>Permanently delete this agent and all its data.</p>
+          <button class="btn btn-danger btn-sm" id="btn-delete-agent-settings">Delete Agent</button>
+        </div>
+      </div>
+    `;
+
+    // Render scheduled tasks
+    const scheduledContainer = document.getElementById('agent-scheduled-tasks')!;
+    if (scheduledTasks.length === 0) {
+      scheduledContainer.innerHTML = '<p style="color:var(--text-muted);font-size:var(--text-sm);">No scheduled tasks.</p>';
+    } else {
+      scheduledContainer.innerHTML = scheduledTasks
+        .map(
+          (t) => `
+          <div class="scheduled-task-item">
+            <div class="scheduled-task-info">
+              <div class="task-desc">${escapeHtml(t.description)} (${t.schedule.type}${t.schedule.periodInMinutes ? `, every ${t.schedule.periodInMinutes}m` : ''})</div>
+              <div class="task-prompt">Prompt: ${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
+              ${t.lastRunAt ? `<div class="task-last-run">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' \u2014 ' + escapeHtml(t.lastResult.slice(0, 80)) : ''}</div>` : ''}
+            </div>
+            <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}">Cancel</button>
+          </div>`,
+        )
+        .join('');
+
+      scheduledContainer.querySelectorAll('[data-cancel-task]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const alarmId = (btn as HTMLButtonElement).dataset.cancelTask!;
+          await sendMsg({ type: 'cancelScheduledTask', alarmId });
+          loadAgentSettings();
+        });
+      });
+    }
+
+    // Visibility change
+    document.getElementById('agent-vis-select')!.addEventListener('change', async (e) => {
+      const newVis = (e.target as HTMLSelectElement).value;
+      await sendMsg({ type: 'updateAgentVisibility', agentId: meta.id, visibility: newVis });
+      sendPortMessage({ type: 'listAgents' });
+    });
+
+    // Save CLAUDE.md
+    document.getElementById('btn-save-claude-md')!.addEventListener('click', async () => {
+      const content = (document.getElementById('agent-claude-md') as HTMLTextAreaElement).value;
+      await sendMsg({ type: 'setClaudeMd', agentId: meta.id, content });
+      addChatSystemMessage('CLAUDE.md saved.');
+    });
+
+    // Delete agent
+    document.getElementById('btn-delete-agent-settings')!.addEventListener('click', () => {
+      showConfirm(
+        'Delete Agent',
+        `Are you sure you want to delete "${meta.name}"? This cannot be undone.`,
+        async () => {
+          await sendMsg({ type: 'deleteAgent', agentId: meta.id });
+          activeAgentId = null;
+          activeView = 'chat';
+          sidebarItems.forEach((b) => {
+            b.classList.toggle('active', b.dataset.view === 'chat');
+          });
+          sendPortMessage({ type: 'listAgents' });
+        },
+      );
+    });
+  } catch (err) {
+    container.innerHTML = `<div class="panel-error" style="display:block;">Failed to load agent settings: ${err instanceof Error ? err.message : String(err)}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════
+// ── Global Settings View
 // ══════════════════════════════════════════
 
 async function loadSettings(): Promise<void> {
-  showPanelLoading('panel-settings');
   try {
     const result = await sendMsg<{ keys: ApiKeys }>({ type: 'getApiKeys' });
     const keys = result.keys;
@@ -1358,9 +1400,7 @@ async function loadSettings(): Promise<void> {
     (document.getElementById('settings-key-openrouter') as HTMLInputElement).value =
       keys.openrouter || '';
   } catch (err) {
-    showPanelError('panel-settings', `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
-  } finally {
-    hidePanelLoading('panel-settings');
+    showPanelError('view-global-settings', `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -1387,7 +1427,6 @@ document.getElementById('btn-save-prefs')!.addEventListener('click', () => {
   alert('Preferences saved.');
 });
 
-
 // ── Tool Permissions ──
 
 async function loadPermissions(): Promise<void> {
@@ -1400,9 +1439,9 @@ async function loadPermissions(): Promise<void> {
     .map((name) => {
       const level = perms[name] ?? 'ask';
       return `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f172a;border-radius:6px;border:1px solid #334155;">
-        <span style="font-size:13px;font-family:monospace;color:#cbd5e1;">${escapeHtml(name)}</span>
-        <select class="perm-select" data-tool="${escapeHtml(name)}" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:4px 8px;font-size:12px;outline:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border-radius:6px;border:1px solid var(--border-subtle);">
+        <span style="font-size:var(--text-sm);font-family:var(--font-mono);color:var(--text-secondary);">${escapeHtml(name)}</span>
+        <select class="perm-select" data-tool="${escapeHtml(name)}" style="background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;padding:4px 8px;font-size:var(--text-xs);outline:none;">
           <option value="always"${level === 'always' ? ' selected' : ''}>Always</option>
           <option value="ask"${level === 'ask' ? ' selected' : ''}>Ask</option>
           <option value="never"${level === 'never' ? ' selected' : ''}>Never</option>
@@ -1420,6 +1459,54 @@ document.getElementById('btn-save-permissions')!.addEventListener('click', async
     await setPermission(toolName, level);
   }
   alert('Tool permissions saved.');
+});
+
+// ══════════════════════════════════════════
+// ── Create Agent
+// ══════════════════════════════════════════
+
+const createAgentModal = document.getElementById('create-agent-modal')!;
+const createCancelBtn = document.getElementById('btn-create-cancel')!;
+const createConfirmBtn = document.getElementById('btn-create-confirm')!;
+
+function showCreateAgentModal(): void {
+  (document.getElementById('create-agent-name') as HTMLInputElement).value = '';
+  (document.getElementById('create-agent-role') as HTMLSelectElement).value = 'neutral';
+  (document.getElementById('create-agent-visibility') as HTMLSelectElement).value = 'private';
+  createAgentModal.classList.add('visible');
+  (document.getElementById('create-agent-name') as HTMLInputElement).focus();
+}
+
+document.getElementById('btn-add-agent')!.addEventListener('click', showCreateAgentModal);
+
+createCancelBtn.addEventListener('click', () => {
+  createAgentModal.classList.remove('visible');
+});
+
+createConfirmBtn.addEventListener('click', async () => {
+  const nameInput = document.getElementById('create-agent-name') as HTMLInputElement;
+  const roleSelect = document.getElementById('create-agent-role') as HTMLSelectElement;
+  const visibilitySelect = document.getElementById('create-agent-visibility') as HTMLSelectElement;
+  const name = nameInput.value.trim();
+  if (!name) return;
+  const role = roleSelect.value;
+  const visibility = visibilitySelect?.value || 'private';
+  createAgentModal.classList.remove('visible');
+
+  if (port) {
+    sendPortMessage({ type: 'createAgent', name, role, visibility });
+  } else {
+    try {
+      await sendMsg({ type: 'createAgent', name, role, visibility });
+      sendPortMessage({ type: 'listAgents' });
+    } catch (err) {
+      addChatSystemMessage(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+});
+
+createAgentModal.addEventListener('click', (e) => {
+  if (e.target === createAgentModal) createAgentModal.classList.remove('visible');
 });
 
 // ══════════════════════════════════════════
@@ -1454,30 +1541,6 @@ document.getElementById('confirm-overlay')!.addEventListener('click', (e) => {
     confirmCallback = null;
   }
 });
-
-// ══════════════════════════════════════════
-// ── Agent filter dropdowns (shared across tabs)
-// ══════════════════════════════════════════
-
-function populateAgentFilters(): void {
-  const selects = [
-    document.getElementById('tasks-filter-agent') as HTMLSelectElement,
-    document.getElementById('messages-filter-agent') as HTMLSelectElement,
-    document.getElementById('artifacts-filter-agent') as HTMLSelectElement,
-  ];
-
-  for (const select of selects) {
-    while (select.options.length > 1) {
-      select.remove(1);
-    }
-    for (const agent of agents) {
-      const opt = document.createElement('option');
-      opt.value = agent.id;
-      opt.textContent = `${agent.name} (${agent.role})`;
-      select.appendChild(opt);
-    }
-  }
-}
 
 // ══════════════════════════════════════════
 // ── Initial load
