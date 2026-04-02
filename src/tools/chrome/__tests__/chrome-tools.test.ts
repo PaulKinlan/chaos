@@ -18,9 +18,18 @@ const mockChrome = {
     remove: vi.fn(),
     group: vi.fn(),
     sendMessage: vi.fn(),
+    duplicate: vi.fn(),
+    update: vi.fn(),
+    move: vi.fn(),
   },
   tabGroups: {
     update: vi.fn(),
+  },
+  windows: {
+    create: vi.fn(),
+    getAll: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
   },
   bookmarks: {
     search: vi.fn(),
@@ -34,6 +43,14 @@ const mockChrome = {
     create: vi.fn(),
     clear: vi.fn(),
     getAll: vi.fn(),
+  },
+  downloads: {
+    download: vi.fn(),
+    search: vi.fn(),
+  },
+  readingList: {
+    addEntry: vi.fn(),
+    query: vi.fn(),
   },
   permissions: {
     contains: vi.fn(async () => true),
@@ -69,7 +86,7 @@ describe('getChromeTools', () => {
     expect(keys).toContain('alarm_set');
     expect(keys).toContain('alarm_clear');
     expect(keys).toContain('alarm_list');
-    expect(keys).toHaveLength(18);
+    expect(keys).toHaveLength(31);
   });
 });
 

@@ -5,13 +5,14 @@
  * Features request permissions on first use and gracefully degrade if denied.
  */
 
-export type OptionalPermission = 'tabs' | 'bookmarks' | 'history' | 'scripting' | 'notifications';
+export type OptionalPermission = 'tabs' | 'bookmarks' | 'history' | 'scripting' | 'notifications' | 'downloads' | 'readingList';
 
 /**
  * Check if a permission is already granted.
  */
 export async function hasPermission(permission: OptionalPermission): Promise<boolean> {
-  return chrome.permissions.contains({ permissions: [permission] });
+  // Cast needed because @types/chrome may not include all valid permission strings (e.g. readingList)
+  return chrome.permissions.contains({ permissions: [permission as chrome.runtime.ManifestPermissions] });
 }
 
 /**
@@ -27,7 +28,7 @@ export async function hasHostPermissions(): Promise<boolean> {
 export async function requestPermission(permission: OptionalPermission): Promise<boolean> {
   const already = await hasPermission(permission);
   if (already) return true;
-  return chrome.permissions.request({ permissions: [permission] });
+  return chrome.permissions.request({ permissions: [permission as chrome.runtime.ManifestPermissions] });
 }
 
 /**

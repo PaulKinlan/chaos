@@ -14,6 +14,10 @@ import { tabGroup } from './tab-group.js';
 import { tabFocus } from './tab-focus.js';
 import { tabNavigate } from './tab-navigate.js';
 import { tabScreenshot } from './tab-screenshot.js';
+import { tabDuplicate } from './tab-duplicate.js';
+import { tabPin } from './tab-pin.js';
+import { tabMute } from './tab-mute.js';
+import { tabMove } from './tab-move.js';
 import { createBookmarkAdd } from './bookmark-add.js';
 import { bookmarkSearch } from './bookmark-search.js';
 import { createBookmarkList } from './bookmark-list.js';
@@ -24,6 +28,15 @@ import { createAlarmClear } from './alarm-clear.js';
 import { createAlarmList } from './alarm-list.js';
 import { notificationShow } from './notification-show.js';
 import { clipboardWrite } from './clipboard-write.js';
+import { windowCreate } from './window-create.js';
+import { windowList } from './window-list.js';
+import { windowFocus } from './window-focus.js';
+import { windowClose } from './window-close.js';
+import { windowResize } from './window-resize.js';
+import { downloadFile } from './download-file.js';
+import { downloadList } from './download-list.js';
+import { readingListAdd } from './reading-list-add.js';
+import { readingListQuery } from './reading-list-query.js';
 import { hasPermission } from '../../permissions.js';
 
 /**
@@ -40,6 +53,13 @@ export async function getChromeTools(agentId: string): Promise<ToolSet> {
     alarm_list: createAlarmList(agentId),
   };
 
+  // Window tools — no special permission needed
+  tools.window_create = windowCreate;
+  tools.window_list = windowList;
+  tools.window_focus = windowFocus;
+  tools.window_close = windowClose;
+  tools.window_resize = windowResize;
+
   // Tab tools need 'tabs' permission
   if (await hasPermission('tabs')) {
     tools.tab_read = tabRead;
@@ -50,6 +70,10 @@ export async function getChromeTools(agentId: string): Promise<ToolSet> {
     tools.tab_focus = tabFocus;
     tools.tab_navigate = tabNavigate;
     tools.tab_screenshot = tabScreenshot;
+    tools.tab_duplicate = tabDuplicate;
+    tools.tab_pin = tabPin;
+    tools.tab_mute = tabMute;
+    tools.tab_move = tabMove;
   }
 
   // Bookmark tools need 'bookmarks' permission
@@ -68,6 +92,18 @@ export async function getChromeTools(agentId: string): Promise<ToolSet> {
   // Notification tool needs 'notifications' permission
   if (await hasPermission('notifications')) {
     tools.notification_show = notificationShow;
+  }
+
+  // Download tools need 'downloads' permission
+  if (await hasPermission('downloads')) {
+    tools.download_file = downloadFile;
+    tools.download_list = downloadList;
+  }
+
+  // Reading list tools need 'readingList' permission
+  if (await hasPermission('readingList')) {
+    tools.reading_list_add = readingListAdd;
+    tools.reading_list_query = readingListQuery;
   }
 
   // Clipboard tool (no special permission needed, but may fail in SW context)

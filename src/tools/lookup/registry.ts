@@ -146,6 +146,84 @@ const chromeTools: ToolMeta[] = [
     keywords: ['alarm', 'list', 'show', 'all', 'scheduled', 'timers'],
     category: 'chrome',
   },
+  {
+    name: 'window_create',
+    description: 'Create a new browser window, optionally with a URL, size, or incognito mode.',
+    keywords: ['window', 'create', 'new', 'open', 'popup', 'incognito'],
+    category: 'chrome',
+  },
+  {
+    name: 'window_list',
+    description: 'List all open browser windows.',
+    keywords: ['window', 'list', 'all', 'open', 'windows'],
+    category: 'chrome',
+  },
+  {
+    name: 'window_focus',
+    description: 'Focus a browser window by its ID.',
+    keywords: ['window', 'focus', 'activate', 'front', 'switch'],
+    category: 'chrome',
+  },
+  {
+    name: 'window_close',
+    description: 'Close a browser window by its ID.',
+    keywords: ['window', 'close', 'remove', 'shut'],
+    category: 'chrome',
+  },
+  {
+    name: 'window_resize',
+    description: 'Resize, move, or change the state of a browser window.',
+    keywords: ['window', 'resize', 'move', 'minimize', 'maximize', 'fullscreen', 'position', 'size'],
+    category: 'chrome',
+  },
+  {
+    name: 'download_file',
+    description: 'Download a file from a URL.',
+    keywords: ['download', 'file', 'save', 'url', 'fetch'],
+    category: 'chrome',
+  },
+  {
+    name: 'download_list',
+    description: 'Search recent downloads.',
+    keywords: ['download', 'list', 'search', 'recent', 'files', 'history'],
+    category: 'chrome',
+  },
+  {
+    name: 'reading_list_add',
+    description: 'Add a URL to the browser reading list.',
+    keywords: ['reading', 'list', 'add', 'save', 'later', 'read'],
+    category: 'chrome',
+  },
+  {
+    name: 'reading_list_query',
+    description: 'Query the browser reading list.',
+    keywords: ['reading', 'list', 'query', 'search', 'saved', 'read'],
+    category: 'chrome',
+  },
+  {
+    name: 'tab_duplicate',
+    description: 'Duplicate an existing browser tab.',
+    keywords: ['tab', 'duplicate', 'copy', 'clone'],
+    category: 'chrome',
+  },
+  {
+    name: 'tab_pin',
+    description: 'Pin or unpin a browser tab.',
+    keywords: ['tab', 'pin', 'unpin', 'sticky', 'lock'],
+    category: 'chrome',
+  },
+  {
+    name: 'tab_mute',
+    description: 'Mute or unmute a browser tab.',
+    keywords: ['tab', 'mute', 'unmute', 'sound', 'audio', 'silence'],
+    category: 'chrome',
+  },
+  {
+    name: 'tab_move',
+    description: 'Move a tab to a different window or position.',
+    keywords: ['tab', 'move', 'reorder', 'position', 'window', 'transfer'],
+    category: 'chrome',
+  },
 ];
 
 /** File tools (from agent loop) */
