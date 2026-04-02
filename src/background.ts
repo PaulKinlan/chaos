@@ -258,6 +258,26 @@ chrome.runtime.onConnect.addListener((port) => {
           await handleClearConversation(port, msg);
           break;
 
+        case 'getAgentDetail':
+          await handleGetAgentDetail(port, msg);
+          break;
+
+        case 'listAgentFiles':
+          await handleListAgentFilesPort(port, msg);
+          break;
+
+        case 'readAgentFile':
+          await handleReadAgentFilePort(port, msg);
+          break;
+
+        case 'updateAgentVisibility':
+          await handleUpdateAgentVisibilityPort(port, msg);
+          break;
+
+        case 'updateAgentClaudeMd':
+          await handleUpdateAgentClaudeMdPort(port, msg);
+          break;
+
         default:
           port.postMessage({
             type: 'error',
@@ -530,6 +550,56 @@ async function handleClearConversation(
   port.postMessage({ type: 'conversationCleared', agentId: msg.agentId });
 }
 
+// ── Port handlers for side panel agents/files tabs ──
+
+async function handleGetAgentDetail(
+  port: chrome.runtime.Port,
+  msg: { agentId: string },
+): Promise<void> {
+  const { meta, claudeMd } = await getAgent(msg.agentId);
+  port.postMessage({ type: 'agentDetail', agentId: meta.id, claudeMd });
+}
+
+async function handleListAgentFilesPort(
+  port: chrome.runtime.Port,
+  msg: { agentId: string },
+): Promise<void> {
+  const basePath = `agents/${msg.agentId}`;
+  const files = await listOPFSDir(basePath);
+  port.postMessage({ type: 'agentFiles', agentId: msg.agentId, files });
+}
+
+async function handleReadAgentFilePort(
+  port: chrome.runtime.Port,
+  msg: { agentId: string; path: string },
+): Promise<void> {
+  const fullPath = `agents/${msg.agentId}/${msg.path}`;
+  try {
+    const content = await opfs.readFile(fullPath);
+    port.postMessage({ type: 'agentFileContent', path: msg.path, content });
+  } catch {
+    port.postMessage({ type: 'agentFileContent', path: msg.path, content: '(File not found or unreadable)' });
+  }
+}
+
+async function handleUpdateAgentVisibilityPort(
+  port: chrome.runtime.Port,
+  msg: { agentId: string; visibility: string },
+): Promise<void> {
+  await updateAgentMeta(msg.agentId, {
+    visibility: msg.visibility as 'private' | 'visible' | 'open',
+  });
+  port.postMessage({ type: 'agentVisibilityUpdated', agentId: msg.agentId });
+}
+
+async function handleUpdateAgentClaudeMdPort(
+  port: chrome.runtime.Port,
+  msg: { agentId: string; content: string },
+): Promise<void> {
+  await opfs.writeFile(`agents/${msg.agentId}/CLAUDE.md`, msg.content);
+  port.postMessage({ type: 'claudeMdUpdated', agentId: msg.agentId });
+}
+
 // ── One-shot message handling (for dashboard and popup) ──
 
 chrome.runtime.onMessage.addListener(
@@ -665,6 +735,24 @@ async function handleOneShotMessage(
       await chrome.tabs.create({ url });
       return { opened: true };
     }
+
+    // Speech recognition relay - forward between offscreen doc and UI
+    case 'startSpeechRecognition':
+    case 'stopSpeechRecognition':
+      // Forward to offscreen document
+      try {
+        await chrome.runtime.sendMessage(msg);
+      } catch {
+        // Offscreen doc may not be ready
+      }
+      return { ok: true };
+
+    case 'speechResult':
+    case 'speechError':
+    case 'speechEnd':
+      // These come from offscreen doc, relay to all extension views
+      // (side panel and app.html will pick them up via their own onMessage listeners)
+      return { ok: true };
 
     default:
       throw new Error(`Unknown one-shot message type: ${msg.type}`);

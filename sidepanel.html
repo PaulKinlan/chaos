@@ -491,6 +491,384 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #444;
     }
+
+    /* ── Tab bar ── */
+    .sp-tabs {
+      display: flex;
+      height: 32px;
+      background: #111;
+      border-bottom: 1px solid #222;
+      flex-shrink: 0;
+    }
+
+    .sp-tab {
+      flex: 1;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #777;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      padding: 0;
+    }
+
+    .sp-tab:hover {
+      color: #ccc;
+      background: #1a1a1a;
+    }
+
+    .sp-tab.active {
+      color: #c4b5fd;
+      border-bottom-color: #8b5cf6;
+    }
+
+    /* ── Panels ── */
+    .sp-panel {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .sp-panel.active {
+      display: flex;
+    }
+
+    /* ── Agents panel ── */
+    .sp-agents-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-bottom: 1px solid #222;
+      flex-shrink: 0;
+    }
+
+    .sp-agents-header span {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .sp-agents-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    .sp-agent-card {
+      padding: 8px 12px;
+      border-bottom: 1px solid #1a1a1a;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .sp-agent-card:hover {
+      background: #1a1a1a;
+    }
+
+    .sp-agent-card-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+
+    .sp-agent-card-header .agent-name {
+      flex: 1;
+      color: #e0e0e0;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sp-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+
+    .sp-badge.role {
+      background: #1e1b4b;
+      color: #a78bfa;
+    }
+
+    .sp-badge.visibility {
+      background: #0f291e;
+      color: #86efac;
+    }
+
+    .sp-badge.visibility-private {
+      background: #1c1917;
+      color: #a8a29e;
+    }
+
+    .sp-badge.visibility-open {
+      background: #172554;
+      color: #93c5fd;
+    }
+
+    .sp-agent-detail {
+      display: none;
+      padding: 8px 0 4px;
+    }
+
+    .sp-agent-detail.open {
+      display: block;
+    }
+
+    .sp-agent-detail-actions {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .sp-agent-detail-actions button {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #ccc;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .sp-agent-detail-actions button:hover {
+      border-color: #555;
+      background: #222;
+    }
+
+    .sp-agent-detail-actions button.danger {
+      border-color: #7f1d1d;
+      color: #fca5a5;
+    }
+
+    .sp-agent-detail-actions button.danger:hover {
+      background: #450a0a;
+      border-color: #dc2626;
+    }
+
+    .sp-agent-visibility-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 11px;
+      color: #888;
+    }
+
+    .sp-agent-visibility-row select {
+      background: #0d0d0d;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+    }
+
+    .sp-agent-claude-md {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #bbb;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* CLAUDE.md editor overlay */
+    .sp-editor-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      flex-direction: column;
+      padding: 12px;
+    }
+
+    .sp-editor-overlay.visible {
+      display: flex;
+    }
+
+    .sp-editor-overlay .editor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .sp-editor-overlay .editor-header span {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e0e0e0;
+    }
+
+    .sp-editor-overlay textarea {
+      flex: 1;
+      background: #111;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      resize: none;
+      outline: none;
+      line-height: 1.5;
+    }
+
+    .sp-editor-overlay textarea:focus {
+      border-color: #8b5cf6;
+    }
+
+    .sp-editor-overlay .editor-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 8px;
+      flex-shrink: 0;
+    }
+
+    /* ── Files panel ── */
+    .sp-files-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid #222;
+      flex-shrink: 0;
+    }
+
+    .sp-files-header label {
+      font-size: 11px;
+      color: #888;
+      flex-shrink: 0;
+    }
+
+    .sp-files-header select {
+      flex: 1;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .sp-file-tree {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+
+    .sp-file-tree-item {
+      display: flex;
+      align-items: center;
+      padding: 3px 12px;
+      cursor: pointer;
+      color: #ccc;
+      transition: background 0.1s;
+      white-space: nowrap;
+    }
+
+    .sp-file-tree-item:hover {
+      background: #1a1a1a;
+    }
+
+    .sp-file-tree-item .icon {
+      width: 16px;
+      text-align: center;
+      margin-right: 4px;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .sp-file-tree-item .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sp-file-tree-item .size {
+      margin-left: auto;
+      color: #555;
+      font-size: 10px;
+      padding-left: 8px;
+      flex-shrink: 0;
+    }
+
+    .sp-file-viewer {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .sp-file-viewer.visible {
+      display: flex;
+    }
+
+    .sp-file-viewer-header {
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-bottom: 1px solid #222;
+      background: #111;
+      flex-shrink: 0;
+    }
+
+    .sp-file-viewer-header span {
+      flex: 1;
+      font-size: 12px;
+      color: #aaa;
+      font-family: monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sp-file-viewer-header button {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #999;
+      cursor: pointer;
+      padding: 2px 8px;
+      font-size: 11px;
+    }
+
+    .sp-file-viewer-header button:hover {
+      color: #e0e0e0;
+      border-color: #555;
+    }
+
+    .sp-file-viewer-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #ccc;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
@@ -508,34 +886,83 @@
     </div>
   </div>
 
-  <!-- Setup prompt (shown when no API key is configured) -->
-  <div class="setup-prompt" id="setup-prompt">
-    <p><strong>Welcome to CHAOS</strong></p>
-    <p>To get started, add an API key for at least one AI provider.</p>
-    <button id="btn-open-settings">Open Settings</button>
+  <!-- Tab bar -->
+  <div class="sp-tabs">
+    <button class="sp-tab active" data-sp-tab="chat">Chat</button>
+    <button class="sp-tab" data-sp-tab="agents">Agents</button>
+    <button class="sp-tab" data-sp-tab="files">Files</button>
   </div>
 
-  <!-- Page context bar -->
-  <div class="page-context" id="page-context">
-    <span id="page-context-text"></span>
-    <span class="dismiss" id="btn-dismiss-context">&times;</span>
-  </div>
-
-  <!-- Messages area -->
-  <div class="messages" id="messages"></div>
-
-  <!-- Typing indicator -->
-  <div class="typing-indicator" id="typing-indicator">
-    <span></span><span></span><span></span>
-  </div>
-
-  <!-- Input area -->
-  <div class="input-area">
-    <div class="input-wrapper">
-      <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
-      <button id="btn-mic" title="Voice input" class="btn-mic">&#127908;</button>
+  <!-- Chat panel -->
+  <div class="sp-panel active" id="sp-chat">
+    <!-- Setup prompt (shown when no API key is configured) -->
+    <div class="setup-prompt" id="setup-prompt">
+      <p><strong>Welcome to CHAOS</strong></p>
+      <p>To get started, add an API key for at least one AI provider.</p>
+      <button id="btn-open-settings">Open Settings</button>
     </div>
-    <button id="btn-send">&#9654;</button>
+
+    <!-- Page context bar -->
+    <div class="page-context" id="page-context">
+      <span id="page-context-text"></span>
+      <span class="dismiss" id="btn-dismiss-context">&times;</span>
+    </div>
+
+    <!-- Messages area -->
+    <div class="messages" id="messages"></div>
+
+    <!-- Typing indicator -->
+    <div class="typing-indicator" id="typing-indicator">
+      <span></span><span></span><span></span>
+    </div>
+
+    <!-- Input area -->
+    <div class="input-area">
+      <div class="input-wrapper">
+        <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
+        <button id="btn-mic" title="Voice input" class="btn-mic">&#127908;</button>
+      </div>
+      <button id="btn-send">&#9654;</button>
+    </div>
+  </div>
+
+  <!-- Agents panel -->
+  <div class="sp-panel" id="sp-agents">
+    <div class="sp-agents-header">
+      <span>Agents</span>
+      <button class="icon-btn" id="btn-agents-create" title="Create agent">+</button>
+    </div>
+    <div class="sp-agents-list" id="sp-agents-list"></div>
+  </div>
+
+  <!-- Files panel -->
+  <div class="sp-panel" id="sp-files">
+    <div class="sp-files-header">
+      <label>Agent:</label>
+      <select id="sp-files-agent-select">
+        <option value="">Select agent...</option>
+      </select>
+    </div>
+    <div class="sp-file-tree" id="sp-file-tree"></div>
+    <div class="sp-file-viewer" id="sp-file-viewer">
+      <div class="sp-file-viewer-header">
+        <span id="sp-file-viewer-path"></span>
+        <button id="sp-file-viewer-close">&times;</button>
+      </div>
+      <div class="sp-file-viewer-content" id="sp-file-viewer-content"></div>
+    </div>
+  </div>
+
+  <!-- CLAUDE.md editor overlay -->
+  <div class="sp-editor-overlay" id="sp-editor-overlay">
+    <div class="editor-header">
+      <span>Edit CLAUDE.md</span>
+    </div>
+    <textarea id="sp-editor-textarea"></textarea>
+    <div class="editor-actions">
+      <button class="btn-secondary" id="sp-editor-cancel">Cancel</button>
+      <button class="btn-primary" id="sp-editor-save">Save</button>
+    </div>
   </div>
 
   <!-- Settings modal -->

@@ -256,9 +256,49 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       addSystemMessage('Conversation cleared.');
       break;
 
+    case 'agentDetail': {
+      const detail = msg as { agentId: string; claudeMd: string };
+      agentClaudeMdCache[detail.agentId] = detail.claudeMd;
+      const preview = document.getElementById(`agent-claude-md-${detail.agentId}`);
+      if (preview) preview.textContent = detail.claudeMd || '(empty)';
+      break;
+    }
+
+    case 'agentVisibilityUpdated':
+      // Refresh agents panel if visible
+      if (expandedAgentId) loadAgentsPanel();
+      break;
+
+    case 'claudeMdUpdated':
+      // Silent acknowledgement
+      break;
+
+    case 'agentFiles': {
+      const files = msg.files as FileEntry[];
+      spFileTree.innerHTML = '';
+      if (files.length === 0) {
+        spFileTree.innerHTML = '<div style="padding:20px;text-align:center;color:#666;font-size:12px;">No files found.</div>';
+      } else {
+        renderFileTree(files, spFileTree);
+      }
+      break;
+    }
+
+    case 'agentFileContent': {
+      spFileViewerContent.textContent = msg.content as string;
+      break;
+    }
+
     case 'error':
       addSystemMessage(`Error: ${msg.error}`);
       break;
+  }
+
+  // Also update agents/files panels when agent list arrives
+  if (msg.type === 'agentList') {
+    const agents = msg.agents as AgentMeta[];
+    renderAgentsPanel(agents);
+    populateFilesAgentSelect(agents);
   }
 }
 
@@ -705,6 +745,298 @@ function checkApiKeysForSetup(keys: ApiKeys): void {
   }
 }
 
+// ── Tab switching ──
+
+const spTabs = document.querySelectorAll<HTMLButtonElement>('.sp-tab');
+const spPanels = document.querySelectorAll<HTMLDivElement>('.sp-panel');
+
+spTabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    const target = tab.dataset.spTab;
+    spTabs.forEach((t) => t.classList.remove('active'));
+    spPanels.forEach((p) => p.classList.remove('active'));
+    tab.classList.add('active');
+    const panel = document.getElementById(`sp-${target}`);
+    panel?.classList.add('active');
+
+    // Load data when switching to a tab
+    if (target === 'agents') {
+      loadAgentsPanel();
+    } else if (target === 'files') {
+      loadFilesPanelAgents();
+    }
+  });
+});
+
+// ── Agents panel ──
+
+const spAgentsList = document.getElementById('sp-agents-list') as HTMLDivElement;
+const btnAgentsCreate = document.getElementById('btn-agents-create') as HTMLButtonElement;
+
+// Track agents panel data
+let expandedAgentId: string | null = null;
+let agentClaudeMdCache: Record<string, string> = {};
+
+function loadAgentsPanel(): void {
+  // Request fresh agent list
+  sendMessage({ type: 'listAgents' });
+}
+
+// Hook into agentList responses for the agents panel
+function renderAgentsPanel(agents: AgentMeta[]): void {
+  spAgentsList.innerHTML = '';
+
+  if (agents.length === 0) {
+    spAgentsList.innerHTML = '<div style="padding:20px;text-align:center;color:#666;font-size:12px;">No agents yet. Create one to get started.</div>';
+    return;
+  }
+
+  for (const agent of agents) {
+    const card = document.createElement('div');
+    card.className = 'sp-agent-card';
+    card.dataset.agentId = agent.id;
+
+    const visClass = agent.visibility === 'private' ? 'visibility-private' : agent.visibility === 'open' ? 'visibility-open' : 'visibility';
+
+    card.innerHTML = `
+      <div class="sp-agent-card-header">
+        <span class="agent-name">${escapeHtml(agent.name)}</span>
+        <span class="sp-badge role">${escapeHtml(agent.role)}</span>
+        <span class="sp-badge ${visClass}">${escapeHtml(agent.visibility)}</span>
+      </div>
+      <div class="sp-agent-detail" id="agent-detail-${agent.id}"></div>
+    `;
+
+    card.querySelector('.sp-agent-card-header')!.addEventListener('click', () => {
+      toggleAgentDetail(agent);
+    });
+
+    spAgentsList.appendChild(card);
+
+    // Re-expand if this was the previously expanded agent
+    if (expandedAgentId === agent.id) {
+      showAgentDetail(agent);
+    }
+  }
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function toggleAgentDetail(agent: AgentMeta): void {
+  if (expandedAgentId === agent.id) {
+    // Collapse
+    const detail = document.getElementById(`agent-detail-${agent.id}`);
+    detail?.classList.remove('open');
+    expandedAgentId = null;
+  } else {
+    // Collapse previous
+    if (expandedAgentId) {
+      const prevDetail = document.getElementById(`agent-detail-${expandedAgentId}`);
+      prevDetail?.classList.remove('open');
+    }
+    expandedAgentId = agent.id;
+    showAgentDetail(agent);
+  }
+}
+
+function showAgentDetail(agent: AgentMeta): void {
+  const detail = document.getElementById(`agent-detail-${agent.id}`);
+  if (!detail) return;
+
+  // Request CLAUDE.md via port
+  sendMessage({ type: 'getAgentDetail', agentId: agent.id });
+
+  detail.innerHTML = `
+    <div class="sp-agent-visibility-row">
+      <span>Visibility:</span>
+      <select class="agent-vis-select" data-agent-id="${agent.id}">
+        <option value="private"${agent.visibility === 'private' ? ' selected' : ''}>Private</option>
+        <option value="visible"${agent.visibility === 'visible' ? ' selected' : ''}>Visible</option>
+        <option value="open"${agent.visibility === 'open' ? ' selected' : ''}>Open</option>
+      </select>
+    </div>
+    <div class="sp-agent-detail-actions">
+      <button class="edit-claude-md-btn" data-agent-id="${agent.id}">Edit CLAUDE.md</button>
+      <button class="danger delete-agent-btn" data-agent-id="${agent.id}">Delete</button>
+    </div>
+    <div class="sp-agent-claude-md" id="agent-claude-md-${agent.id}">Loading...</div>
+  `;
+
+  detail.classList.add('open');
+
+  // Wire up visibility select
+  const visSelect = detail.querySelector('.agent-vis-select') as HTMLSelectElement;
+  visSelect.addEventListener('change', () => {
+    sendMessage({ type: 'updateAgentVisibility', agentId: agent.id, visibility: visSelect.value });
+    // Update local state
+    agent.visibility = visSelect.value as 'private' | 'visible' | 'open';
+  });
+
+  // Wire up edit CLAUDE.md button
+  const editBtn = detail.querySelector('.edit-claude-md-btn') as HTMLButtonElement;
+  editBtn.addEventListener('click', () => {
+    openClaudeMdEditor(agent.id);
+  });
+
+  // Wire up delete button
+  const deleteBtn = detail.querySelector('.delete-agent-btn') as HTMLButtonElement;
+  deleteBtn.addEventListener('click', () => {
+    if (deleteBtn.dataset.confirmed === 'true') {
+      sendMessage({ type: 'deleteAgent', agentId: agent.id });
+      expandedAgentId = null;
+      loadAgentsPanel();
+    } else {
+      deleteBtn.textContent = 'Confirm Delete';
+      deleteBtn.dataset.confirmed = 'true';
+      setTimeout(() => {
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.dataset.confirmed = '';
+      }, 3000);
+    }
+  });
+}
+
+function openClaudeMdEditor(agentId: string): void {
+  const overlay = document.getElementById('sp-editor-overlay') as HTMLDivElement;
+  const textarea = document.getElementById('sp-editor-textarea') as HTMLTextAreaElement;
+  const cancelBtn = document.getElementById('sp-editor-cancel') as HTMLButtonElement;
+  const saveBtn = document.getElementById('sp-editor-save') as HTMLButtonElement;
+
+  textarea.value = agentClaudeMdCache[agentId] || '';
+  overlay.classList.add('visible');
+
+  const cleanup = () => {
+    overlay.classList.remove('visible');
+    cancelBtn.removeEventListener('click', handleCancel);
+    saveBtn.removeEventListener('click', handleSave);
+  };
+
+  const handleCancel = () => cleanup();
+  const handleSave = () => {
+    sendMessage({ type: 'updateAgentClaudeMd', agentId, content: textarea.value });
+    agentClaudeMdCache[agentId] = textarea.value;
+    // Update the preview
+    const preview = document.getElementById(`agent-claude-md-${agentId}`);
+    if (preview) preview.textContent = textarea.value;
+    cleanup();
+  };
+
+  cancelBtn.addEventListener('click', handleCancel);
+  saveBtn.addEventListener('click', handleSave);
+}
+
+// Agents panel create button uses the same modal
+btnAgentsCreate.addEventListener('click', () => {
+  agentNameInput.value = '';
+  agentRoleSelect.value = 'neutral';
+  createAgentModal.classList.add('visible');
+});
+
+// ── Files panel ──
+
+const spFilesAgentSelect = document.getElementById('sp-files-agent-select') as HTMLSelectElement;
+const spFileTree = document.getElementById('sp-file-tree') as HTMLDivElement;
+const spFileViewer = document.getElementById('sp-file-viewer') as HTMLDivElement;
+const spFileViewerPath = document.getElementById('sp-file-viewer-path') as HTMLSpanElement;
+const spFileViewerContent = document.getElementById('sp-file-viewer-content') as HTMLDivElement;
+const spFileViewerClose = document.getElementById('sp-file-viewer-close') as HTMLButtonElement;
+
+interface FileEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'directory';
+  size?: number;
+  children?: FileEntry[];
+}
+
+let filesAgentId: string | null = null;
+
+function loadFilesPanelAgents(): void {
+  // Request agent list to populate selector
+  sendMessage({ type: 'listAgents' });
+}
+
+function populateFilesAgentSelect(agents: AgentMeta[]): void {
+  // Clear all but placeholder
+  while (spFilesAgentSelect.options.length > 1) {
+    spFilesAgentSelect.remove(1);
+  }
+  for (const agent of agents) {
+    const opt = document.createElement('option');
+    opt.value = agent.id;
+    opt.textContent = agent.name;
+    spFilesAgentSelect.appendChild(opt);
+  }
+  // Restore selection
+  if (filesAgentId) {
+    spFilesAgentSelect.value = filesAgentId;
+  }
+}
+
+spFilesAgentSelect.addEventListener('change', () => {
+  filesAgentId = spFilesAgentSelect.value || null;
+  spFileViewer.classList.remove('visible');
+  if (filesAgentId) {
+    sendMessage({ type: 'listAgentFiles', agentId: filesAgentId });
+  } else {
+    spFileTree.innerHTML = '';
+  }
+});
+
+function renderFileTree(entries: FileEntry[], container: HTMLElement, depth: number = 0): void {
+  for (const entry of entries) {
+    const item = document.createElement('div');
+    item.className = 'sp-file-tree-item';
+    item.style.paddingLeft = `${12 + depth * 16}px`;
+
+    if (entry.kind === 'directory') {
+      let expanded = false;
+      const childContainer = document.createElement('div');
+      childContainer.style.display = 'none';
+
+      item.innerHTML = `<span class="icon">&#9654;</span><span class="name">${escapeHtml(entry.name)}/</span>`;
+      item.addEventListener('click', () => {
+        expanded = !expanded;
+        childContainer.style.display = expanded ? 'block' : 'none';
+        item.querySelector('.icon')!.innerHTML = expanded ? '&#9660;' : '&#9654;';
+      });
+
+      container.appendChild(item);
+      container.appendChild(childContainer);
+
+      if (entry.children && entry.children.length > 0) {
+        renderFileTree(entry.children, childContainer, depth + 1);
+      }
+    } else {
+      const sizeStr = entry.size != null ? formatFileSize(entry.size) : '';
+      item.innerHTML = `<span class="icon">&#128196;</span><span class="name">${escapeHtml(entry.name)}</span><span class="size">${sizeStr}</span>`;
+      item.addEventListener('click', () => {
+        if (filesAgentId) {
+          sendMessage({ type: 'readAgentFile', agentId: filesAgentId, path: entry.path });
+          spFileViewerPath.textContent = entry.path;
+          spFileViewerContent.textContent = 'Loading...';
+          spFileViewer.classList.add('visible');
+        }
+      });
+      container.appendChild(item);
+    }
+  }
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}K`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
+}
+
+spFileViewerClose.addEventListener('click', () => {
+  spFileViewer.classList.remove('visible');
+});
+
 // ── Initialization ──
 
 function init(): void {
@@ -721,70 +1053,62 @@ init();
 
 // ── Speech-to-text ──
 
-const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-let recognition: any = null;
+// ── Speech-to-text via offscreen document ──
+// SpeechRecognition doesn't work directly in extension pages (chrome-extension:// URLs).
+// We use an offscreen document which runs in a normal web context.
+
 let isRecording = false;
+let textBeforeRecording = '';
 
-if (SpeechRecognition) {
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
+async function ensureOffscreenDocument(): Promise<void> {
+  // Check if offscreen document already exists
+  const existingContexts = await (chrome.runtime as any).getContexts?.({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+  });
+  if (existingContexts?.length > 0) return;
 
-  let finalTranscript = '';
+  try {
+    await (chrome as any).offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['USER_MEDIA'],
+      justification: 'Speech recognition requires a normal web page context',
+    });
+  } catch {
+    // May already exist
+  }
+}
 
-  recognition.onresult = (event: any) => {
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalTranscript += transcript + ' ';
-      } else {
-        interim = transcript;
-      }
+btnMic.addEventListener('click', async () => {
+  if (isRecording) {
+    isRecording = false;
+    btnMic.classList.remove('recording');
+    chrome.runtime.sendMessage({ type: 'stopSpeechRecognition' });
+  } else {
+    try {
+      await ensureOffscreenDocument();
+      isRecording = true;
+      textBeforeRecording = chatInput.value;
+      btnMic.classList.add('recording');
+      chrome.runtime.sendMessage({ type: 'startSpeechRecognition' });
+    } catch (err) {
+      addSystemMessage(`Could not start voice input: ${err instanceof Error ? err.message : String(err)}`);
     }
-    // Update the input with final + interim text
-    const existingText = chatInput.value.substring(0, chatInput.value.length - (chatInput.dataset.lastInterim?.length || 0));
-    chatInput.value = existingText + finalTranscript + interim;
-    chatInput.dataset.lastInterim = interim;
+  }
+});
+
+// Listen for transcription results from offscreen document (via background)
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'speechResult') {
+    chatInput.value = textBeforeRecording + msg.transcript;
     chatInput.scrollTop = chatInput.scrollHeight;
-  };
-
-  recognition.onend = () => {
-    if (isRecording) {
-      // Restart if still recording (browser may stop after silence)
-      recognition.start();
-    } else {
-      btnMic.classList.remove('recording');
-      finalTranscript = '';
-      delete chatInput.dataset.lastInterim;
-    }
-  };
-
-  recognition.onerror = (event: any) => {
-    if (event.error !== 'no-speech' && event.error !== 'aborted') {
-      addSystemMessage(`Speech recognition error: ${event.error}`);
+  } else if (msg.type === 'speechError') {
+    if (msg.error !== 'no-speech' && msg.error !== 'aborted') {
+      addSystemMessage(`Speech recognition error: ${msg.error}`);
     }
     isRecording = false;
     btnMic.classList.remove('recording');
-    finalTranscript = '';
-    delete chatInput.dataset.lastInterim;
-  };
-
-  btnMic.addEventListener('click', () => {
-    if (isRecording) {
-      isRecording = false;
-      recognition.stop();
-      btnMic.classList.remove('recording');
-    } else {
-      isRecording = true;
-      finalTranscript = '';
-      chatInput.dataset.lastInterim = '';
-      recognition.start();
-      btnMic.classList.add('recording');
-    }
-  });
-} else {
-  // Hide mic button if speech recognition not supported
-  btnMic.style.display = 'none';
-}
+  } else if (msg.type === 'speechEnd') {
+    isRecording = false;
+    btnMic.classList.remove('recording');
+  }
+});
