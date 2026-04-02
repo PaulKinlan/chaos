@@ -13,9 +13,15 @@ import {
   createAgent,
   listAgents,
   deleteAgent,
+  getAgent,
+  updateAgentMeta,
 } from './agents/manager.js';
 import { runAgentLoop } from './agents/loop.js';
 import { getApiKeys, setApiKeys } from './storage/chrome-storage.js';
+import { getMessages } from './storage/shared.js';
+import { getTaskState } from './storage/shared.js';
+import { listArtifacts } from './storage/shared.js';
+import { opfs } from './storage/opfs.js';
 
 // ── Side panel behavior ──
 
@@ -255,6 +261,118 @@ async function handleSetApiKeys(
 ): Promise<void> {
   await setApiKeys(msg.keys);
   port.postMessage({ type: 'apiKeysSaved' });
+}
+
+// ── One-shot message handling (for dashboard and popup) ──
+
+chrome.runtime.onMessage.addListener(
+  (msg: Record<string, unknown>, _sender, sendResponse) => {
+    handleOneShotMessage(msg)
+      .then(sendResponse)
+      .catch((err) => {
+        sendResponse({ error: err instanceof Error ? err.message : String(err) });
+      });
+    return true; // keep the message channel open for async response
+  },
+);
+
+async function handleOneShotMessage(
+  msg: Record<string, unknown>,
+): Promise<unknown> {
+  switch (msg.type) {
+    case 'listAgents': {
+      const agents = await listAgents();
+      return { agents };
+    }
+
+    case 'createAgent': {
+      const agent = await createAgent(msg.name as string, msg.role as string);
+      await refreshContextMenus();
+      return { agent };
+    }
+
+    case 'deleteAgent': {
+      await deleteAgent(msg.agentId as string);
+      await refreshContextMenus();
+      return { deleted: true };
+    }
+
+    case 'getAgentDetail': {
+      const agentId = msg.agentId as string;
+      const { meta, claudeMd } = await getAgent(agentId);
+
+      // Read recent journal entries (last 10 lines from activity-log.jsonl)
+      let journal: string[] = [];
+      try {
+        journal = await opfs.readLines(`agents/${agentId}/activity-log.jsonl`, 10);
+      } catch {
+        // File may not exist yet
+      }
+
+      // Read bookmarks folder contents (bookmark titles)
+      let bookmarks: string[] = [];
+      if (meta.bookmarkFolderId) {
+        try {
+          const children = await chrome.bookmarks.getChildren(meta.bookmarkFolderId);
+          bookmarks = children.map((b) => b.title + (b.url ? ` — ${b.url}` : ''));
+        } catch {
+          // Folder may not exist
+        }
+      }
+
+      return { meta, claudeMd, journal, bookmarks };
+    }
+
+    case 'updateAgentVisibility': {
+      await updateAgentMeta(msg.agentId as string, {
+        visibility: msg.visibility as 'private' | 'visible' | 'open',
+      });
+      return { updated: true };
+    }
+
+    case 'getMessages': {
+      const messages = await getMessages();
+      return { messages };
+    }
+
+    case 'getTaskState': {
+      const tasks = await getTaskState();
+      return { tasks };
+    }
+
+    case 'getArtifacts': {
+      const artifacts = await listArtifacts();
+      return { artifacts };
+    }
+
+    case 'readArtifactContent': {
+      try {
+        const content = await opfs.readFile(msg.path as string);
+        return { content };
+      } catch {
+        return { content: '(File not found or unreadable)' };
+      }
+    }
+
+    case 'getApiKeys': {
+      const keys = await getApiKeys();
+      return { keys };
+    }
+
+    case 'setApiKeys': {
+      await setApiKeys(msg.keys as Record<string, string>);
+      return { saved: true };
+    }
+
+    case 'openDashboard': {
+      const url = chrome.runtime.getURL('app.html');
+      await chrome.tabs.create({ url });
+      return { opened: true };
+    }
+
+    default:
+      throw new Error(`Unknown one-shot message type: ${msg.type}`);
+  }
 }
 
 // ── Alarm handling for scheduled agent wake-ups ──

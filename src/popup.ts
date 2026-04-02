@@ -90,6 +90,15 @@ btnOpenSidepanel.addEventListener('click', async () => {
   window.close();
 });
 
+// ── Open dashboard ──
+
+const btnOpenDashboard = document.getElementById('btn-open-dashboard') as HTMLButtonElement;
+
+btnOpenDashboard.addEventListener('click', async () => {
+  await chrome.runtime.sendMessage({ type: 'openDashboard' });
+  window.close();
+});
+
 // ── Helpers ──
 
 function escapeHtml(text: string): string {

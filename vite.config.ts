@@ -15,5 +15,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        app: resolve(__dirname, 'app.html'),
+      },
+    },
   },
 });
