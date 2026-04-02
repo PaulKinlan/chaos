@@ -457,7 +457,6 @@ document.getElementById('ctx-delete-agent')!.addEventListener('click', () => {
 const chatMessagesDiv = document.getElementById('chat-messages') as HTMLDivElement;
 const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
 const chatBtnSend = document.getElementById('chat-btn-send') as HTMLButtonElement;
-const chatBtnReadPage = document.getElementById('chat-btn-read-page') as HTMLButtonElement;
 const chatBtnClear = document.getElementById('chat-btn-clear') as HTMLButtonElement;
 const chatBtnMic = document.getElementById('chat-btn-mic') as HTMLButtonElement;
 const chatTyping = document.getElementById('chat-typing') as HTMLDivElement;
@@ -767,18 +766,6 @@ function chatAutoResize(): void {
 chatInput.addEventListener('input', chatAutoResize);
 
 // ── Chat actions ──
-
-chatBtnReadPage.addEventListener('click', async () => {
-  const hasScripting = await chrome.permissions.contains({ permissions: ['scripting'], origins: ['<all_urls>'] });
-  if (!hasScripting) {
-    const granted = await chrome.permissions.request({ permissions: ['scripting'], origins: ['<all_urls>'] });
-    if (!granted) {
-      addChatSystemMessage('Permission denied. Enable "Read page content" in Global Settings to use this feature.');
-      return;
-    }
-  }
-  sendPortMessage({ type: 'extractContent' });
-});
 
 chatBtnClear.addEventListener('click', () => {
   if (!activeAgentId) return;
