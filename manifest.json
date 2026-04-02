@@ -6,7 +6,6 @@
   "permissions": [
     "activeTab",
     "storage",
-    "sidePanel",
     "alarms",
     "contextMenus",
     "offscreen"
@@ -24,9 +23,6 @@
   "background": {
     "service_worker": "src/background.ts",
     "type": "module"
-  },
-  "side_panel": {
-    "default_path": "sidepanel.html"
   },
   "chrome_url_overrides": {
     "newtab": "app.html"

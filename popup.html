@@ -84,6 +84,18 @@
       font-style: italic;
     }
 
+    .agent-info .agent-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--sp-1) 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .agent-info .agent-row:last-child {
+      border-bottom: none;
+    }
+
     label {
       display: block;
       font-size: var(--text-xs);
@@ -163,17 +175,11 @@
   </div>
 
   <div class="agent-info" id="agent-info">
-    <div class="none">No agent selected</div>
+    <div class="none">Loading agents...</div>
   </div>
 
-  <label for="popup-agent-select">Active Agent</label>
-  <select id="popup-agent-select">
-    <option value="">Select agent...</option>
-  </select>
-
   <div class="actions">
-    <button class="primary" id="btn-open-sidepanel">Open Side Panel</button>
-    <button id="btn-open-dashboard">Open Dashboard</button>
+    <button class="primary" id="btn-open-dashboard">Open CHAOS</button>
   </div>
 
   <script type="module" src="src/popup.ts"></script>

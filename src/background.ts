@@ -95,10 +95,6 @@ async function readDirRecursive(
   });
 }
 
-// ── Side panel behavior ──
-
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-
 // ── Installation ──
 
 chrome.runtime.onInstalled.addListener(() => {
