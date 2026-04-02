@@ -592,8 +592,6 @@ function handlePortMessage(msg: Record<string, unknown>): void {
 
     case 'agenticStart':
       isChatStreaming = true;
-      currentStreamContent = '';
-      currentStreamEl = addChatAssistantMessage('');
       chatTyping.classList.add('visible');
       chatBtnSend.disabled = true;
       break;
@@ -605,22 +603,48 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       const progressContent = msg.content as string;
 
       if (progressType === 'thinking') {
-        // Show step indicator
-        if (currentStreamEl) {
-          const stepLabel = `**Step ${iteration} of ${totalIterations}:** Thinking...\n\n`;
-          currentStreamContent += stepLabel;
-          renderChatMarkdown(currentStreamEl, currentStreamContent);
-          chatScrollToBottom();
-        }
+        // Add a visible step header as its own element
+        const stepEl = document.createElement('div');
+        stepEl.className = 'chat-message system';
+        stepEl.style.cssText = 'font-size:var(--text-xs);color:var(--accent-text);padding:var(--sp-2) var(--sp-4);background:var(--accent-subtle);border-radius:6px;margin:var(--sp-1) 0;';
+        stepEl.textContent = `Step ${iteration} of ${totalIterations}`;
+        chatMessagesDiv.appendChild(stepEl);
+        chatScrollToBottom();
       } else if (progressType === 'tool-call') {
         const toolName = msg.toolName as string;
-        addToolCallCard(toolName, msg.toolArgs, msg.toolResult);
-      } else if (progressType === 'text' && progressContent) {
-        if (currentStreamEl) {
-          currentStreamContent += progressContent + '\n\n';
-          renderChatMarkdown(currentStreamEl, currentStreamContent);
+        const toolArgs = msg.toolArgs as Record<string, unknown> | undefined;
+        // Show a concise tool usage line
+        const toolEl = document.createElement('div');
+        toolEl.className = 'chat-message tool-call';
+        toolEl.style.cssText = 'font-size:var(--text-xs);padding:var(--sp-2) var(--sp-4);border-left:3px solid var(--accent);margin:var(--sp-1) 0;background:var(--bg-surface);border-radius:0 6px 6px 0;max-width:100%;';
+        const argsPreview = toolArgs ? Object.entries(toolArgs).map(([k, v]) => {
+          const val = typeof v === 'string' ? (v.length > 60 ? v.slice(0, 60) + '...' : v) : JSON.stringify(v);
+          return `${k}: ${val}`;
+        }).join(', ') : '';
+        toolEl.innerHTML = `<span style="color:var(--accent-text);font-weight:600;">${escapeHtml(toolName)}</span>${argsPreview ? `<span style="color:var(--text-secondary);margin-left:var(--sp-2);">${escapeHtml(argsPreview)}</span>` : ''}`;
+        chatMessagesDiv.appendChild(toolEl);
+        chatScrollToBottom();
+      } else if (progressType === 'tool-result') {
+        // Show a brief result indicator
+        const resultContent = msg.toolResult as string | Record<string, unknown> | undefined;
+        if (resultContent) {
+          const resultEl = document.createElement('div');
+          resultEl.className = 'chat-message system';
+          resultEl.style.cssText = 'font-size:var(--text-xs);color:var(--text-muted);padding:var(--sp-1) var(--sp-4);margin:0 0 var(--sp-1) 0;';
+          const preview = typeof resultContent === 'string' ? resultContent.slice(0, 100) : JSON.stringify(resultContent).slice(0, 100);
+          resultEl.textContent = `→ ${preview}${(typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent)).length > 100 ? '...' : ''}`;
+          chatMessagesDiv.appendChild(resultEl);
           chatScrollToBottom();
         }
+      } else if (progressType === 'text' && progressContent) {
+        // Show intermediate text as a regular assistant message
+        const textEl = document.createElement('div');
+        textEl.className = 'chat-message assistant';
+        renderChatMarkdown(textEl, progressContent);
+        chatMessagesDiv.appendChild(textEl);
+        chatScrollToBottom();
+      } else if (progressType === 'step-complete') {
+        // Subtle separator
       } else if (progressType === 'error') {
         addChatErrorMessage(progressContent);
       }
@@ -631,9 +655,16 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       isChatStreaming = false;
       chatTyping.classList.remove('visible');
       chatBtnSend.disabled = false;
-      if (currentStreamEl && msg.result) {
-        // Replace accumulated content with the final result
-        renderChatMarkdown(currentStreamEl, msg.result as string);
+      // Add the final result as the definitive assistant response
+      if (msg.result) {
+        const finalEl = document.createElement('div');
+        finalEl.className = 'chat-message assistant';
+        finalEl.style.borderTop = '2px solid var(--accent)';
+        finalEl.style.paddingTop = 'var(--sp-3)';
+        finalEl.style.marginTop = 'var(--sp-2)';
+        renderChatMarkdown(finalEl, msg.result as string);
+        chatMessagesDiv.appendChild(finalEl);
+        chatScrollToBottom();
       }
       if (msg.result) {
         conversationHistory.push({
