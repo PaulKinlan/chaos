@@ -273,9 +273,6 @@ chrome.runtime.onConnect.addListener((port) => {
     try {
       switch (msg.type) {
         case 'chat':
-          await handleChat(port, msg);
-          break;
-
         case 'agenticChat':
           await handleAgenticChat(port, msg);
           break;
