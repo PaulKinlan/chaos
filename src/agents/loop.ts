@@ -15,6 +15,7 @@ import { getCommunicationTools } from '../tools/communication/index.js';
 import { getChromeTools } from '../tools/chrome/index.js';
 import { getWasmTools } from '../tools/wasm/index.js';
 import { getWebTools } from '../tools/web/index.js';
+import { getHookTools } from '../tools/hooks/index.js';
 import type { AgentMeta } from '../storage/types.js';
 import { createToolLookup, type LookupStrategy, type ToolMeta } from '../tools/lookup/index.js';
 import { checkPermission } from '../tools/permissions.js';
@@ -746,6 +747,7 @@ export async function runAgentLoop(
     ...(isVisible ? getCommunicationTools(agentId) : {}),
     ...wasmTools,
     ...getWebTools({ braveApiKey: apiKeys.brave }),
+    ...getHookTools(agentId),
   };
 
   // Filter tools based on agent's enabledTools/disabledTools config

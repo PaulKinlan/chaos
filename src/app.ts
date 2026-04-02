@@ -13,7 +13,7 @@
 
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys, ScheduledTask } from './storage/types.js';
+import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
@@ -358,6 +358,9 @@ function loadCurrentViewData(): void {
     case 'files':
       loadFilesView();
       break;
+    case 'hooks':
+      loadHooksView();
+      break;
     case 'agent-settings':
       loadAgentSettings();
       break;
@@ -627,6 +630,16 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       conversationHistory = [];
       chatMessagesDiv.innerHTML = '';
       addChatSystemMessage('Conversation cleared.');
+      break;
+
+    case 'hooksList':
+      renderHooksList(msg.hooks as Hook[]);
+      break;
+
+    case 'hookAdded':
+    case 'hookUpdated':
+    case 'hookRemoved':
+      // Refresh will be triggered by setTimeout in the UI handlers
       break;
 
     case 'error':
@@ -2512,6 +2525,264 @@ document.getElementById('confirm-overlay')!.addEventListener('click', (e) => {
     document.getElementById('confirm-overlay')!.classList.remove('visible');
     confirmCallback = null;
   }
+});
+
+// ══════════════════════════════════════════
+// ── Hooks View
+// ══════════════════════════════════════════
+
+function loadHooksView(): void {
+  if (!activeAgentId || !port) return;
+
+  const listEl = document.getElementById('hooks-list')!;
+  listEl.innerHTML = '<p style="color:var(--text-muted);padding:12px;">Loading...</p>';
+
+  sendPortMessage({ type: 'getHooks', agentId: activeAgentId });
+}
+
+function renderHooksList(hooks: Hook[]): void {
+  const listEl = document.getElementById('hooks-list')!;
+
+  if (hooks.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">
+          <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        </div>
+        <h3>No hooks</h3>
+        <p>Hooks let your agent respond to browser events automatically. Create one to get started, or ask your agent to set up hooks via chat.</p>
+      </div>`;
+    return;
+  }
+
+  listEl.innerHTML = hooks.map((hook) => {
+    const triggerLabel = formatTrigger(hook.trigger);
+    const lastTriggered = hook.lastTriggeredAt ? relativeTime(hook.lastTriggeredAt) : 'never';
+
+    return `
+      <div class="settings-card" style="margin-bottom:8px;" data-hook-id="${escapeHtml(hook.id)}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <strong>${escapeHtml(hook.description)}</strong>
+              <span class="badge" style="background:${hook.enabled ? 'var(--success-subtle)' : 'var(--danger-subtle)'};color:${hook.enabled ? 'var(--success-text)' : 'var(--danger-text)'};">${hook.enabled ? 'Enabled' : 'Disabled'}</span>
+            </div>
+            <div style="color:var(--text-secondary);font-size:var(--text-sm);">
+              <span style="font-weight:500;">Trigger:</span> ${escapeHtml(triggerLabel)}
+            </div>
+            <div style="color:var(--text-muted);font-size:var(--text-xs);margin-top:4px;">
+              Fired ${hook.triggerCount} time${hook.triggerCount !== 1 ? 's' : ''} &middot; Last: ${escapeHtml(lastTriggered)}
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <button class="btn btn-ghost btn-sm hook-toggle-btn" data-hook-id="${escapeHtml(hook.id)}" data-enabled="${hook.enabled}" title="${hook.enabled ? 'Disable' : 'Enable'}">
+              ${hook.enabled ? 'Disable' : 'Enable'}
+            </button>
+            <button class="btn btn-ghost btn-sm hook-delete-btn" data-hook-id="${escapeHtml(hook.id)}" title="Delete hook" style="color:var(--danger-text);">
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Attach event listeners
+  listEl.querySelectorAll<HTMLButtonElement>('.hook-toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const hookId = btn.dataset.hookId!;
+      const currentlyEnabled = btn.dataset.enabled === 'true';
+      sendPortMessage({ type: 'updateHook', hookId, updates: { enabled: !currentlyEnabled } });
+      // Optimistic refresh
+      setTimeout(() => loadHooksView(), 200);
+    });
+  });
+
+  listEl.querySelectorAll<HTMLButtonElement>('.hook-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const hookId = btn.dataset.hookId!;
+      sendPortMessage({ type: 'removeHook', hookId });
+      // Optimistic refresh
+      setTimeout(() => loadHooksView(), 200);
+    });
+  });
+}
+
+function formatTrigger(trigger: HookTrigger): string {
+  switch (trigger.type) {
+    case 'bookmark-created':
+      return `Bookmark created${trigger.folderId ? ` (folder: ${trigger.folderName || trigger.folderId})` : ''}`;
+    case 'tab-navigated':
+      return `Tab navigated to ${trigger.urlPattern}`;
+    case 'tab-created':
+      return 'Tab created';
+    case 'tab-closed':
+      return 'Tab closed';
+    case 'download-completed':
+      return `Download completed${trigger.filenamePattern ? ` (${trigger.filenamePattern})` : ''}`;
+    case 'history-visited':
+      return `Visited URL matching ${trigger.urlPattern}`;
+    case 'idle-changed':
+      return `Idle state changed to ${trigger.state}`;
+    case 'browser-startup':
+      return 'Browser startup';
+    case 'omnibox':
+      return `Omnibox keyword: "${trigger.keyword}"`;
+    default:
+      return (trigger as HookTrigger).type;
+  }
+}
+
+// ── Hooks create form ──
+
+const hooksTriggerType = document.getElementById('hook-trigger-type') as HTMLSelectElement;
+const hooksTriggerFilters = document.getElementById('hook-trigger-filters')!;
+
+function updateTriggerFilters(): void {
+  const type = hooksTriggerType.value;
+  let html = '';
+
+  switch (type) {
+    case 'bookmark-created':
+      html = `
+        <div class="settings-field">
+          <label for="hook-filter-folder-id">Folder ID (optional)</label>
+          <input type="text" id="hook-filter-folder-id" placeholder="Bookmark folder ID to watch">
+        </div>
+        <div class="settings-field">
+          <label for="hook-filter-folder-name">Folder Name (optional, for display)</label>
+          <input type="text" id="hook-filter-folder-name" placeholder="e.g. Reading List">
+        </div>`;
+      break;
+    case 'tab-navigated':
+    case 'history-visited':
+      html = `
+        <div class="settings-field">
+          <label for="hook-filter-url-pattern">URL Pattern (glob, e.g. *github.com/*)</label>
+          <input type="text" id="hook-filter-url-pattern" placeholder="*.example.com/*">
+        </div>`;
+      break;
+    case 'download-completed':
+      html = `
+        <div class="settings-field">
+          <label for="hook-filter-filename">Filename Pattern (optional, e.g. *.pdf)</label>
+          <input type="text" id="hook-filter-filename" placeholder="*.pdf">
+        </div>`;
+      break;
+    case 'idle-changed':
+      html = `
+        <div class="settings-field">
+          <label for="hook-filter-idle-state">State</label>
+          <select id="hook-filter-idle-state">
+            <option value="active">Active</option>
+            <option value="idle">Idle</option>
+            <option value="locked">Locked</option>
+          </select>
+        </div>`;
+      break;
+    case 'omnibox':
+      html = `
+        <div class="settings-field">
+          <label for="hook-filter-keyword">Keyword (text after "chaos " in address bar)</label>
+          <input type="text" id="hook-filter-keyword" placeholder="e.g. summarize">
+        </div>`;
+      break;
+    // tab-created, tab-closed, browser-startup have no filters
+  }
+
+  hooksTriggerFilters.innerHTML = html;
+}
+
+hooksTriggerType.addEventListener('change', updateTriggerFilters);
+
+document.getElementById('hooks-btn-create')!.addEventListener('click', () => {
+  const form = document.getElementById('hooks-create-form')!;
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  updateTriggerFilters();
+});
+
+document.getElementById('hooks-btn-cancel')!.addEventListener('click', () => {
+  document.getElementById('hooks-create-form')!.style.display = 'none';
+});
+
+document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
+  if (!activeAgentId || !port) return;
+
+  const description = (document.getElementById('hook-description') as HTMLInputElement).value.trim();
+  const prompt = (document.getElementById('hook-prompt') as HTMLTextAreaElement).value.trim();
+  const triggerType = hooksTriggerType.value;
+
+  if (!description || !prompt) {
+    return; // Basic validation
+  }
+
+  let trigger: HookTrigger;
+
+  switch (triggerType) {
+    case 'bookmark-created': {
+      const folderId = (document.getElementById('hook-filter-folder-id') as HTMLInputElement)?.value.trim() || undefined;
+      const folderName = (document.getElementById('hook-filter-folder-name') as HTMLInputElement)?.value.trim() || undefined;
+      trigger = { type: 'bookmark-created', folderId, folderName };
+      break;
+    }
+    case 'tab-navigated': {
+      const urlPattern = (document.getElementById('hook-filter-url-pattern') as HTMLInputElement)?.value.trim() || '*';
+      trigger = { type: 'tab-navigated', urlPattern };
+      break;
+    }
+    case 'tab-created':
+      trigger = { type: 'tab-created' };
+      break;
+    case 'tab-closed':
+      trigger = { type: 'tab-closed' };
+      break;
+    case 'download-completed': {
+      const filenamePattern = (document.getElementById('hook-filter-filename') as HTMLInputElement)?.value.trim() || undefined;
+      trigger = { type: 'download-completed', filenamePattern };
+      break;
+    }
+    case 'history-visited': {
+      const urlPattern = (document.getElementById('hook-filter-url-pattern') as HTMLInputElement)?.value.trim() || '*';
+      trigger = { type: 'history-visited', urlPattern };
+      break;
+    }
+    case 'idle-changed': {
+      const state = (document.getElementById('hook-filter-idle-state') as HTMLSelectElement)?.value as 'active' | 'idle' | 'locked';
+      trigger = { type: 'idle-changed', state };
+      break;
+    }
+    case 'browser-startup':
+      trigger = { type: 'browser-startup' };
+      break;
+    case 'omnibox': {
+      const keyword = (document.getElementById('hook-filter-keyword') as HTMLInputElement)?.value.trim() || '';
+      if (!keyword) return;
+      trigger = { type: 'omnibox', keyword };
+      break;
+    }
+    default:
+      return;
+  }
+
+  const hook: Hook = {
+    id: `hook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    agentId: activeAgentId,
+    trigger,
+    prompt,
+    description,
+    enabled: true,
+    createdAt: new Date().toISOString(),
+    triggerCount: 0,
+  };
+
+  sendPortMessage({ type: 'addHook', hook });
+
+  // Reset form
+  (document.getElementById('hook-description') as HTMLInputElement).value = '';
+  (document.getElementById('hook-prompt') as HTMLTextAreaElement).value = '';
+  document.getElementById('hooks-create-form')!.style.display = 'none';
+
+  // Refresh
+  setTimeout(() => loadHooksView(), 200);
 });
 
 // ══════════════════════════════════════════

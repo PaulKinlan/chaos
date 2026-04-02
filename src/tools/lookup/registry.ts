@@ -416,7 +416,29 @@ const webTools: ToolMeta[] = [
   },
 ];
 
+/** Hook tools */
+const hookTools: ToolMeta[] = [
+  {
+    name: 'hook_create',
+    description: 'Create a hook that automatically runs this agent when a browser event occurs.',
+    keywords: ['hook', 'create', 'event', 'trigger', 'automation', 'listen', 'watch', 'bookmark', 'tab', 'download', 'idle', 'omnibox'],
+    category: 'hooks',
+  },
+  {
+    name: 'hook_list',
+    description: 'List all hooks for this agent with their triggers, status, and stats.',
+    keywords: ['hook', 'list', 'show', 'hooks', 'triggers', 'automations'],
+    category: 'hooks',
+  },
+  {
+    name: 'hook_delete',
+    description: 'Delete a hook by its ID.',
+    keywords: ['hook', 'delete', 'remove', 'cancel', 'unhook'],
+    category: 'hooks',
+  },
+];
+
 // Register all tools
-for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools, ...webTools]) {
+for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools, ...webTools, ...hookTools]) {
   toolRegistry.register(meta);
 }

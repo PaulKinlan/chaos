@@ -2222,6 +2222,10 @@
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           <span class="label">Files</span>
         </button>
+        <button class="sidebar-item" data-view="hooks" title="Hooks">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <span class="label">Hooks</span>
+        </button>
         <button class="sidebar-item" data-view="agent-settings" title="Agent Settings">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
           <span class="label">Agent</span>
@@ -2371,6 +2375,61 @@
             </div>
             <div class="files-viewer-content" id="files-viewer-content">
               <div class="files-viewer-empty">Select a file to view its contents.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════ Hooks View ════════ -->
+      <div class="view-panel" id="view-hooks">
+        <div class="view-padded">
+          <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h2>Hooks</h2>
+            <button class="btn btn-primary btn-sm" id="hooks-btn-create">+ Create Hook</button>
+          </div>
+
+          <!-- Create Hook Form (hidden by default) -->
+          <div id="hooks-create-form" style="display:none;margin-bottom:16px;">
+            <div class="settings-card">
+              <h3>New Hook</h3>
+              <div class="settings-field">
+                <label for="hook-description">Description</label>
+                <input type="text" id="hook-description" placeholder="e.g. Summarize bookmarked articles">
+              </div>
+              <div class="settings-field">
+                <label for="hook-trigger-type">Trigger</label>
+                <select id="hook-trigger-type">
+                  <option value="bookmark-created">Bookmark Created</option>
+                  <option value="tab-navigated">Tab Navigated</option>
+                  <option value="tab-created">Tab Created</option>
+                  <option value="tab-closed">Tab Closed</option>
+                  <option value="download-completed">Download Completed</option>
+                  <option value="history-visited">History Visited</option>
+                  <option value="idle-changed">Idle Changed</option>
+                  <option value="browser-startup">Browser Startup</option>
+                  <option value="omnibox">Omnibox</option>
+                </select>
+              </div>
+              <div id="hook-trigger-filters"></div>
+              <div class="settings-field">
+                <label for="hook-prompt">Prompt</label>
+                <textarea id="hook-prompt" rows="3" placeholder="What should the agent do when this event fires?"></textarea>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn btn-primary btn-sm" id="hooks-btn-save">Save Hook</button>
+                <button class="btn btn-ghost btn-sm" id="hooks-btn-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hooks list -->
+          <div id="hooks-list">
+            <div class="empty-state">
+              <div class="empty-state-icon">
+                <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              </div>
+              <h3>No hooks</h3>
+              <p>Hooks let your agent respond to browser events automatically. Create one to get started, or ask your agent to set up hooks via chat.</p>
             </div>
           </div>
         </div>

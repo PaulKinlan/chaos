@@ -16,7 +16,8 @@
     "scripting",
     "notifications",
     "downloads",
-    "readingList"
+    "readingList",
+    "idle"
   ],
   "host_permissions": [],
   "optional_host_permissions": [
@@ -53,5 +54,6 @@
       ]
     }
   ],
+  "omnibox": { "keyword": "chaos" },
   "icons": {}
 }

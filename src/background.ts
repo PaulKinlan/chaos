@@ -24,6 +24,10 @@ import {
   addScheduledTask,
   updateScheduledTaskRun,
   removeScheduledTask,
+  getHooks,
+  addHook,
+  updateHook,
+  removeHook,
 } from './storage/chrome-storage.js';
 import { getMessages } from './storage/shared.js';
 import { getTaskState } from './storage/shared.js';
@@ -41,6 +45,7 @@ import {
   ensureContentExtraction,
   ensurePermission,
 } from './permissions.js';
+import { initHooksListeners } from './hooks/listener.js';
 
 // ── OPFS directory listing helper ──
 
@@ -102,6 +107,9 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('CHAOS extension installed');
   setupContextMenus();
 });
+
+// ── Initialize hooks event listeners ──
+initHooksListeners();
 
 // ── Context menus ──
 
@@ -328,6 +336,22 @@ chrome.runtime.onConnect.addListener((port) => {
 
         case 'updateAgentClaudeMd':
           await handleUpdateAgentClaudeMdPort(port, msg);
+          break;
+
+        case 'getHooks':
+          await handleGetHooks(port, msg);
+          break;
+
+        case 'addHook':
+          await handleAddHook(port, msg);
+          break;
+
+        case 'updateHook':
+          await handleUpdateHookPort(port, msg);
+          break;
+
+        case 'removeHook':
+          await handleRemoveHook(port, msg);
           break;
 
         default:
@@ -682,6 +706,41 @@ async function handleUpdateAgentClaudeMdPort(
 ): Promise<void> {
   await opfs.writeFile(`agents/${msg.agentId}/CLAUDE.md`, msg.content);
   port.postMessage({ type: 'claudeMdUpdated', agentId: msg.agentId });
+}
+
+// ── Hooks port handlers ──
+
+async function handleGetHooks(
+  port: chrome.runtime.Port,
+  msg: { agentId?: string },
+): Promise<void> {
+  const hooks = await getHooks();
+  const filtered = msg.agentId ? hooks.filter((h) => h.agentId === msg.agentId) : hooks;
+  port.postMessage({ type: 'hooksList', hooks: filtered });
+}
+
+async function handleAddHook(
+  port: chrome.runtime.Port,
+  msg: { hook: import('./storage/types.js').Hook },
+): Promise<void> {
+  await addHook(msg.hook);
+  port.postMessage({ type: 'hookAdded', hook: msg.hook });
+}
+
+async function handleUpdateHookPort(
+  port: chrome.runtime.Port,
+  msg: { hookId: string; updates: Partial<import('./storage/types.js').Hook> },
+): Promise<void> {
+  await updateHook(msg.hookId, msg.updates);
+  port.postMessage({ type: 'hookUpdated', hookId: msg.hookId });
+}
+
+async function handleRemoveHook(
+  port: chrome.runtime.Port,
+  msg: { hookId: string },
+): Promise<void> {
+  await removeHook(msg.hookId);
+  port.postMessage({ type: 'hookRemoved', hookId: msg.hookId });
 }
 
 // ── One-shot message handling (for dashboard and popup) ──

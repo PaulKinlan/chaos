@@ -137,3 +137,28 @@ export interface ScheduledTask {
     periodInMinutes?: number;   // For recurring
   };
 }
+
+// ── Hooks (event-driven agent execution) ──
+
+export interface Hook {
+  id: string;
+  agentId: string;
+  trigger: HookTrigger;
+  prompt: string;           // What the agent should do when triggered
+  description: string;      // Human-readable description
+  enabled: boolean;
+  createdAt: string;
+  lastTriggeredAt?: string;
+  triggerCount: number;
+}
+
+export type HookTrigger =
+  | { type: 'bookmark-created'; folderId?: string; folderName?: string }
+  | { type: 'tab-navigated'; urlPattern: string }
+  | { type: 'tab-created' }
+  | { type: 'tab-closed' }
+  | { type: 'download-completed'; filenamePattern?: string }
+  | { type: 'history-visited'; urlPattern: string }
+  | { type: 'idle-changed'; state: 'active' | 'idle' | 'locked' }
+  | { type: 'browser-startup' }
+  | { type: 'omnibox'; keyword: string };

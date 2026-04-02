@@ -5,7 +5,7 @@
  * - API keys live in chrome.storage.local (never synced).
  */
 
-import type { AgentMeta, Settings, ApiKeys, ScheduledTask } from './types.js';
+import type { AgentMeta, Settings, ApiKeys, ScheduledTask, Hook } from './types.js';
 
 // ── Keys ──
 
@@ -14,6 +14,7 @@ const KEYS = {
   SETTINGS: 'chaos:settings',
   API_KEYS: 'chaos:apiKeys',
   SCHEDULED_TASKS: 'chaos:scheduledTasks',
+  HOOKS: 'chaos:hooks',
 } as const;
 
 // ── Defaults ──
@@ -89,4 +90,37 @@ export async function updateScheduledTaskRun(alarmId: string, result: string): P
     task.lastResult = result.slice(0, 500);
     await setScheduledTasks(tasks);
   }
+}
+
+// ── Hooks (local storage) ──
+
+export async function getHooks(): Promise<Hook[]> {
+  const result = await chrome.storage.local.get(KEYS.HOOKS);
+  return (result[KEYS.HOOKS] as Hook[] | undefined) ?? [];
+}
+
+export async function setHooks(hooks: Hook[]): Promise<void> {
+  await chrome.storage.local.set({ [KEYS.HOOKS]: hooks });
+}
+
+export async function addHook(hook: Hook): Promise<void> {
+  const hooks = await getHooks();
+  // Replace if same id already exists
+  const filtered = hooks.filter((h) => h.id !== hook.id);
+  filtered.push(hook);
+  await setHooks(filtered);
+}
+
+export async function updateHook(id: string, updates: Partial<Hook>): Promise<void> {
+  const hooks = await getHooks();
+  const hook = hooks.find((h) => h.id === id);
+  if (hook) {
+    Object.assign(hook, updates);
+    await setHooks(hooks);
+  }
+}
+
+export async function removeHook(id: string): Promise<void> {
+  const hooks = await getHooks();
+  await setHooks(hooks.filter((h) => h.id !== id));
 }
