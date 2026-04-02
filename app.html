@@ -2388,6 +2388,12 @@
             <button class="btn btn-primary btn-sm" id="hooks-btn-create">+ Create Hook</button>
           </div>
 
+          <!-- Hook Presets Palette -->
+          <div id="hooks-presets" style="margin-bottom:16px;">
+            <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-2);">Quick start with a preset, or create your own below.</p>
+            <div style="display:flex;flex-wrap:wrap;gap:var(--sp-2);" id="hooks-presets-grid"></div>
+          </div>
+
           <!-- Create Hook Form (hidden by default) -->
           <div id="hooks-create-form" style="display:none;margin-bottom:16px;">
             <div class="settings-card">
@@ -2400,20 +2406,25 @@
                 <label for="hook-trigger-type">Trigger</label>
                 <select id="hook-trigger-type">
                   <option value="bookmark-created">Bookmark Created</option>
-                  <option value="tab-navigated">Tab Navigated</option>
+                  <option value="tab-navigated">Tab Navigated to URL</option>
                   <option value="tab-created">Tab Created</option>
                   <option value="tab-closed">Tab Closed</option>
                   <option value="download-completed">Download Completed</option>
-                  <option value="history-visited">History Visited</option>
-                  <option value="idle-changed">Idle Changed</option>
+                  <option value="history-visited">Page Visited (History)</option>
+                  <option value="idle-changed">Idle State Changed</option>
                   <option value="browser-startup">Browser Startup</option>
-                  <option value="omnibox">Omnibox</option>
+                  <option value="omnibox">Omnibox Command</option>
+                  <option value="reading-list-changed">Reading List Changed</option>
+                  <option value="window-created">Window Created</option>
+                  <option value="window-focused">Window Focused</option>
+                  <option value="window-closed">Window Closed</option>
                 </select>
               </div>
               <div id="hook-trigger-filters"></div>
               <div class="settings-field">
                 <label for="hook-prompt">Prompt</label>
-                <textarea id="hook-prompt" rows="3" placeholder="What should the agent do when this event fires?"></textarea>
+                <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-2);">Tell the agent what to do when this event fires. Be specific, the agent will execute this as a full task with access to all its tools.</p>
+                <textarea id="hook-prompt" rows="6" placeholder="e.g. Read the bookmarked page content, write a summary to memories/bookmarks/, and update TODO.md if there are any action items." style="width:100%;background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default);border-radius:8px;padding:var(--sp-3);font-family:var(--font-sans);font-size:var(--text-sm);resize:vertical;min-height:100px;max-height:300px;line-height:1.5;outline:none;transition:border-color var(--duration-fast) var(--ease-out);"></textarea>
               </div>
               <div style="display:flex;gap:8px;margin-top:8px;">
                 <button class="btn btn-primary btn-sm" id="hooks-btn-save">Save Hook</button>

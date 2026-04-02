@@ -2667,13 +2667,50 @@ function updateTriggerFilters(): void {
     case 'bookmark-created':
       html = `
         <div class="settings-field">
-          <label for="hook-filter-folder-id">Folder ID (optional)</label>
-          <input type="text" id="hook-filter-folder-id" placeholder="Bookmark folder ID to watch">
-        </div>
-        <div class="settings-field">
-          <label for="hook-filter-folder-name">Folder Name (optional, for display)</label>
-          <input type="text" id="hook-filter-folder-name" placeholder="e.g. Reading List">
+          <label for="hook-filter-folder">Bookmark Folder (optional, watch a specific folder)</label>
+          <select id="hook-filter-folder" style="width:100%;">
+            <option value="">Any folder</option>
+          </select>
+          <input type="hidden" id="hook-filter-folder-id">
+          <input type="hidden" id="hook-filter-folder-name">
         </div>`;
+      // Populate folder picker async
+      (async () => {
+        try {
+          const hasBm = await chrome.permissions.contains({ permissions: ['bookmarks'] });
+          if (!hasBm) {
+            const sel = document.getElementById('hook-filter-folder') as HTMLSelectElement | null;
+            if (sel) {
+              sel.innerHTML = '<option value="">Enable bookmarks permission in settings first</option>';
+              sel.disabled = true;
+            }
+            return;
+          }
+          const tree = await chrome.bookmarks.getTree();
+          const folders: { id: string; title: string; depth: number }[] = [];
+          function walkFolders(nodes: chrome.bookmarks.BookmarkTreeNode[], depth: number) {
+            for (const node of nodes) {
+              if (node.children) {
+                folders.push({ id: node.id, title: node.title || '(root)', depth });
+                walkFolders(node.children, depth + 1);
+              }
+            }
+          }
+          walkFolders(tree, 0);
+          const sel = document.getElementById('hook-filter-folder') as HTMLSelectElement | null;
+          if (sel) {
+            sel.innerHTML = '<option value="">Any folder</option>' +
+              folders.map(f => `<option value="${f.id}" data-name="${escapeHtml(f.title)}">${'  '.repeat(f.depth)}${escapeHtml(f.title)}</option>`).join('');
+            sel.addEventListener('change', () => {
+              const opt = sel.selectedOptions[0];
+              (document.getElementById('hook-filter-folder-id') as HTMLInputElement).value = sel.value;
+              (document.getElementById('hook-filter-folder-name') as HTMLInputElement).value = opt?.dataset.name || '';
+            });
+          }
+        } catch {
+          // Bookmarks permission not granted
+        }
+      })();
       break;
     case 'tab-navigated':
     case 'history-visited':
@@ -2715,6 +2752,52 @@ function updateTriggerFilters(): void {
 }
 
 hooksTriggerType.addEventListener('change', updateTriggerFilters);
+
+// ── Hook Presets ──
+
+const HOOK_PRESETS = [
+  { label: 'Summarize bookmarks', description: 'Summarize new bookmarks', trigger: 'bookmark-created', prompt: 'A new bookmark was added. Read the bookmarked page content, write a brief summary to memories/bookmarks/, and note any action items in TODO.md.' },
+  { label: 'Morning briefing', description: 'Daily morning briefing on browser startup', trigger: 'browser-startup', prompt: 'Good morning! Review my recent browsing history, check for any pending TODOs, and give me a brief morning briefing of what I was working on and what might need attention today.' },
+  { label: 'Track GitHub activity', description: 'Track when I visit GitHub repos', trigger: 'tab-navigated', filter: '*.github.com/*', prompt: 'The user navigated to a GitHub page. Note the repository name and what they might be working on. Update memories/projects.md with any new repos.' },
+  { label: 'Download organizer', description: 'Log and categorize downloads', trigger: 'download-completed', prompt: 'A file was downloaded. Note the filename and source in memories/downloads.md. If it looks like a document or resource, suggest how to use it.' },
+  { label: 'Reading list reviewer', description: 'Review reading list changes', trigger: 'reading-list-changed', prompt: 'The reading list was updated. Check the current reading list items, summarize any new additions, and suggest which to read next based on my interests.' },
+  { label: 'Away report', description: 'Generate a report when I return from idle', trigger: 'idle-changed', filter: 'active', prompt: 'The user just returned from being away. Check what tabs are open, review any pending messages from other agents, and provide a quick summary of what might need attention.' },
+];
+
+function renderHookPresets(): void {
+  const grid = document.getElementById('hooks-presets-grid');
+  if (!grid) return;
+  grid.innerHTML = HOOK_PRESETS.map((p, i) => `
+    <button class="btn btn-ghost btn-sm" data-preset="${i}" style="font-size:var(--text-xs);">
+      ${escapeHtml(p.label)}
+    </button>
+  `).join('');
+
+  grid.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const preset = HOOK_PRESETS[parseInt(btn.dataset.preset!, 10)];
+      // Fill the form with preset values
+      (document.getElementById('hook-description') as HTMLInputElement).value = preset.description;
+      hooksTriggerType.value = preset.trigger;
+      updateTriggerFilters();
+      (document.getElementById('hook-prompt') as HTMLTextAreaElement).value = preset.prompt;
+      // Fill filter if applicable
+      if (preset.filter) {
+        setTimeout(() => {
+          const filterInput = document.querySelector('#hook-trigger-filters input') as HTMLInputElement | null;
+          if (filterInput) filterInput.value = preset.filter;
+          const filterSelect = document.querySelector('#hook-trigger-filters select') as HTMLSelectElement | null;
+          if (filterSelect) filterSelect.value = preset.filter;
+        }, 50);
+      }
+      // Show the form
+      document.getElementById('hooks-create-form')!.style.display = 'block';
+    });
+  });
+}
+
+// Render presets when hooks view loads
+renderHookPresets();
 
 document.getElementById('hooks-btn-create')!.addEventListener('click', () => {
   const form = document.getElementById('hooks-create-form')!;
