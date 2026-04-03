@@ -1,0 +1,276 @@
+# Plan: External Channels
+
+## Problem
+
+Right now CHAOS agents can only be triggered by:
+- Direct chat in the NTP
+- Chrome events (hooks)
+- Scheduled alarms
+- Context menu
+
+But users interact with the world through many channels: Discord, Telegram, email, Slack, etc. An agent should be able to receive messages from these channels and respond through them too.
+
+## Vision
+
+An agent can be connected to one or more external channels. When a message arrives on a channel, it triggers the agent's agentic loop. The agent's response is sent back through the same channel. The agent has the full tool set (browser, files, search, etc.) regardless of which channel triggered it.
+
+```
+Discord message → CHAOS agent → agentic loop → response → Discord reply
+Telegram message → CHAOS agent → agentic loop → response → Telegram reply
+Email received → CHAOS agent → agentic loop → response → Email reply
+```
+
+## Architecture Options
+
+### Option A: Extension-native (WebSocket/polling from service worker)
+
+The Chrome extension's service worker connects directly to external services.
+
+**Discord**: Use Discord bot API via WebSocket gateway from the service worker. The extension holds the bot token and maintains a WebSocket connection (or polls via REST).
+
+**Telegram**: Use Telegram Bot API via long polling from the service worker. Simpler than Discord since Telegram's bot API is HTTP-based.
+
+**Pros**: Everything stays in the extension. No external server needed. Full tool access.
+**Cons**: Service worker lifecycle is problematic. MV3 kills service workers after 30s of inactivity. WebSocket connections will drop. Long polling needs keepalive hacks. Not reliable for real-time messaging.
+
+### Option B: External relay server (recommended)
+
+A lightweight relay server (Cloudflare Worker, Deno Deploy, or similar) receives messages from external channels and forwards them to the extension via a push mechanism.
+
+```
+Discord → Relay Server → Chrome Extension (via polling or push)
+                       ← Response back to Discord
+```
+
+**How it works:**
+1. Relay server hosts the Discord/Telegram bot
+2. When a message arrives, relay stores it in a queue (KV, D1, or in-memory)
+3. Extension polls the relay every N seconds for new messages (via alarm + fetch)
+4. Extension processes the message through the agentic loop
+5. Extension sends the response back to the relay via HTTP POST
+6. Relay forwards the response to the originating channel
+
+**Pros**: Reliable. Service worker lifecycle doesn't matter (polling via alarms works). The relay is stateless/cheap. Can support many channels.
+**Cons**: Requires deploying a server. Adds latency from polling interval. Needs auth between extension and relay.
+
+### Option C: Hybrid (emaila.gent pattern)
+
+Use email as the universal channel, like emaila.gent does. External services (Discord, Telegram) forward messages to an email address. The extension polls for new emails.
+
+**Pros**: Simple. Email is universal. emaila.gent already has the pattern.
+**Cons**: Slow (email delivery + polling). Not real-time. Email-specific formatting issues.
+
+## Recommended: Option B with Cloudflare Workers
+
+### Relay Server Design
+
+A Cloudflare Worker that:
+- Receives Discord/Telegram webhook events
+- Stores pending messages in KV (keyed by user/agent)
+- Exposes a REST API for the extension:
+  - `GET /messages?since=timestamp` - poll for new messages
+  - `POST /reply` - send a response back to the channel
+  - `POST /register` - register a channel connection
+- Handles auth via a shared secret (stored in extension settings)
+
+### Extension Integration
+
+New module: `src/channels/`
+
+```
+src/channels/
+  types.ts          # ChannelMessage, ChannelConfig types
+  polling.ts        # Alarm-based polling for new messages
+  relay-client.ts   # HTTP client for the relay server
+  discord.ts        # Discord-specific message formatting
+  telegram.ts       # Telegram-specific message formatting
+  index.ts          # Channel manager
+```
+
+**Channel configuration** (stored in chrome.storage.local):
+```typescript
+interface ChannelConfig {
+  id: string;
+  type: 'discord' | 'telegram' | 'email';
+  agentId: string;           // Which agent handles this channel
+  relayUrl: string;          // URL of the relay server
+  relaySecret: string;       // Auth token
+  enabled: boolean;
+  pollIntervalMinutes: number; // How often to check (default: 1)
+  metadata: {                // Channel-specific config
+    discordChannelId?: string;
+    telegramChatId?: string;
+    emailAddress?: string;
+  };
+}
+```
+
+**Polling flow:**
+1. Chrome alarm fires every N minutes
+2. Extension fetches new messages from relay: `GET /messages?since=lastPoll`
+3. For each message, runs the agentic loop with the message content
+4. Sends the response back: `POST /reply` with channel info + response text
+5. Updates lastPoll timestamp
+
+**UI integration:**
+- New sidebar item: "Channels" (between Hooks and Agent Settings)
+- Shows configured channels per agent
+- Add channel form: pick type, enter relay URL + secret, configure
+- Channel activity log: see incoming/outgoing messages
+
+### Discord Bot Setup
+
+1. User creates a Discord bot at discord.com/developers
+2. User deploys the relay worker (one-click Cloudflare deploy)
+3. User enters the relay URL + secret in CHAOS settings
+4. User adds the Discord bot to their server
+5. Messages to the bot are forwarded to CHAOS via the relay
+
+The relay worker for Discord:
+- Registers Discord interaction endpoint
+- Handles MESSAGE_CREATE events
+- Stores messages in KV
+- Serves them to the extension via polling
+- Forwards extension responses back as Discord messages
+
+### Telegram Bot Setup
+
+Similar to Discord but simpler:
+1. User creates a Telegram bot via @BotFather
+2. Configures webhook pointing to the relay worker
+3. Relay stores messages, extension polls and responds
+
+### Email Channel
+
+Could reuse emaila.gent's Resend-based approach:
+- Inbound email webhook → relay → extension
+- Extension response → relay → outbound email via Resend
+
+## Implementation Phases
+
+### Phase 1: Core channel infrastructure
+- `src/channels/` module with types, polling, relay client
+- Channel config UI in the sidebar
+- Alarm-based polling
+- Generic message handling (channel message → agentic loop → response)
+
+### Phase 2: Discord relay worker
+- Cloudflare Worker template for Discord
+- One-click deploy instructions
+- Discord message formatting (embeds, mentions, etc.)
+
+### Phase 3: Telegram relay worker
+- Cloudflare Worker template for Telegram
+- Telegram message formatting (markdown, reply threading)
+
+### Phase 4: Email channel
+- Resend integration (or other email provider)
+- Email parsing and formatting
+
+### Phase 5: Advanced features
+- Rich message formatting per channel (Discord embeds, Telegram inline keyboards)
+- File/image handling across channels
+- Multi-channel coordination (same agent responds across channels)
+- Rate limiting per channel
+- Channel-specific hooks (e.g. "when someone @mentions me in Discord")
+
+## Open Questions
+
+1. **Auth model**: How does the relay authenticate with the extension? Shared secret is simple but needs rotation. OAuth would be more robust but complex.
+
+2. **Push vs poll**: Polling via alarms works but adds latency (up to pollInterval). Could use a WebSocket from the NTP page (which stays open) as a faster path, falling back to alarm polling when NTP is closed.
+
+3. **Message history**: Should channel messages be stored in the agent's conversation history? Probably yes, but they'd need to be distinguished from direct chat.
+
+4. **Multi-user**: If the Discord bot is in a server with multiple people, should different users map to different agents? Or is it one agent per channel?
+
+5. **Cost**: The agentic loop uses LLM tokens for every message. High-volume channels (busy Discord server) could get expensive. Need rate limiting or user confirmation for high-volume channels.
+
+6. **Privacy**: Messages from external channels pass through the relay server. For sensitive use cases, the relay should be self-hosted. Document this clearly.
+
+## Additional Channel Types
+
+Beyond Discord/Telegram/Email, there are several other interesting channels:
+
+### File System Observer (Chrome API)
+Chrome's File System Observer API can watch for changes to local files. An agent could:
+- Watch a project folder for code changes and auto-review
+- Monitor a downloads folder and organize/summarize new files
+- Watch a notes folder and index/cross-reference content
+- Trigger on config file changes and validate them
+
+Implementation: Use `FileSystemObserver` in the extension to watch user-selected directories. File change events trigger the agentic loop with the changed file content as context.
+
+### Native Messaging (Native App Bridge)
+Chrome's `chrome.runtime.connectNative()` allows the extension to communicate with a native application installed on the user's machine. This opens up:
+- **Terminal/shell access**: Run commands on the local machine (git, npm, etc.)
+- **Local file access**: Read/write files outside the browser sandbox
+- **System notifications**: Native OS notifications with richer controls
+- **Hardware integration**: Access to local devices, serial ports, USB
+- **Process management**: Start/stop local services
+
+Implementation: A small native host app (Node.js, Python, or Rust) that the extension communicates with via stdin/stdout JSON messages. Requires a native messaging manifest installed on the system.
+
+### Webhooks (Generic HTTP)
+A generic webhook receiver that any service can POST to:
+- GitHub webhooks (PR created, issue opened, CI failed)
+- Stripe webhooks (payment received, subscription changed)
+- RSS/Atom feeds (new posts from blogs the user follows)
+- IFTTT/Zapier integration
+- Custom application events
+
+Implementation: Part of the relay server. Generic webhook endpoint that stores events for the extension to poll.
+
+### Calendar Integration
+Google Calendar or other calendar APIs:
+- Meeting starting in 5 minutes → agent prepares briefing notes
+- Meeting just ended → agent prompts for notes/action items
+- Free time detected → agent suggests tasks to work on
+
+Implementation: Calendar API polling via the relay, or direct Google Calendar API access from the extension (with appropriate OAuth).
+
+### Clipboard Monitoring
+Watch the system clipboard for changes:
+- User copies a URL → agent fetches and summarizes it
+- User copies code → agent analyzes/explains it
+- User copies an error message → agent searches for solutions
+
+Implementation: Periodic clipboard read via `navigator.clipboard.readText()` (needs user gesture) or via the native app bridge.
+
+### Screen/Tab Activity
+Passive observation of browsing patterns:
+- Time spent on specific sites → productivity insights
+- Tab switching patterns → context detection
+- Scroll depth on articles → reading engagement
+
+Implementation: Content script or tab activity tracking via the existing Chrome APIs. Privacy-sensitive, should be opt-in with clear disclosure.
+
+### Voice (Always-on)
+Beyond the current push-to-talk:
+- Wake word detection ("Hey Chaos...")
+- Continuous ambient listening with keyword triggers
+- Voice-activated hooks
+
+Implementation: Would need the native app bridge for always-on mic access, since the extension can't maintain a persistent mic connection.
+
+### Slack
+Similar to Discord but for work contexts:
+- Respond to DMs or @mentions
+- Monitor specific channels
+- Post updates/reports to channels
+
+Implementation: Slack bot via relay server, same pattern as Discord.
+
+### MCP Servers (Model Context Protocol)
+Allow CHAOS agents to connect to MCP servers as a client:
+- Access external tools and data sources
+- Connect to databases, APIs, and services
+- Use tools provided by other AI systems
+
+Implementation: MCP client in the extension that connects to configured MCP servers. Tools from MCP servers are added to the agent's tool set dynamically.
+
+## Related
+
+- [emaila.gent](https://github.com/PaulKinlan/emaila.gent) - email-based agent communication pattern
+- [docker-agent-test](https://github.com/PaulKinlan/docker-agent-test) - inter-agent communication via email protocol
+- [utter](https://github.com/PaulKinlan/utter) - voice input channel pattern
