@@ -1031,30 +1031,63 @@
       color: var(--text-secondary);
     }
 
-    /* Agentic progress */
-    .step-divider {
+    /* Agentic progress - compact <details> steps */
+    .step-details {
+      margin: var(--sp-2) 0;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .step-details[open] {
+      background: var(--bg-surface);
+    }
+
+    .step-summary {
       display: flex;
       align-items: center;
-      gap: var(--sp-3);
-      padding: var(--sp-1) 0;
-      margin-top: var(--sp-2);
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      cursor: pointer;
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      list-style: none;
     }
 
-    .step-divider::before,
-    .step-divider::after {
+    .step-summary::-webkit-details-marker { display: none; }
+
+    .step-summary::before {
       content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border-subtle);
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      flex-shrink: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M3 1l4 4-4 4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-size: contain;
+      transition: transform var(--duration-fast) var(--ease-out);
     }
 
-    .step-divider-text {
-      font-size: var(--text-xs);
+    .step-details[open] .step-summary::before {
+      transform: rotate(90deg);
+    }
+
+    .step-badge {
       font-weight: 600;
-      color: var(--text-muted);
-      white-space: nowrap;
-      letter-spacing: 0.03em;
+      color: var(--accent-text);
+      font-size: var(--text-xs);
       text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .step-status {
+      color: var(--text-muted);
+      font-size: var(--text-xs);
+    }
+
+    .step-content {
+      padding: var(--sp-2) var(--sp-3);
+      border-top: 1px solid var(--border-subtle);
     }
 
     .agentic-tool-call {

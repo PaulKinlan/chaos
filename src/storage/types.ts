@@ -97,6 +97,17 @@ export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
+  progress?: AgenticProgressEntry[];
+}
+
+export interface AgenticProgressEntry {
+  type: 'step-start' | 'tool-call' | 'tool-result' | 'thinking' | 'text';
+  stepNumber?: number;
+  toolName?: string;
+  toolArgs?: unknown;
+  toolResult?: unknown;
+  content?: string;
+  timestamp: string;
 }
 
 export interface ToolConfig {

@@ -13,7 +13,7 @@
 
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger } from './storage/types.js';
+import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
@@ -79,6 +79,7 @@ interface ConversationEntry {
   content: string;
   timestamp: string;
   pageContext?: { title: string; url: string };
+  progress?: AgenticProgressEntry[];
 }
 
 // Conversation history is now per-column (see ChatColumn interface)
@@ -512,6 +513,13 @@ interface ChatColumn {
   currentStreamContent: string;
   lastAgenticText: string;
   pageContext: { title: string; url: string; content: string } | null;
+  currentStepDetails: HTMLDetailsElement | null;
+  currentStepContent: HTMLDivElement | null;
+  currentStepSummary: HTMLElement | null;
+  currentStepToolNames: string[];
+  currentStepStartTime: number | null;
+  currentStepNumber: number;
+  currentProgressEntries: AgenticProgressEntry[];
 }
 
 let columns: ChatColumn[] = [];
@@ -677,6 +685,8 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         col.isStreaming = true;
         col.typingEl.classList.add('visible');
         col.sendBtn.disabled = true;
+        col.currentStepNumber = 0;
+        col.currentProgressEntries = [];
       }
       break;
     }
@@ -691,38 +701,97 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       const progressContent = msg.content as string;
 
       if (progressType === 'thinking') {
-        // Stream text deltas into a live-updating element
-        if (!col.currentStreamEl) {
-          // Create a step divider
-          const stepDivider = document.createElement('div');
-          stepDivider.className = 'step-divider';
-          const stepText = document.createElement('span');
-          stepText.className = 'step-divider-text';
-          stepText.textContent = `Step ${iteration} of ${totalIterations}`;
-          stepDivider.appendChild(stepText);
-          col.messagesEl.appendChild(stepDivider);
+        // Start a new step if needed
+        if (!col.currentStepDetails || iteration !== col.currentStepNumber) {
+          // Close previous step
+          if (col.currentStepDetails) {
+            col.currentStepDetails.removeAttribute('open');
+            finalizeStepSummary(col);
+          }
+          col.currentStepNumber = iteration;
+          col.currentStepToolNames = [];
+          col.currentStepStartTime = Date.now();
 
+          // Record step-start in progress entries
+          col.currentProgressEntries.push({
+            type: 'step-start',
+            stepNumber: iteration,
+            timestamp: new Date().toISOString(),
+          });
+
+          // Create <details> element for this step
+          const details = document.createElement('details');
+          details.className = 'step-details';
+          details.setAttribute('open', '');
+
+          const summary = document.createElement('summary');
+          summary.className = 'step-summary';
+          summary.innerHTML = `<span class="step-badge">Step ${iteration}${totalIterations ? ' of ' + totalIterations : ''}</span><span class="step-status">working...</span>`;
+          details.appendChild(summary);
+
+          const content = document.createElement('div');
+          content.className = 'step-content';
+          details.appendChild(content);
+
+          col.messagesEl.appendChild(details);
+          col.currentStepDetails = details;
+          col.currentStepContent = content;
+          col.currentStepSummary = summary;
+
+          // Create streaming element inside the step content
           const streamEl = document.createElement('div');
           streamEl.className = 'chat-message assistant thinking-stream active';
-          col.messagesEl.appendChild(streamEl);
+          content.appendChild(streamEl);
           col.currentStreamEl = streamEl;
           col.currentStreamContent = '';
         }
+
+        if (!col.currentStreamEl && col.currentStepContent) {
+          const streamEl = document.createElement('div');
+          streamEl.className = 'chat-message assistant thinking-stream active';
+          col.currentStepContent.appendChild(streamEl);
+          col.currentStreamEl = streamEl;
+          col.currentStreamContent = '';
+        }
+
+        // Record thinking in progress entries
+        col.currentProgressEntries.push({
+          type: 'thinking',
+          stepNumber: iteration,
+          content: progressContent,
+          timestamp: new Date().toISOString(),
+        });
+
         // Append the text delta
         col.currentStreamContent = (col.currentStreamContent || '') + progressContent;
-        renderChatMarkdown(col.currentStreamEl, col.currentStreamContent);
+        renderChatMarkdown(col.currentStreamEl!, col.currentStreamContent);
         columnScrollToBottom(col);
       } else if (progressType === 'tool-call') {
         // Remove active indicator from previous stream element
         if (col.currentStreamEl) {
           col.currentStreamEl.classList.remove('active');
         }
-        // Reset streaming element so next text starts fresh after tool calls
         col.currentStreamEl = null;
         col.currentStreamContent = '';
 
         const toolName = msg.toolName as string;
         const toolArgs = msg.toolArgs as Record<string, unknown> | undefined;
+
+        // Track tool name for summary
+        if (!col.currentStepToolNames.includes(toolName)) {
+          col.currentStepToolNames.push(toolName);
+          updateStepSummaryLive(col);
+        }
+
+        // Record in progress entries
+        col.currentProgressEntries.push({
+          type: 'tool-call',
+          stepNumber: col.currentStepNumber,
+          toolName,
+          toolArgs,
+          timestamp: new Date().toISOString(),
+        });
+
         const toolEl = document.createElement('div');
         toolEl.className = 'agentic-tool-call';
         const nameEl = document.createElement('div');
@@ -740,11 +809,23 @@ function handlePortMessage(msg: Record<string, unknown>): void {
           }
         }
 
-        col.messagesEl.appendChild(toolEl);
+        // Append into step content if available, otherwise messagesEl
+        const container = col.currentStepContent || col.messagesEl;
+        container.appendChild(toolEl);
         columnScrollToBottom(col);
       } else if (progressType === 'tool-result') {
         const resultContent = msg.toolResult as string | Record<string, unknown> | undefined;
         const toolName = msg.toolName as string || '';
+
+        // Record in progress entries
+        col.currentProgressEntries.push({
+          type: 'tool-result',
+          stepNumber: col.currentStepNumber,
+          toolName,
+          toolResult: resultContent,
+          timestamp: new Date().toISOString(),
+        });
+
         if (resultContent) {
           const fullText = typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent, null, 2);
           const preview = fullText.slice(0, 120);
@@ -772,22 +853,35 @@ function handlePortMessage(msg: Record<string, unknown>): void {
             });
           }
 
-          col.messagesEl.appendChild(resultEl);
+          const container = col.currentStepContent || col.messagesEl;
+          container.appendChild(resultEl);
           columnScrollToBottom(col);
         }
       } else if (progressType === 'text' && progressContent) {
-        // Track for duplicate detection (agenticDone), but don't create
-        // a new element since 'thinking' deltas already streamed this text
+        // Record in progress entries
+        col.currentProgressEntries.push({
+          type: 'text',
+          stepNumber: col.currentStepNumber,
+          content: progressContent,
+          timestamp: new Date().toISOString(),
+        });
+
         col.lastAgenticText = progressContent;
+        // Finalize current step summary
+        finalizeStepSummary(col);
+        // Close the current step details
+        if (col.currentStepDetails) {
+          col.currentStepDetails.removeAttribute('open');
+        }
         // Remove active streaming indicator
         if (col.currentStreamEl) {
           col.currentStreamEl.classList.remove('active');
         }
-        // Reset stream element for next step
         col.currentStreamEl = null;
         col.currentStreamContent = '';
       } else if (progressType === 'step-complete') {
-        // Subtle separator
+        // Subtle separator - finalize step
+        finalizeStepSummary(col);
       } else if (progressType === 'error') {
         addChatErrorMessageToColumn(col, progressContent);
       }
@@ -800,6 +894,11 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         col.isStreaming = false;
         col.typingEl.classList.remove('visible');
         col.sendBtn.disabled = false;
+        // Finalize last step
+        finalizeStepSummary(col);
+        if (col.currentStepDetails) {
+          col.currentStepDetails.removeAttribute('open');
+        }
         if (msg.result && (msg.result as string) !== col.lastAgenticText) {
           const finalEl = document.createElement('div');
           finalEl.className = 'chat-message assistant';
@@ -813,11 +912,19 @@ function handlePortMessage(msg: Record<string, unknown>): void {
             role: 'assistant',
             content: msg.result as string,
             timestamp: new Date().toISOString(),
+            progress: col.currentProgressEntries.length > 0 ? col.currentProgressEntries : undefined,
           });
           saveColumnConversation(col);
         }
         col.currentStreamEl = null;
         col.currentStreamContent = '';
+        col.currentStepDetails = null;
+        col.currentStepContent = null;
+        col.currentStepSummary = null;
+        col.currentStepToolNames = [];
+        col.currentStepStartTime = null;
+        col.currentStepNumber = 0;
+        col.currentProgressEntries = [];
         columnScrollToBottom(col);
       }
 
@@ -865,6 +972,10 @@ function handlePortMessage(msg: Record<string, unknown>): void {
           if (entry.role === 'user') {
             addChatUserMessageToColumn(col, entry.content);
           } else if (entry.role === 'assistant') {
+            // Render saved progress as collapsed <details> blocks before the response
+            if (entry.progress && entry.progress.length > 0) {
+              renderSavedProgress(col, entry.progress);
+            }
             addChatAssistantMessageToColumn(col, entry.content);
           } else if (entry.role === 'system') {
             addChatSystemMessageToColumn(col, entry.content);
@@ -1085,6 +1196,13 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
     currentStreamContent: '',
     lastAgenticText: '',
     pageContext: null,
+    currentStepDetails: null,
+    currentStepContent: null,
+    currentStepSummary: null,
+    currentStepToolNames: [],
+    currentStepStartTime: null,
+    currentStepNumber: 0,
+    currentProgressEntries: [],
   };
 
   columns.push(column);
@@ -1399,6 +1517,136 @@ function sendColumnMessage(col: ChatColumn): void {
 
   col.conversationHistory.push(entry);
   sendPortMessage(chatMsg);
+}
+
+// ── Agentic step helpers ──
+
+function updateStepSummaryLive(col: ChatColumn): void {
+  if (!col.currentStepSummary) return;
+  const statusEl = col.currentStepSummary.querySelector('.step-status');
+  if (statusEl) {
+    statusEl.textContent = col.currentStepToolNames.join(', ') + '...';
+  }
+}
+
+function finalizeStepSummary(col: ChatColumn): void {
+  if (!col.currentStepSummary || !col.currentStepStartTime) return;
+  const elapsed = ((Date.now() - col.currentStepStartTime) / 1000).toFixed(1);
+  const statusEl = col.currentStepSummary.querySelector('.step-status');
+  if (statusEl) {
+    const tools = col.currentStepToolNames.length > 0
+      ? col.currentStepToolNames.join(', ') + ' \u2014 '
+      : '';
+    statusEl.textContent = `${tools}${elapsed}s`;
+  }
+}
+
+function renderSavedProgress(col: ChatColumn, progress: AgenticProgressEntry[]): void {
+  // Group progress entries into steps
+  const steps: Map<number, AgenticProgressEntry[]> = new Map();
+  for (const entry of progress) {
+    const step = entry.stepNumber ?? 0;
+    if (!steps.has(step)) steps.set(step, []);
+    steps.get(step)!.push(entry);
+  }
+
+  for (const [stepNum, entries] of steps) {
+    const toolNames: string[] = [];
+    let firstTimestamp: string | null = null;
+    let lastTimestamp: string | null = null;
+
+    for (const e of entries) {
+      if (!firstTimestamp) firstTimestamp = e.timestamp;
+      lastTimestamp = e.timestamp;
+      if (e.type === 'tool-call' && e.toolName && !toolNames.includes(e.toolName)) {
+        toolNames.push(e.toolName);
+      }
+    }
+
+    const durationMs = firstTimestamp && lastTimestamp
+      ? new Date(lastTimestamp).getTime() - new Date(firstTimestamp).getTime()
+      : 0;
+    const durationStr = (durationMs / 1000).toFixed(1);
+    const toolsStr = toolNames.length > 0 ? toolNames.join(', ') + ' \u2014 ' : '';
+
+    const details = document.createElement('details');
+    details.className = 'step-details';
+
+    const summary = document.createElement('summary');
+    summary.className = 'step-summary';
+    summary.innerHTML = `<span class="step-badge">Step ${stepNum}</span><span class="step-status">${escapeHtml(toolsStr)}${durationStr}s</span>`;
+    details.appendChild(summary);
+
+    const content = document.createElement('div');
+    content.className = 'step-content';
+
+    // Consolidate consecutive thinking entries into a single block
+    let accumulatedThinking = '';
+    const flushThinking = () => {
+      if (accumulatedThinking) {
+        const thinkEl = document.createElement('div');
+        thinkEl.className = 'chat-message assistant thinking-stream';
+        renderChatMarkdown(thinkEl, accumulatedThinking);
+        content.appendChild(thinkEl);
+        accumulatedThinking = '';
+      }
+    };
+
+    for (const e of entries) {
+      if (e.type === 'thinking' && e.content) {
+        accumulatedThinking += e.content;
+        continue;
+      }
+      flushThinking();
+      if (e.type === 'tool-call') {
+        const toolEl = document.createElement('div');
+        toolEl.className = 'agentic-tool-call';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'agentic-tool-name';
+        nameEl.textContent = e.toolName || '';
+        toolEl.appendChild(nameEl);
+        if (e.toolArgs && typeof e.toolArgs === 'object') {
+          for (const [k, v] of Object.entries(e.toolArgs as Record<string, unknown>)) {
+            const val = typeof v === 'string' ? (v.length > 80 ? v.slice(0, 80) + '...' : v) : JSON.stringify(v);
+            const argEl = document.createElement('div');
+            argEl.className = 'agentic-tool-arg';
+            argEl.innerHTML = `<span class="agentic-tool-arg-key">${escapeHtml(k)}:</span> <span class="agentic-tool-arg-val">${escapeHtml(val)}</span>`;
+            toolEl.appendChild(argEl);
+          }
+        }
+        content.appendChild(toolEl);
+      } else if (e.type === 'tool-result' && e.toolResult) {
+        const fullText = typeof e.toolResult === 'string' ? e.toolResult : JSON.stringify(e.toolResult, null, 2);
+        const preview = fullText.slice(0, 120);
+        const hasMore = fullText.length > 120;
+
+        const resultEl = document.createElement('div');
+        resultEl.className = 'agentic-tool-result';
+        const previewEl = document.createElement('div');
+        previewEl.className = 'agentic-tool-result-preview';
+        previewEl.innerHTML = `<span class="agentic-tool-result-label">\u2192 ${escapeHtml(e.toolName || '')}</span> ${escapeHtml(preview)}${hasMore ? '\u2026' : ''}${hasMore ? ' <span class="agentic-tool-result-toggle">\u25b6 expand</span>' : ''}`;
+        resultEl.appendChild(previewEl);
+
+        if (hasMore) {
+          const fullEl = document.createElement('pre');
+          fullEl.className = 'agentic-tool-result-full';
+          fullEl.textContent = fullText;
+          resultEl.appendChild(fullEl);
+          previewEl.addEventListener('click', () => {
+            const isOpen = fullEl.classList.contains('expanded');
+            fullEl.classList.toggle('expanded');
+            const toggle = previewEl.querySelector('.agentic-tool-result-toggle');
+            if (toggle) toggle.textContent = isOpen ? '\u25b6 expand' : '\u25bc collapse';
+          });
+        }
+        content.appendChild(resultEl);
+      }
+    }
+    flushThinking();
+
+    details.appendChild(content);
+    col.messagesEl.appendChild(details);
+  }
 }
 
 function saveColumnConversation(col: ChatColumn): void {
