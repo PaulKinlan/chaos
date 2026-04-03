@@ -8,19 +8,27 @@ See [docs/architecture.md](docs/architecture.md) for the full design and [docs/p
 
 ## Features
 
-- **Multiple agents** with role templates (neutral, researcher, coder, writer, planner, reviewer)
+- **Master agent model** - first agent is the master with sub-agent management tools (create, assign, find, delete agents)
+- **Multiple agents** with role templates (master, researcher, coder, writer, planner, reviewer)
 - **Self-evolving personality** - agents edit their own CLAUDE.md as they learn about you
-- **60+ tools** - Chrome APIs (tabs, bookmarks, history, windows, downloads), file operations, web search, WASM tools, inter-agent communication
-- **Agentic loop** - autonomous multi-step task execution with progress streaming
-- **Hooks** - event-driven agent execution (bookmark created, tab navigated, download completed, idle state, omnibox, etc.)
+- **69+ tools** - Chrome APIs (31), file operations (11), communication (10), WASM (7), master (5), hooks (3), web (2), plus provider search grounding
+- **Multi-column TweetDeck chat** - side-by-side conversation columns, multiple per agent, [+] to add
+- **Agentic loop** - autonomous multi-step execution with streamText, real-time streaming, collapsible progress with tool results, persisted to history
+- **Hook-driven context menus** - hooks create context menu items that open chat columns with progress
+- **Hooks** - 14 trigger types (bookmark, tab, download, history, idle, omnibox, reading list, window events, context menu, browser startup) with preset palette and bookmark folder picker
+- **Content extraction** - Readability + Turndown via content script (tab_read with three-tier fallback) and offscreen document (fetch_page)
+- **Provider search grounding** - Google, OpenAI, Anthropic native search tools
 - **Scheduled tasks** - alarm-based recurring work with stored prompts
-- **@ mentions** - pull in browser context inline (@tab, @bookmark, @history, @agent)
-- **Voice input** - speech-to-text via iframe recognition frame
+- **@ mentions** - autocomplete for @tab, @bookmark, @history, @agent with content resolution
+- **Voice input** - iframe-based recognition frame, global hotkey Ctrl+Shift+U
+- **Refine prompt** - LLM-powered prompt refinement with before/after dialog
 - **Inter-agent communication** - message bus, shared task board, artifact sharing
 - **Per-agent tool configuration** - enable/disable tools per agent
 - **OPFS file explorer** - browse agent memory files
 - **Light/dark mode** - system auto-detect + manual override
-- **Multi-provider** - Anthropic Claude, Google Gemini, OpenAI, OpenRouter with provider-native search grounding
+- **Hash-based routing** - state persists across refresh
+- **Multi-provider** - Anthropic Claude, Google Gemini, OpenAI, OpenRouter
+- **Defensive data migration** - sync/local fallback, optional fields, no destructive updates
 
 ## Getting started
 
@@ -41,4 +49,4 @@ npm run test:e2e     # Run Puppeteer e2e tests (requires build)
 
 ## Status
 
-Active development. Functional as a Chrome extension with new tab page interface.
+Active development. Functional as a Chrome extension. Opens via icon click or Ctrl+Shift+C hotkey in a regular tab (not a new tab page override).

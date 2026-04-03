@@ -285,8 +285,10 @@ class LLMToolLookup implements ToolLookup { ... }
 
 ### Chrome storage
 - Extension settings (which agents exist, default agent, UI prefs)
-- Sync storage for cross-device agent list (not content)
+- Sync storage for cross-device agent list (not content), with local fallback
 - Agent metadata (name, icon, bookmark folder ID, alarm schedules)
+- Hook definitions and trigger counts
+- Defensive reads: all storage reads handle missing fields with defaults at read time
 
 ## Content extraction and rendering (from NotebookLM-Chrome)
 
@@ -341,11 +343,11 @@ The file explorer is read-only by design — agents manage their own files throu
 
 ### Voice Input
 
-Both the new tab chat and side panel support speech-to-text input via the Web Speech API:
-- Click the microphone button to start/stop continuous recording
+Speech-to-text input via an **iframe-based recognition frame**:
+- A dedicated iframe handles Web Speech API recognition (avoids extension CSP issues)
+- Global hotkey `Ctrl+Shift+U` (Mac: `Cmd+Shift+U`) activates voice input for the current agent
 - Interim results displayed in real-time as the user speaks
 - Final transcripts accumulated into the text input
-- Gracefully hidden when the browser doesn't support the API
 
 ### @ Mention Autocomplete
 
@@ -357,9 +359,35 @@ The chat input supports inline `@` mentions to pull browser context into convers
 
 Typing `@` opens a category picker. Typing a category name and then a space filters results within that category. The dropdown supports keyboard navigation (arrows, Enter, Escape) and mouse selection. Max 8 results shown.
 
-**Mention resolution in the agent loop** (`src/agents/loop.ts`): Before the AI call, mentions are parsed from the user message. For `@tab` mentions, the tab's page content is extracted via `chrome.scripting`. For `@bookmark` and `@history`, the URL is included (with content extraction if the page is open in a tab). For `@agent`, the agent's name, role, and visibility are included. Resolved context is appended to the user message.
+**Mention resolution in the agent loop**: Before the AI call, mentions are parsed from the user message. For `@tab` mentions, the tab's page content is extracted via `chrome.scripting`. For `@bookmark` and `@history`, the URL is included (with content extraction if the page is open in a tab). For `@agent`, the agent's name, role, and visibility are included. Resolved context is appended to the user message.
 
 **Mention rendering**: In chat messages, `@type[title](id)` patterns are rendered as styled inline badges with category-colored backgrounds and SVG icons.
+
+### Refine Prompt
+
+LLM-powered prompt refinement. The user can click a "Refine" button on their input to have the AI improve it. A before/after dialog shows the original and refined versions, letting the user accept or reject the refinement before sending.
+
+### Light/Dark Mode
+
+System auto-detect via `prefers-color-scheme` media query with manual override in Settings. The theme preference is stored in Chrome storage and persists across sessions.
+
+### Hash-based Routing
+
+The app uses hash-based routing (`#chat`, `#agents`, `#settings`, etc.) to manage navigation state. This means the current view persists across page refreshes and can be bookmarked. The router listens for `hashchange` events and renders the appropriate tab.
+
+### Hooks System
+
+Event-driven agent execution via `src/hooks/listener.ts`. Hooks are stored in Chrome storage and registered as Chrome event listeners on extension startup. 14 trigger types:
+
+- `bookmark-created` (optional folder filter), `tab-navigated` (URL pattern), `tab-created`, `tab-closed`
+- `download-completed` (optional filename pattern), `history-visited` (URL pattern)
+- `idle-changed` (state filter), `browser-startup`, `omnibox` (keyword)
+- `reading-list-changed`, `window-created`, `window-focused`, `window-closed`
+- `context-menu` (creates a Chrome context menu item with custom label)
+
+Hooks include a **preset palette** for common use cases. Bookmark triggers support a **folder picker** UI. When a hook fires, it runs the agentic loop with the hook's prompt plus event context. Context menu hooks open a new chat column; other hooks run in the background.
+
+Agents manage their own hooks via 3 hook tools: `hook_create`, `hook_list`, `hook_delete`.
 
 ### Agentic Loop
 
@@ -399,9 +427,13 @@ Each permission has an Enable button in Settings. The UI shows current grant sta
 | Component | Technology |
 |-----------|------------|
 | Extension | Chrome Manifest V3 |
-| UI | Vanilla HTML/CSS/JS or Lit (lightweight) |
-| Agent loop | TypeScript, Vercel AI SDK (multi-provider) |
+| UI | Vanilla HTML/CSS/JS (multi-column TweetDeck layout) |
+| Agent loop | TypeScript, Vercel AI SDK (streamText, multi-provider) |
+| Providers | Anthropic Claude, Google Gemini, OpenAI, OpenRouter |
+| Search grounding | Provider-native search tools (Google, OpenAI, Anthropic) |
 | WASM runtime | Web Workers + WASI (from co-do) |
 | Storage | OPFS + IndexedDB + Chrome storage API |
+| Content extraction | Readability.js + Turndown.js (content script + offscreen doc) |
+| Routing | Hash-based (#chat, #agents, #settings, etc.) |
 | Build | Vite |
 | Language | TypeScript |
