@@ -21,13 +21,26 @@ Single user. Their browser, their agents. No multi-user, no server-side infrastr
 
 ## Agents
 
+### Master agent
+
+The first agent created is automatically marked as the **master agent**. The master agent uses a dedicated template with orchestration instructions and has access to sub-agent management tools:
+
+- **create_agent** — create a new sub-agent with a name and role
+- **assign_task** — delegate a task to a sub-agent
+- **get_agent_status** — check a sub-agent's current status
+- **find_agent** — search for agents by name or role
+- **delete_agent** — remove a sub-agent
+
+The master agent can coordinate work across sub-agents, breaking complex tasks into pieces and delegating them.
+
 ### Creating an agent
 
-The user creates an agent by giving it a name and optionally picking a role template. Role templates bootstrap the agent's CLAUDE.md with starting traits, focus areas, and tool preferences. The agent evolves from there through self-editing.
+The user creates an agent by giving it a name and optionally picking a role template. Role templates bootstrap the agent's CLAUDE.md with starting traits, focus areas, and tool preferences. The agent evolves from there through self-editing. The master agent can also create sub-agents programmatically via tools.
 
 ### Role templates
 
 - **neutral** - no specific focus, general-purpose assistant. The default.
+- **master** - orchestration agent with sub-agent management tools. Automatically assigned to the first agent.
 - **researcher** - web research, summarization, tracking topics
 - **coder** - writing code, debugging, building things
 - **writer** - drafting content, editing, tone
@@ -36,6 +49,10 @@ The user creates an agent by giving it a name and optionally picking a role temp
 - Custom roles defined by the user
 
 Roles shape the starting CLAUDE.md personality and which tools the agent prioritizes, but any agent can use any tool. The template is a starting point, not a constraint.
+
+### Per-agent tool configuration
+
+Each agent can have tools individually enabled or disabled via agent settings. This allows tailoring an agent's capabilities to its role — for example, disabling web tools for a coder agent or disabling file tools for a reviewer.
 
 ### Agent storage
 
@@ -188,30 +205,44 @@ class LLMToolLookup implements ToolLookup { ... }
 
 ### Tool categories
 
-1. **Chrome API tools** (built-in, always available)
-   - tab_read, tab_open, tab_close, tab_group
-   - bookmark_add, bookmark_search, bookmark_list
-   - alarm_set, alarm_clear, alarm_list
-   - history_search
-   - storage_get, storage_set
+1. **Chrome API tools** (31 tools)
+   - Tabs: tab_read, tab_open, tab_close, tab_list, tab_group, tab_focus, tab_navigate, tab_screenshot, tab_duplicate, tab_pin, tab_mute, tab_move
+   - Bookmarks: bookmark_add, bookmark_search, bookmark_list, bookmark_remove
+   - Alarms: alarm_set, alarm_clear, alarm_list
+   - Windows: window_create, window_list, window_focus, window_close, window_resize
+   - Downloads: download_file, download_list
+   - Reading list: reading_list_add, reading_list_query
+   - Other: history_search, notification_show, clipboard_write
 
-2. **File tools** (OPFS operations)
-   - read, write, edit, list, delete, mkdir
+2. **File tools** (11 tools, OPFS operations)
+   - read_file, write_file, edit_file, append_file, delete_file, rename_file
+   - list_directory, mkdir, grep_file, find_files, file_info
 
-3. **WASM tools** (sandboxed in Web Workers, from co-do)
-   - Text processing (grep, sed, awk, sort, etc.)
-   - Data formats (json, csv, toml, yaml, xml)
-   - Crypto (hash, encode, decode)
-   - Media (ffmpeg for audio/video if needed)
+3. **WASM tools** (7 tools, sandboxed in Web Workers)
+   - wasm_base64, wasm_md5sum, wasm_sha256sum, wasm_wc, wasm_sort, wasm_uniq, wasm_json_format
 
-4. **Web tools**
-   - fetch_page (read a URL)
-   - search (web search)
+4. **Web tools** (2 tools)
+   - fetch_page (read a URL via content script or offscreen document)
+   - web_search (web search)
 
-5. **Communication tools**
+5. **Communication tools** (10 tools)
    - message_send, message_read
    - task_create, task_update, task_list
    - artifact_publish, artifact_list, artifact_read
+   - agent_discover
+
+6. **Master tools** (5 tools, master agent only)
+   - create_agent, delete_agent, assign_task, get_agent_status, find_agent
+
+7. **Hook tools** (3 tools)
+   - hook_create, hook_list, hook_delete
+
+8. **Provider search grounding** (provider-native, added automatically)
+   - Google: google_search (Gemini native grounding)
+   - OpenAI: web_search (web search preview tool)
+   - Anthropic: web_search (web search tool)
+
+Total: 69+ tools across all categories.
 
 ## Content extraction and rendering
 
@@ -219,7 +250,10 @@ class LLMToolLookup implements ToolLookup { ... }
 - **Readability.js** for article parsing (primary)
 - **CSS selector fallback** (main, article, .post-content, etc.)
 - **Turndown.js** to convert HTML to markdown
-- Content script injected at document_idle, responds to `extractContent` messages
+
+Two extraction paths:
+- **tab_read**: content script injected into the active tab. Uses a three-tier fallback: (1) Readability.js parsing, (2) CSS selector extraction, (3) raw body text.
+- **fetch_page**: offscreen document fetches arbitrary URLs and processes them with Readability + Turndown. Used when the page is not open in a tab.
 
 ### Safe rendering of agent output
 - **DOMPurify** sanitization before rendering
@@ -233,30 +267,77 @@ class LLMToolLookup implements ToolLookup { ... }
 
 ## UI
 
-### New tab page (primary)
-`app.html` overrides Chrome's new tab page and serves as the primary interface:
-- **Chat tab** (default): Full-width chat interface with agent selector, full message history, streaming responses, page context display, voice input (Web Speech API), and "Read current tab" button. The chat is the hero — big, central, easy to use.
-- **Agents tab**: Overview of all agents — roles, visibility, status, CLAUDE.md, activity journal, bookmarks.
+### App page (primary)
+`app.html` opens in a regular browser tab (not a new tab page override). The extension opens via:
+- **Icon click**: clicking the extension icon opens app.html in a new tab
+- **Keyboard shortcut**: `Ctrl+Shift+C` (Mac: `Cmd+Shift+C`) opens app.html
+
+The app uses **hash-based routing** (`#chat`, `#agents`, `#settings`, etc.) so state persists across page refreshes.
+
+Tabs:
+- **Chat tab** (default): **Multi-column TweetDeck-style layout**. Each conversation appears as a side-by-side column. Multiple columns can exist for the same agent. A `[+]` button adds new columns. Each column has its own agent selector, message history, streaming responses, and input. Columns can be individually closed.
+- **Agents tab**: Overview of all agents — roles, visibility, status, CLAUDE.md, activity journal, bookmarks. Per-agent tool configuration (enable/disable individual tools).
 - **Tasks tab**: Shared task board with status, dependencies, and filtering.
 - **Messages tab**: Inter-agent communication log, filterable by agent and searchable.
 - **Artifacts tab**: Shared files browser with metadata and content preview.
 - **Files tab**: OPFS file explorer for transparency — browse each agent's directory tree (CLAUDE.md, memories/, people/, ideas/, activity-log.jsonl, etc.), view files with markdown rendering and JSONL syntax formatting, download any file. Read-only — agents manage their own files.
-- **Settings tab**: API keys for multiple providers (Anthropic, Google, OpenAI, OpenRouter), provider selector, default role for new agents, browser permission management (optional with in-UI request flow), and tool permission controls.
+- **Settings tab**: API keys for multiple providers (Anthropic, Google, OpenAI, OpenRouter), provider selector, default role for new agents, browser permission management (optional with in-UI request flow), tool permission controls, and light/dark mode toggle.
 
 ### Side panel (secondary)
-Persistent chat interface for quick in-page interactions. Agent switcher, page context reading, voice input via Web Speech API. Works independently of the new tab page for when you want to chat without leaving the current page.
+Persistent chat interface for quick in-page interactions. Agent switcher, page context reading, voice input. Works independently of the app page for when you want to chat without leaving the current page.
 
 ### Popup
 Minimal. Agent switcher and quick status only.
 
 ### Context menu
-Right-click to send selected text or current page to an agent.
+Right-click context menu items are **hook-driven**. Hooks with `context-menu` trigger type register Chrome context menu items. When a context menu item is clicked, it opens a **new chat column** in the app with streaming progress (not silent background execution). The user sees the agent working in real-time.
+
+### Hooks system
+Event-driven agent execution. Hooks are created per-agent and fire when a matching Chrome event occurs. 14 trigger types:
+
+- `bookmark-created` — with optional folder ID/name filter
+- `tab-navigated` — with URL pattern filter
+- `tab-created`
+- `tab-closed`
+- `download-completed` — with optional filename pattern filter
+- `history-visited` — with URL pattern filter
+- `idle-changed` — with state filter (active/idle/locked)
+- `browser-startup`
+- `omnibox` — with keyword filter
+- `reading-list-changed`
+- `window-created`
+- `window-focused`
+- `window-closed`
+- `context-menu` — creates a Chrome context menu item with a custom label
+
+Hooks include a **preset palette** for common use cases. Bookmark triggers support a **folder picker** for targeting specific bookmark folders.
+
+When a hook fires, it runs the agentic loop with the hook's prompt plus event context. Context menu hooks open a new chat column; other hooks run in the background.
+
+### Agentic loop
+The agentic loop (`src/agents/agentic-loop.ts`) provides autonomous multi-step execution using `streamText`. It streams thinking text in real-time and keeps iterating until the agent responds with text and no tool calls, or hits a configurable max iteration limit (default 20).
+
+**Progress display**: Each step shows a collapsible `<details>` element with step headers, tool call names, and expandable tool results. Progress is persisted to conversation history so it survives page refreshes.
+
+**Used by**: scheduled tasks (alarms), hooks, context menu actions, and chat.
+
+### Refine prompt
+An LLM-powered prompt refinement feature. The user can click "Refine" on their input to have the AI improve it. A before/after dialog shows the original and refined versions, letting the user accept or reject the refinement.
 
 ### Voice input
-Speech-to-text input is available in both the new tab chat and side panel using the Web Speech API. Click the microphone button to start/stop recording. Supports continuous dictation with interim results.
+Speech-to-text input via an **iframe-based recognition frame** (not direct Web Speech API on the page). Available in chat columns. Global hotkey `Ctrl+Shift+U` (Mac: `Cmd+Shift+U`) activates voice input for the current agent.
 
 ### @ Mention autocomplete
-The chat input supports `@` mentions to inline browser context. Type `@` to see categories (tab, bookmark, history, agent), then type a category and filter text to search. Selecting an item inserts a formatted mention (`@type[title](id)`) that is resolved to full content when the message is sent. Mentions render as styled badges in the chat history.
+The chat input supports `@` mentions to inline browser context. Type `@` to see categories, then type a category and filter text to search. Categories:
+- **@tab** — lists open tabs (requires `tabs` permission)
+- **@bookmark** — searches bookmarks (requires `bookmarks` permission)
+- **@history** — searches recent history (requires `history` permission)
+- **@agent** — lists other agents (always available)
+
+Selecting an item inserts a formatted mention (`@type[title](id)`) that is resolved to full content when the message is sent. For `@tab` mentions, the tab's page content is extracted. Mentions render as styled inline badges with category-colored backgrounds.
+
+### Light/dark mode
+System auto-detect via `prefers-color-scheme` with manual override in Settings. The theme preference persists across sessions.
 
 ### Browser permissions
 Chrome permissions (scripting, tabs, bookmarks, history) are **optional**. Each permission can be enabled individually through an in-UI request flow in Settings. Agents gracefully degrade when permissions aren't granted.
@@ -281,18 +362,27 @@ Chrome permissions (scripting, tabs, bookmarks, history) are **optional**. Each 
 - Sync storage for cross-device agent list (metadata only, not content)
 - Agent metadata (name, role, icon, bookmark folder ID, alarm schedules, visibility)
 
+### Data migration rules
+- All storage reads are defensive — missing fields get defaults at read time, not write time
+- New fields are always optional (`?` in TypeScript types)
+- Chrome storage uses sync/local fallback (try sync first, fall back to local)
+- Old data without new fields must still load and render correctly
+- IndexedDB version bumps handle all previous versions in upgrade functions
+- No destructive overwrites on extension update
+
 ## Tech stack
 
 | Component | Technology |
 |-----------|------------|
 | Extension | Chrome Manifest V3 |
-| UI | Vanilla HTML/CSS/JS or Lit |
-| Agent loop | TypeScript, Vercel AI SDK (multi-provider) |
+| UI | Vanilla HTML/CSS/JS (multi-column TweetDeck layout) |
+| Agent loop | TypeScript, Vercel AI SDK (streamText, multi-provider) |
+| Providers | Anthropic Claude, Google Gemini, OpenAI, OpenRouter |
 | WASM runtime | Web Workers + WASI (from co-do) |
 | Storage | OPFS + IndexedDB + Chrome storage API |
-| Content extraction | Readability.js + Turndown.js |
+| Content extraction | Readability.js + Turndown.js (content script + offscreen document) |
 | Rendering | marked.js + DOMPurify + sandboxed iframes |
-| Embeddings | Local model (TBD) for tool lookup |
+| Routing | Hash-based (#chat, #agents, #settings, etc.) |
 | Build | Vite |
 | Language | TypeScript |
 

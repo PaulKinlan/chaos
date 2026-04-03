@@ -1831,15 +1831,25 @@ chrome.runtime.onMessage.addListener((msg) => {
     const col = addColumn(agentId, true);
     if (!col) return;
 
-    // Show a system message about what was sent
-    const preview = content.length > 150 ? content.slice(0, 150) + '...' : content;
-    addChatSystemMessageToColumn(col, hookPrompt
-      ? `Context menu hook triggered. Content: "${preview}"`
-      : `Content received via context menu: "${preview}"`);
+    // Show the context and prompt as visible messages so the user knows what was sent
+    const contentPreview = content.length > 300 ? content.slice(0, 300) + '...' : content;
+    if (hookPrompt) {
+      // Show the hook prompt as a user message so the user can see what's being asked
+      const userMsg = document.createElement('div');
+      userMsg.className = 'chat-message user';
+      renderChatMarkdown(userMsg, `**Hook:** ${hookPrompt}\n\n**Content:** ${contentPreview}`);
+      col.messagesEl.appendChild(userMsg);
+    } else {
+      const userMsg = document.createElement('div');
+      userMsg.className = 'chat-message user';
+      renderChatMarkdown(userMsg, `**Sent via context menu:**\n\n${contentPreview}`);
+      col.messagesEl.appendChild(userMsg);
+    }
+    columnScrollToBottom(col);
 
     // Build the task message
     const task = hookPrompt
-      ? `[Context menu hook]\n\nUser-provided content: ${content}\n\nInstructions: ${hookPrompt}`
+      ? `[Context menu hook]\n\nUser-provided content:\n${content}\n\nInstructions: ${hookPrompt}`
       : `The user sent you this content via context menu:\n\n${content}`;
 
     // Mark this column as the active target for this agent's responses
@@ -3451,8 +3461,15 @@ function renderHooksList(hooks: Hook[]): void {
             <div style="color:var(--text-muted);font-size:var(--text-xs);margin-top:4px;">
               Fired ${hook.triggerCount} time${hook.triggerCount !== 1 ? 's' : ''} &middot; Last: ${escapeHtml(lastTriggered)}
             </div>
+            <details style="margin-top:6px;">
+              <summary style="font-size:var(--text-xs);color:var(--accent-text);cursor:pointer;user-select:none;">Show prompt</summary>
+              <div style="margin-top:4px;padding:8px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;font-size:var(--text-xs);white-space:pre-wrap;word-break:break-word;color:var(--text-secondary);max-height:150px;overflow-y:auto;">${escapeHtml(hook.prompt)}</div>
+            </details>
           </div>
-          <div style="display:flex;gap:4px;align-items:center;">
+          <div style="display:flex;gap:4px;align-items:center;flex-shrink:0;">
+            <button class="btn btn-ghost btn-sm hook-edit-btn" data-hook-id="${escapeHtml(hook.id)}" title="Edit hook">
+              Edit
+            </button>
             <button class="btn btn-ghost btn-sm hook-toggle-btn" data-hook-id="${escapeHtml(hook.id)}" data-enabled="${hook.enabled}" title="${hook.enabled ? 'Disable' : 'Enable'}">
               ${hook.enabled ? 'Disable' : 'Enable'}
             </button>
@@ -3481,6 +3498,56 @@ function renderHooksList(hooks: Hook[]): void {
       sendPortMessage({ type: 'removeHook', hookId });
       // Optimistic refresh
       setTimeout(() => loadHooksView(), 200);
+    });
+  });
+
+  // Edit buttons - populate the create form with existing hook data
+  listEl.querySelectorAll<HTMLButtonElement>('.hook-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const hookId = btn.dataset.hookId!;
+      const hook = hooks.find((h) => h.id === hookId);
+      if (!hook) return;
+
+      // Populate the form
+      (document.getElementById('hook-description') as HTMLInputElement).value = hook.description;
+      hooksTriggerType.value = hook.trigger.type;
+      updateTriggerFilters();
+
+      // Fill trigger-specific filters
+      setTimeout(() => {
+        if ('label' in hook.trigger) {
+          const labelInput = document.querySelector('#hook-trigger-filters input') as HTMLInputElement | null;
+          if (labelInput) labelInput.value = (hook.trigger as { label: string }).label;
+        }
+        if ('urlPattern' in hook.trigger) {
+          const urlInput = document.querySelector('#hook-trigger-filters input') as HTMLInputElement | null;
+          if (urlInput) urlInput.value = (hook.trigger as { urlPattern: string }).urlPattern;
+        }
+        if ('folderId' in hook.trigger) {
+          const folderSelect = document.querySelector('#hook-filter-folder') as HTMLSelectElement | null;
+          if (folderSelect) folderSelect.value = (hook.trigger as { folderId?: string }).folderId || '';
+        }
+        if ('filenamePattern' in hook.trigger) {
+          const fnInput = document.querySelector('#hook-trigger-filters input') as HTMLInputElement | null;
+          if (fnInput) fnInput.value = (hook.trigger as { filenamePattern?: string }).filenamePattern || '';
+        }
+        if ('state' in hook.trigger) {
+          const stateSelect = document.querySelector('#hook-trigger-filters select') as HTMLSelectElement | null;
+          if (stateSelect) stateSelect.value = (hook.trigger as { state: string }).state;
+        }
+        if ('keyword' in hook.trigger) {
+          const kwInput = document.querySelector('#hook-trigger-filters input') as HTMLInputElement | null;
+          if (kwInput) kwInput.value = (hook.trigger as { keyword: string }).keyword;
+        }
+      }, 50);
+
+      (document.getElementById('hook-prompt') as HTMLTextAreaElement).value = hook.prompt;
+
+      // Show the form
+      document.getElementById('hooks-create-form')!.style.display = 'block';
+
+      // Delete the old hook so saving creates a fresh one
+      sendPortMessage({ type: 'removeHook', hookId });
     });
   });
 }

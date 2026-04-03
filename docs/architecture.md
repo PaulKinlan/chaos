@@ -47,33 +47,43 @@ This is what makes CHAOS different from both parent projects. The browser IS the
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  Chrome Extension                │
-├─────────────┬───────────────────┬────────────────┤
-│   UI Layer  │  Agent Runtime    │  Context Layer │
-│             │                   │                │
-│  - Popup    │  - Agent Manager  │  - Tab Reader  │
-│  - Side     │  - Agent Loop     │  - Bookmark    │
-│    Panel    │  - Memory Store   │    Watcher     │
-│  - Options  │  - Journal        │  - Tab Groups  │
-│             │  - Scheduler      │  - History     │
-│             │                   │                │
-├─────────────┴───────────────────┴────────────────┤
-│                  Tool Layer                       │
-│                                                   │
-│  - Tool Lookup Service (resolves intent → tool)   │
-│  - WASM Runtime (Web Workers, sandboxed)          │
-│  - Built-in tools (file ops, text, data, crypto)  │
-│  - Chrome API tools (tabs, bookmarks, alarms)     │
-│                                                   │
-├───────────────────────────────────────────────────┤
-│                  Storage Layer                    │
-│                                                   │
-│  - OPFS (per-agent volumes: memory, journal, etc) │
-│  - IndexedDB (conversations, tool configs)        │
-│  - Chrome storage (extension settings, agent list) │
-│                                                   │
-└───────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                     Chrome Extension                      │
+├──────────────┬────────────────────┬───────────────────────┤
+│   UI Layer   │   Agent Runtime    │    Context Layer      │
+│              │                    │                       │
+│  - App page  │  - Agent Manager   │  - Tab Reader         │
+│    (multi-   │  - Agentic Loop    │    (content script)   │
+│    column    │    (streamText)    │  - Bookmark Watcher   │
+│    chat)     │  - Master Agent    │  - Tab Groups         │
+│  - Side      │  - Hooks Listener  │  - History            │
+│    Panel     │  - Memory Store    │  - Offscreen Doc      │
+│  - Popup     │  - Journal         │    (fetch_page)       │
+│  - Hash      │  - Scheduler       │  - @ Mention          │
+│    Router    │                    │    Resolution         │
+│              │                    │                       │
+├──────────────┴────────────────────┴───────────────────────┤
+│                       Tool Layer (69+ tools)              │
+│                                                           │
+│  - Chrome API tools (31): tabs, bookmarks, windows, etc.  │
+│  - File tools (11): OPFS read/write/edit/grep/find        │
+│  - Communication tools (10): messages, tasks, artifacts   │
+│  - WASM tools (7): base64, hashing, sort, json, etc.      │
+│  - Master tools (5): create/delete/assign/find agents     │
+│  - Hook tools (3): create/list/delete hooks               │
+│  - Web tools (2): fetch_page, web_search                  │
+│  - Provider search grounding (Google/OpenAI/Anthropic)    │
+│  - Tool Lookup Service (resolves intent → tool)           │
+│                                                           │
+├───────────────────────────────────────────────────────────┤
+│                      Storage Layer                        │
+│                                                           │
+│  - OPFS (per-agent volumes: memory, journal, etc)         │
+│  - IndexedDB (conversations, tool configs)                │
+│  - Chrome storage (settings, agent list, hooks)           │
+│  - Defensive reads, sync/local fallback, migrations       │
+│                                                           │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## Agents
@@ -95,23 +105,33 @@ Each agent is a directory in OPFS:
   conversations/         # Recent conversation history
 ```
 
+### Master agent
+
+The first agent created is automatically marked as the master agent. It uses a dedicated master template (`src/agents/templates/master.ts`) with orchestration instructions. The master agent gets access to 5 additional tools for sub-agent management: `create_agent`, `delete_agent`, `assign_task`, `get_agent_status`, `find_agent`. These tools are only available to agents marked as master in the tool registry.
+
 ### Agent lifecycle
 
-1. User creates agent (name, picks a role template)
+1. User creates agent (name, picks a role template). The first agent gets the master template automatically.
 2. Agent gets a CLAUDE.md bootstrapped from a **role template** (traits, focus, default tools). The template gives it a starting personality but the agent adapts from there via self-editing CLAUDE.md. The agent loop from emaila.gent is preserved: read instructions, do work, update own instructions based on what it learns.
 3. Agent gets a dedicated bookmark folder in Chrome
 4. On each interaction:
    - Read CLAUDE.md (may have been self-edited last time)
    - Read last 30 activity journal entries
    - Read current context (active tab, recent bookmarks, etc.)
-   - Run agent loop with available tools (single-turn chat via `loop.ts`, or multi-step autonomous via `agentic-loop.ts`)
+   - Run agent loop with available tools via `agentic-loop.ts` (streamText-based autonomous loop)
    - Write response, update journal, optionally update CLAUDE.md
-5. On scheduled alarm: agent wakes up, runs agentic loop (multi-step autonomous), does work, goes back to sleep
+5. On scheduled alarm: agent wakes up, runs agentic loop, does work, goes back to sleep
+6. On hook trigger: matching hook fires the agentic loop with hook prompt + event context
+
+### Per-agent tool configuration
+
+Tools can be individually enabled or disabled per agent through the agent settings UI. The tool registry respects these settings when building the tool set for each agent interaction. This allows agents to be purpose-scoped without changing their role template.
 
 ### Agent roles
 
 Agents can have roles that define their focus and capabilities (inspired by [docker-agent-test](https://github.com/PaulKinlan/docker-agent-test)):
 
+- **master** - orchestration agent with sub-agent management tools. Automatically assigned to the first agent.
 - **researcher** - web research, summarization, tracking topics
 - **coder** - writing code, debugging, building things
 - **writer** - drafting content, editing, tone
@@ -214,25 +234,41 @@ class LLMToolLookup implements ToolLookup { ... }
 
 ### Tool categories
 
-1. **Chrome API tools** (built-in, always available)
-   - tab_read, tab_open, tab_close, tab_group
-   - bookmark_add, bookmark_search, bookmark_list
-   - alarm_set, alarm_clear, alarm_list
-   - history_search
-   - storage_get, storage_set
+1. **Chrome API tools** (31 tools)
+   - Tabs: tab_read, tab_open, tab_close, tab_list, tab_group, tab_focus, tab_navigate, tab_screenshot, tab_duplicate, tab_pin, tab_mute, tab_move
+   - Bookmarks: bookmark_add, bookmark_search, bookmark_list, bookmark_remove
+   - Alarms: alarm_set, alarm_clear, alarm_list
+   - Windows: window_create, window_list, window_focus, window_close, window_resize
+   - Downloads: download_file, download_list
+   - Reading list: reading_list_add, reading_list_query
+   - Other: history_search, notification_show, clipboard_write
 
-2. **File tools** (OPFS operations)
-   - read, write, edit, list, delete, mkdir
+2. **File tools** (11 tools, OPFS operations)
+   - read_file, write_file, edit_file, append_file, delete_file, rename_file
+   - list_directory, mkdir, grep_file, find_files, file_info
 
-3. **WASM tools** (sandboxed, from co-do)
-   - Text processing (grep, sed, awk, sort, etc.)
-   - Data formats (json, csv, toml, yaml, xml)
-   - Crypto (hash, encode, decode)
-   - Media (ffmpeg for audio/video if needed)
+3. **WASM tools** (7 tools, sandboxed in Web Workers)
+   - wasm_base64, wasm_md5sum, wasm_sha256sum, wasm_wc, wasm_sort, wasm_uniq, wasm_json_format
 
-4. **Web tools**
-   - fetch_page (read a URL)
-   - search (web search)
+4. **Web tools** (2 tools)
+   - fetch_page (read a URL via content script or offscreen document)
+   - web_search (web search)
+
+5. **Communication tools** (10 tools)
+   - message_send, message_read, agent_discover
+   - task_create, task_update, task_list
+   - artifact_publish, artifact_list, artifact_read
+
+6. **Master tools** (5 tools, master agent only)
+   - create_agent, delete_agent, assign_task, get_agent_status, find_agent
+
+7. **Hook tools** (3 tools)
+   - hook_create, hook_list, hook_delete
+
+8. **Provider search grounding** (provider-native, added automatically per provider)
+   - Google: google_search
+   - OpenAI: web_search (preview)
+   - Anthropic: web_search
 
 ## Storage
 
@@ -255,10 +291,17 @@ class LLMToolLookup implements ToolLookup { ... }
 ## Content extraction and rendering (from NotebookLM-Chrome)
 
 ### Tab content extraction
-- **Readability.js** for article parsing (primary)
-- **CSS selector fallback** (main, article, .post-content, etc.)
-- **Turndown.js** to convert HTML to markdown (strips noise, flattens links)
-- Content script injected at document_idle, responds to `extractContent` messages
+Two extraction paths:
+
+**tab_read** (content script, for open tabs):
+- Three-tier fallback: (1) Readability.js parsing, (2) CSS selector extraction (main, article, .post-content, etc.), (3) raw body text
+- Turndown.js converts HTML to markdown
+- Content script injected at document_idle
+
+**fetch_page** (offscreen document, for arbitrary URLs):
+- Uses an offscreen document to fetch and process URLs not open in tabs
+- Readability.js + Turndown.js processing in the offscreen context
+- Avoids CORS issues by running in the extension's offscreen document
 
 ### Safe rendering of agent output
 - **DOMPurify** sanitization before rendering
@@ -272,14 +315,16 @@ class LLMToolLookup implements ToolLookup { ... }
 
 ## UI
 
-The primary interface is the **new tab page** (`app.html`), which overrides Chrome's default new tab with a full-width operating system view. The **side panel** remains available for quick in-page interactions without leaving the current page.
+The primary interface is `app.html`, which opens in a regular browser tab via icon click or `Ctrl+Shift+C` keyboard shortcut. It does **not** override the new tab page. The **side panel** remains available for quick in-page interactions without leaving the current page.
+
+The app uses **hash-based routing** (`#chat`, `#agents`, `#settings`, etc.) so state persists across page refreshes.
 
 The vision: this could *be* the interface for Chrome in the future. Not a bolt-on assistant, but the primary way you interact with the browser.
 
-- **New tab page** (`app.html`, `chrome_url_overrides.newtab`): The primary interface. Chat tab (default) provides a full-width conversation interface with agent selector, streaming responses, page context, and voice input (Web Speech API). Dashboard tabs (Agents, Tasks, Messages, Artifacts) provide the operating system view. Files tab provides an OPFS file explorer for browsing each agent's directory tree with markdown rendering and JSONL formatting. Settings tab includes provider selector, API key management, optional browser permission requests, and tool permissions.
-- **Side panel**: persistent chat for quick in-page interactions, voice input, page context reading. Operates independently of the new tab page.
+- **App page** (`app.html`, opens via icon click or `Ctrl+Shift+C`): The primary interface. Chat tab uses a **multi-column TweetDeck-style layout** with side-by-side conversation columns. Multiple columns can exist for the same agent. A `[+]` button adds new columns. Dashboard tabs (Agents, Tasks, Messages, Artifacts) provide the operating system view. Agents tab includes per-agent tool configuration. Files tab provides an OPFS file explorer. Settings tab includes provider selector, API key management, browser permissions, tool permissions, and light/dark mode toggle.
+- **Side panel**: persistent chat for quick in-page interactions, voice input, page context reading. Operates independently of the app page.
 - **Popup**: minimal, just agent switcher and quick status
-- **Context menu**: right-click to send selected text or page to an agent
+- **Context menu**: hook-driven context menu items. Hooks with `context-menu` trigger type register Chrome context menu items. Clicking opens a new chat column with real-time progress.
 
 ### OPFS File Explorer
 
@@ -318,17 +363,19 @@ Typing `@` opens a category picker. Typing a category name and then a space filt
 
 ### Agentic Loop
 
-The **agentic loop** (`src/agents/agentic-loop.ts`) is a multi-step autonomous execution loop for complex tasks. Unlike the single-turn chat loop (`loop.ts` which uses `streamText`), it uses `generateText` per step and keeps iterating until the agent decides it is done (responds with text and no tool calls), or hits a configurable max iteration limit (default 20).
+The **agentic loop** (`src/agents/agentic-loop.ts`) is the primary execution loop for all agent interactions. It uses `streamText` for real-time streaming and keeps iterating until the agent responds with text and no tool calls, or hits a configurable max iteration limit (default 20).
 
-**Used by:** scheduled tasks (alarms), hooks, context menu actions, and explicit agentic chat requests from the UI.
+**Used by:** chat, scheduled tasks (alarms), hooks, and context menu actions.
 
-Each outer iteration:
-1. Calls `generateText` with the full conversation history and tools (inner `maxSteps: 5` for multi-tool-call chains within a step)
-2. Checks if any tool calls were made
+Each iteration:
+1. Calls `streamText` with the full conversation history and tools
+2. Streams thinking text to the UI in real-time
 3. If tools were called: appends response messages to history, adds a continuation prompt, and loops
 4. If no tools were called: the agent is done, returns the final text
 
-Progress updates are streamed to the UI via an `onProgress` callback and port messages (`agenticProgress`, `agenticDone`). The UI shows step indicators ("Step 2 of 20: Thinking...") and tool call cards during execution, with a stop button to abort via `AbortSignal`.
+**Progress display**: Each step renders as a collapsible `<details>` element with step headers, tool call names, and expandable tool results. Progress is **persisted to conversation history** so it survives page refreshes and is visible when revisiting a conversation.
+
+Progress updates are streamed to the UI via an `onProgress` callback and port messages (`agenticProgress`, `agenticDone`). The UI shows step indicators and tool call cards during execution, with a stop button to abort via `AbortSignal`.
 
 ### Browser Permissions
 
