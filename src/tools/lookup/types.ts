@@ -9,7 +9,7 @@ export interface ToolMeta {
   name: string;
   description: string;
   keywords: string[];
-  category: 'chrome' | 'file' | 'communication' | 'wasm' | 'web' | 'hooks';
+  category: 'chrome' | 'file' | 'communication' | 'wasm' | 'web' | 'hooks' | 'master';
 }
 
 export interface ToolLookup {

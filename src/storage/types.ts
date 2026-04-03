@@ -9,6 +9,9 @@ export interface AgentMeta {
   createdAt: string; // ISO 8601
   enabledTools?: string[]; // If set, only these tools are available. If undefined, all tools.
   disabledTools?: string[]; // If set, these tools are excluded. Checked after enabledTools.
+  master?: boolean;     // true for the master agent
+  temporary?: boolean;  // true for master-created temporary agents
+  createdBy?: string;   // agentId of the master that created this sub-agent
 }
 
 // ── Settings (stored in chrome.storage.sync) ──

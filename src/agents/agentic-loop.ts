@@ -21,6 +21,7 @@ import { getChromeTools } from '../tools/chrome/index.js';
 import { getWasmTools } from '../tools/wasm/index.js';
 import { getWebTools } from '../tools/web/index.js';
 import { getHookTools } from '../tools/hooks/index.js';
+import { getMasterTools } from '../tools/master/index.js';
 import type { AgentMeta } from '../storage/types.js';
 import { checkPermission } from '../tools/permissions.js';
 
@@ -528,6 +529,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
 
   const wasmTools = await getWasmTools();
   const providerSearchTools = getProviderSearchTools(settings.activeProvider, apiKey);
+  const isMaster = selfMeta?.master === true;
   const unfilteredTools: ToolSet = {
     ...createAgentTools(agentId),
     ...(await getChromeTools(agentId)),
@@ -535,6 +537,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
     ...wasmTools,
     ...getWebTools({ braveApiKey: apiKeys.brave }),
     ...getHookTools(agentId),
+    ...getMasterTools(agentId, isMaster),
     ...providerSearchTools,
   };
 

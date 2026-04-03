@@ -438,7 +438,41 @@ const hookTools: ToolMeta[] = [
   },
 ];
 
+/** Master tools */
+const masterTools: ToolMeta[] = [
+  {
+    name: 'create_agent',
+    description: 'Create a new sub-agent with a specific role and purpose. Master-only.',
+    keywords: ['agent', 'create', 'spawn', 'new', 'sub-agent', 'delegate', 'specialist'],
+    category: 'master',
+  },
+  {
+    name: 'delete_agent',
+    description: 'Delete a sub-agent. Optionally preserve its memory. Master-only.',
+    keywords: ['agent', 'delete', 'remove', 'archive', 'cleanup'],
+    category: 'master',
+  },
+  {
+    name: 'assign_task',
+    description: 'Create a task and assign it to a sub-agent, triggering execution. Master-only.',
+    keywords: ['task', 'assign', 'delegate', 'work', 'agent', 'trigger', 'execute'],
+    category: 'master',
+  },
+  {
+    name: 'get_agent_status',
+    description: 'Check a sub-agent\'s status: recent activity and pending tasks. Master-only.',
+    keywords: ['agent', 'status', 'check', 'activity', 'progress', 'monitor'],
+    category: 'master',
+  },
+  {
+    name: 'find_agent',
+    description: 'Search for agents by role or name. Available to all agents.',
+    keywords: ['agent', 'find', 'search', 'lookup', 'role', 'name', 'discover'],
+    category: 'master',
+  },
+];
+
 // Register all tools
-for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools, ...webTools, ...hookTools]) {
+for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools, ...webTools, ...hookTools, ...masterTools]) {
   toolRegistry.register(meta);
 }

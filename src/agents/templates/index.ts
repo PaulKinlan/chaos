@@ -11,6 +11,7 @@ import { coderTemplate } from './coder.js';
 import { writerTemplate } from './writer.js';
 import { plannerTemplate } from './planner.js';
 import { reviewerTemplate } from './reviewer.js';
+import { masterTemplate } from './master.js';
 
 export type TemplateFunction = (agentName: string) => string;
 
@@ -21,6 +22,7 @@ export const templates: Record<string, TemplateFunction> = {
   writer: writerTemplate,
   planner: plannerTemplate,
   reviewer: reviewerTemplate,
+  master: masterTemplate,
 };
 
 /** Get a template function by role name. Falls back to neutral. */

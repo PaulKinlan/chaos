@@ -129,8 +129,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     try {
       const agents = await listAgents();
       if (agents.length === 0) {
-        const agent = await createAgent('Assistant', 'neutral');
-        console.log('Created default agent:', agent.id);
+        const agent = await createAgent('Assistant', 'master');
+        await updateAgentMeta(agent.id, { master: true, visibility: 'visible' });
+        console.log('Created default master agent:', agent.id);
         // Set up the daily review for the default agent
         const alarmName = `${agent.id}:daily-review`;
         chrome.alarms.create(alarmName, {
@@ -1087,7 +1088,29 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const tasks = await getScheduledTasks();
     const task = tasks.find((t) => t.alarmId === alarm.name);
 
-    if (task) {
+    if (alarm.name.startsWith('agentic:')) {
+      // Master-assigned task trigger: agentic:{agentId}:{taskId}
+      const parts = alarm.name.split(':');
+      const agentId = parts[1];
+      const taskId = parts.slice(2).join(':');
+      console.log(`Master-assigned task alarm: agent=${agentId}, task=${taskId}`);
+
+      // Look up the task to get its prompt
+      const { getTaskState: getSharedTaskState } = await import('./storage/shared.js');
+      const sharedTasks = await getSharedTaskState();
+      const assignedTask = sharedTasks.find((t) => t.id === taskId);
+      const prompt = assignedTask?.description || 'You have been assigned a task. Check the shared task board for details.';
+
+      startKeepalive();
+      try {
+        await runAgenticLoop({
+          agentId,
+          task: prompt,
+        });
+      } finally {
+        stopKeepalive();
+      }
+    } else if (task) {
       // Run a full agentic loop with the stored prompt (multi-step autonomous)
       const result = await runAgenticLoop({
         agentId: task.agentId,

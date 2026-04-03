@@ -291,6 +291,22 @@
       text-transform: uppercase;
     }
 
+    .agent-tab.master {
+      border-bottom-color: oklch(60% 0.15 70 / 0.4);
+    }
+
+    .agent-tab.master.active {
+      border-bottom-color: oklch(65% 0.15 70);
+    }
+
+    .master-icon {
+      display: inline-flex;
+      align-items: center;
+      color: oklch(65% 0.15 70);
+      margin-right: 2px;
+      flex-shrink: 0;
+    }
+
     .agent-tab-add {
       display: flex;
       align-items: center;
@@ -2301,6 +2317,9 @@
             <h2>Tasks</h2>
           </div>
           <div class="filter-bar" id="tasks-filter-bar">
+            <select id="tasks-filter-agent">
+              <option value="">All agents</option>
+            </select>
             <select id="tasks-filter-status">
               <option value="">All statuses</option>
               <option value="pending">Pending</option>
@@ -2328,6 +2347,9 @@
           </div>
           <p style="font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--sp-4); line-height: 1.5;">Inter-agent communication. Messages sent between your agents appear here. Agents can message each other directly or broadcast to all visible agents.</p>
           <div class="filter-bar" id="messages-filter-bar">
+            <select id="messages-filter-agent">
+              <option value="">All agents</option>
+            </select>
             <input type="text" id="messages-search" placeholder="Search messages...">
           </div>
           <div class="message-list" id="message-list"></div>
@@ -2346,6 +2368,11 @@
         <div class="view-padded">
           <div class="section-header">
             <h2>Artifacts</h2>
+          </div>
+          <div class="filter-bar" id="artifacts-filter-bar">
+            <select id="artifacts-filter-agent">
+              <option value="">All agents</option>
+            </select>
           </div>
           <div class="artifact-grid" id="artifact-grid"></div>
           <div class="empty-state" id="artifacts-empty" style="display:none;">

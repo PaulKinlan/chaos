@@ -227,15 +227,23 @@ function renderAgentTabs(): void {
 
   for (const agent of agents) {
     const tab = document.createElement('button');
-    tab.className = 'agent-tab' + (agent.id === activeAgentId ? ' active' : '');
+    tab.className = 'agent-tab' + (agent.id === activeAgentId ? ' active' : '') + (agent.master ? ' master' : '');
     tab.dataset.agentId = agent.id;
+
+    // Master agent gets a star icon
+    if (agent.master) {
+      const starIcon = document.createElement('span');
+      starIcon.className = 'master-icon';
+      starIcon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+      tab.appendChild(starIcon);
+    }
 
     const nameSpan = document.createElement('span');
     nameSpan.textContent = agent.name;
 
     const roleBadge = document.createElement('span');
     roleBadge.className = `role-badge ${roleBadgeClass(agent.role)}`;
-    roleBadge.textContent = agent.role;
+    roleBadge.textContent = agent.master ? 'master' : agent.role;
 
     tab.appendChild(nameSpan);
     tab.appendChild(roleBadge);
@@ -1586,6 +1594,24 @@ function renderMentionBadges(text: string): string {
   );
 }
 
+// ── Agent filter helper (shared views) ──
+
+function populateAgentFilter(selectId: string): string {
+  const select = document.getElementById(selectId) as HTMLSelectElement;
+  if (!select) return '';
+  const current = select.value;
+  // Keep first "All agents" option, rebuild the rest
+  select.innerHTML = '<option value="">All agents</option>';
+  for (const agent of agents) {
+    const opt = document.createElement('option');
+    opt.value = agent.id;
+    opt.textContent = agent.name + (agent.master ? ' \u2605' : '');
+    select.appendChild(opt);
+  }
+  select.value = current; // restore selection
+  return select.value;
+}
+
 // ══════════════════════════════════════════
 // ── Tasks View
 // ══════════════════════════════════════════
@@ -1611,12 +1637,19 @@ function renderTasks(): void {
   const container = document.getElementById('tasks-unified-content')!;
   const empty = document.getElementById('tasks-empty')!;
 
-  // Filter scheduled tasks to active agent
-  const agentScheduled = scheduledTasks.filter((t) => t.agentId === activeAgentId);
+  // Populate and read agent filter
+  const filterAgentId = populateAgentFilter('tasks-filter-agent');
 
-  // Filter collaborative tasks to active agent
+  // Filter scheduled tasks - show all or filtered by agent
+  const agentScheduled = filterAgentId
+    ? scheduledTasks.filter((t) => t.agentId === filterAgentId)
+    : scheduledTasks;
+
+  // Filter collaborative tasks - show all or filtered by agent
   const filterStatus = (document.getElementById('tasks-filter-status') as HTMLSelectElement).value;
-  let agentCollab = tasks.filter((t) => t.owner === activeAgentId);
+  let agentCollab = filterAgentId
+    ? tasks.filter((t) => t.owner === filterAgentId)
+    : tasks;
   if (filterStatus) {
     agentCollab = agentCollab.filter((t) => t.status === filterStatus);
   }
@@ -1704,6 +1737,7 @@ function renderTasks(): void {
       <thead>
         <tr>
           <th>Subject</th>
+          <th>Agent</th>
           <th>Status</th>
           <th>Dependencies</th>
           <th>Created</th>
@@ -1714,6 +1748,7 @@ function renderTasks(): void {
     html += agentCollab.map((t) => `
       <tr class="clickable" data-task-id="${escapeHtml(t.id)}">
         <td>${escapeHtml(t.subject)}</td>
+        <td>${t.owner ? escapeHtml(agentName(t.owner)) : '<span style="color:var(--text-muted)">Unassigned</span>'}</td>
         <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status.replace('_', ' '))}</span></td>
         <td>${t.blockedBy && t.blockedBy.length > 0 ? t.blockedBy.map((id) => escapeHtml(taskSubject(id))).join(', ') : '<span style="color:var(--text-muted)">None</span>'}</td>
         <td class="col-time">${formatTime(t.createdAt)}</td>
@@ -1835,6 +1870,7 @@ function showTaskDetail(taskId: string): void {
 }
 
 document.getElementById('tasks-filter-status')!.addEventListener('change', renderTasks);
+document.getElementById('tasks-filter-agent')!.addEventListener('change', renderTasks);
 
 document.getElementById('task-detail-close')!.addEventListener('click', () => {
   document.getElementById('task-detail-modal')!.classList.remove('visible');
@@ -1871,17 +1907,22 @@ function renderMessages(): void {
     .toLowerCase()
     .trim();
 
-  // Filter to active agent
-  let filtered = messages.filter((m) => m.from === activeAgentId || m.to === activeAgentId);
+  // Populate and read agent filter
+  const filterAgentId = populateAgentFilter('messages-filter-agent');
+
+  // Filter by agent (show all by default)
+  let filtered = filterAgentId
+    ? messages.filter((m) => m.from === filterAgentId || m.to === filterAgentId)
+    : messages;
   if (searchText) {
     filtered = filtered.filter((m) => m.body.toLowerCase().includes(searchText));
   }
 
   if (filtered.length === 0) {
     list.innerHTML = '';
-    empty.textContent = messages.filter((m) => m.from === activeAgentId || m.to === activeAgentId).length === 0
+    empty.textContent = messages.length === 0
       ? 'No messages yet. This is the inter-agent communication log. When agents are set to "visible" or "open" visibility, they can send messages to each other. You can also ask an agent to message another agent directly.'
-      : 'No messages match the current search.';
+      : 'No messages match the current filters.';
     empty.style.display = '';
     return;
   }
@@ -1909,6 +1950,7 @@ function renderMessages(): void {
 }
 
 document.getElementById('messages-search')!.addEventListener('input', renderMessages);
+document.getElementById('messages-filter-agent')!.addEventListener('change', renderMessages);
 
 // ══════════════════════════════════════════
 // ── Artifacts View
@@ -1931,8 +1973,13 @@ function renderArtifacts(): void {
   const grid = document.getElementById('artifact-grid')!;
   const empty = document.getElementById('artifacts-empty')!;
 
-  // Filter to active agent
-  const filtered = artifacts.filter((a) => a.agentId === activeAgentId);
+  // Populate and read agent filter
+  const filterAgentId = populateAgentFilter('artifacts-filter-agent');
+
+  // Filter by agent (show all by default)
+  const filtered = filterAgentId
+    ? artifacts.filter((a) => a.agentId === filterAgentId)
+    : artifacts;
 
   if (filtered.length === 0) {
     grid.innerHTML = '';
@@ -1950,6 +1997,7 @@ function renderArtifacts(): void {
       <div class="artifact-card-name">${escapeHtml(a.path.split('/').pop() || a.path)}</div>
       <div class="artifact-card-desc">${escapeHtml(a.description)}</div>
       <div class="artifact-card-meta">
+        <span class="artifact-agent-label">${escapeHtml(agentName(a.agentId))}</span>
         <span>${formatTime(a.timestamp)}</span>
       </div>
     </div>
@@ -2009,6 +2057,8 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
 
   modal.classList.add('visible');
 }
+
+document.getElementById('artifacts-filter-agent')!.addEventListener('change', renderArtifacts);
 
 document.getElementById('artifact-detail-close')!.addEventListener('click', () => {
   document.getElementById('artifact-detail-modal')!.classList.remove('visible');
