@@ -2198,6 +2198,135 @@
       display: flex;
     }
 
+    /* ── Refine prompt button ── */
+    .prompt-textarea-wrapper {
+      position: relative;
+    }
+
+    .refine-prompt-btn {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      font-size: var(--text-xs);
+      background: var(--bg-surface);
+      color: var(--accent-text);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all var(--duration-fast) var(--ease-out);
+      z-index: 1;
+    }
+
+    .refine-prompt-btn:hover {
+      background: var(--accent-subtle);
+    }
+
+    .refine-prompt-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .refine-prompt-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .refine-prompt-btn .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--accent);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ── Refine modal ── */
+    .refine-compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--sp-4);
+      margin-bottom: var(--sp-4);
+    }
+
+    .refine-compare label {
+      display: block;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: var(--sp-2);
+    }
+
+    .refine-original-text {
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      padding: var(--sp-3);
+      font-family: var(--font-sans);
+      font-size: var(--text-sm);
+      line-height: 1.5;
+      min-height: 150px;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .refine-result-textarea {
+      width: 100%;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      padding: var(--sp-3);
+      font-family: var(--font-sans);
+      font-size: var(--text-sm);
+      line-height: 1.5;
+      min-height: 150px;
+      max-height: 300px;
+      resize: vertical;
+      outline: none;
+      transition: border-color var(--duration-fast) var(--ease-out);
+    }
+
+    .refine-result-textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .refine-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 150px;
+      color: var(--text-muted);
+      font-size: var(--text-sm);
+      gap: var(--sp-2);
+    }
+
+    .refine-loading .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--accent);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: var(--sp-2);
+      justify-content: flex-end;
+    }
+
     .modal {
       background: var(--bg-raised);
       border: 1px solid var(--border-default);
@@ -2763,7 +2892,13 @@
               <div class="settings-field">
                 <label for="hook-prompt">Prompt</label>
                 <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-2);">Tell the agent what to do when this event fires. Be specific, the agent will execute this as a full task with access to all its tools.</p>
-                <textarea id="hook-prompt" rows="6" placeholder="e.g. Read the bookmarked page content, write a summary to memories/bookmarks/, and update TODO.md if there are any action items." style="width:100%;background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default);border-radius:8px;padding:var(--sp-3);font-family:var(--font-sans);font-size:var(--text-sm);resize:vertical;min-height:100px;max-height:300px;line-height:1.5;outline:none;transition:border-color var(--duration-fast) var(--ease-out);"></textarea>
+                <div class="prompt-textarea-wrapper">
+                  <textarea id="hook-prompt" rows="6" placeholder="e.g. Read the bookmarked page content, write a summary to memories/bookmarks/, and update TODO.md if there are any action items." style="width:100%;background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default);border-radius:8px;padding:var(--sp-3);font-family:var(--font-sans);font-size:var(--text-sm);resize:vertical;min-height:100px;max-height:300px;line-height:1.5;outline:none;transition:border-color var(--duration-fast) var(--ease-out);"></textarea>
+                  <button type="button" class="refine-prompt-btn" id="hook-refine-btn" title="Refine prompt with AI">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M19 15l.75 2.25L22 18l-2.25.75L19 21l-.75-2.25L16 18l2.25-.75L19 15z"/></svg>
+                    Refine
+                  </button>
+                </div>
               </div>
               <div style="display:flex;gap:8px;margin-top:8px;">
                 <button class="btn btn-primary btn-sm" id="hooks-btn-save">Save Hook</button>
@@ -2927,6 +3062,33 @@
         <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
       <div id="task-detail-content"></div>
+    </div>
+  </div>
+
+  <!-- ═══ Refine Prompt Modal ═══ -->
+  <div class="modal-overlay" id="refine-modal">
+    <div class="modal" style="max-width:700px;">
+      <h2>Refine Prompt</h2>
+      <div class="refine-compare" id="refine-compare">
+        <div>
+          <label>Original</label>
+          <div class="refine-original-text" id="refine-original"></div>
+        </div>
+        <div>
+          <label>Refined</label>
+          <div id="refine-result-container">
+            <div class="refine-loading" id="refine-loading">
+              <span class="spinner"></span>
+              Refining prompt...
+            </div>
+            <textarea class="refine-result-textarea" id="refine-result" rows="10" style="display:none;"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="refine-reject">Keep Original</button>
+        <button class="btn btn-primary" id="refine-accept" disabled>Use Refined</button>
+      </div>
     </div>
   </div>
 

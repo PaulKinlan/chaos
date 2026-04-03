@@ -3765,6 +3765,80 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
 });
 
 // ══════════════════════════════════════════
+// ── Refine Prompt
+// ══════════════════════════════════════════
+
+// State: which textarea triggered the refine
+let refineTargetTextarea: HTMLTextAreaElement | null = null;
+
+const refineModal = document.getElementById('refine-modal')!;
+const refineOriginal = document.getElementById('refine-original')!;
+const refineResult = document.getElementById('refine-result') as HTMLTextAreaElement;
+const refineLoading = document.getElementById('refine-loading')!;
+const refineAcceptBtn = document.getElementById('refine-accept') as HTMLButtonElement;
+const refineRejectBtn = document.getElementById('refine-reject') as HTMLButtonElement;
+
+function openRefineModal(textarea: HTMLTextAreaElement, context: string): void {
+  const prompt = textarea.value.trim();
+  if (!prompt) return;
+
+  refineTargetTextarea = textarea;
+  refineOriginal.textContent = prompt;
+  refineResult.value = '';
+  refineResult.style.display = 'none';
+  refineLoading.style.display = 'flex';
+  refineAcceptBtn.disabled = true;
+  refineModal.classList.add('visible');
+
+  // Send to background for refinement
+  sendMsg<{ refined?: string; error?: string }>({ type: 'refinePrompt', prompt, context })
+    .then((resp) => {
+      refineLoading.style.display = 'none';
+      if (resp.refined) {
+        refineResult.value = resp.refined;
+        refineResult.style.display = '';
+        refineAcceptBtn.disabled = false;
+      } else {
+        refineResult.value = '(Failed to refine prompt)';
+        refineResult.style.display = '';
+      }
+    })
+    .catch(() => {
+      refineLoading.style.display = 'none';
+      refineResult.value = '(Error refining prompt. Check your API key settings.)';
+      refineResult.style.display = '';
+    });
+}
+
+function closeRefineModal(): void {
+  refineModal.classList.remove('visible');
+  refineTargetTextarea = null;
+}
+
+refineAcceptBtn.addEventListener('click', () => {
+  if (refineTargetTextarea && refineResult.value) {
+    refineTargetTextarea.value = refineResult.value;
+  }
+  closeRefineModal();
+});
+
+refineRejectBtn.addEventListener('click', () => {
+  closeRefineModal();
+});
+
+// Close on overlay click
+refineModal.addEventListener('click', (e) => {
+  if (e.target === refineModal) closeRefineModal();
+});
+
+// Hook prompt refine button
+document.getElementById('hook-refine-btn')!.addEventListener('click', () => {
+  const textarea = document.getElementById('hook-prompt') as HTMLTextAreaElement;
+  const triggerType = (document.getElementById('hook-trigger-type') as HTMLSelectElement).value;
+  openRefineModal(textarea, `Hook prompt for a "${triggerType}" trigger`);
+});
+
+// ══════════════════════════════════════════
 // ── Initial load
 // ══════════════════════════════════════════
 
