@@ -918,10 +918,12 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
 
 // ── Column management ──
 
-function addColumn(agentId: string): ChatColumn {
-  // Don't add duplicate columns for same agent
-  const existing = getColumnForAgent(agentId);
-  if (existing) return existing;
+function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
+  // By default, reuse existing column for same agent (e.g. on restore)
+  if (!allowDuplicate) {
+    const existing = getColumnForAgent(agentId);
+    if (existing) return existing;
+  }
 
   const colId = `col-${agentId}-${Date.now()}`;
 
@@ -1128,36 +1130,20 @@ function showColumnAddPicker(e: MouseEvent): void {
   const shownAgentIds = new Set(columns.map((c) => c.agentId));
   const available = agents.filter((a) => !shownAgentIds.has(a.id));
 
-  if (available.length === 0) {
-    // All agents already have columns - offer to create a new one
-    columnAddPicker.innerHTML = '';
-    const createBtn = document.createElement('button');
-    createBtn.innerHTML = '<span>+ Create new agent</span>';
-    createBtn.addEventListener('click', () => {
-      columnAddPicker.classList.remove('visible');
-      document.getElementById('btn-create-agent')?.click();
-    });
-    columnAddPicker.appendChild(createBtn);
+  columnAddPicker.innerHTML = '';
 
-    columnAddPicker.style.left = `${e.clientX - 100}px`;
-    columnAddPicker.style.top = `${e.clientY - 10}px`;
-    columnAddPicker.classList.add('visible');
-    const close = (ev: MouseEvent) => {
-      if (!columnAddPicker.contains(ev.target as Node)) {
-        columnAddPicker.classList.remove('visible');
-        document.removeEventListener('mousedown', close);
-      }
-    };
-    setTimeout(() => document.addEventListener('mousedown', close), 0);
+  // If only one agent, skip the picker and create immediately
+  if (agents.length === 1) {
+    addColumn(agents[0].id, true);
     return;
   }
 
-  columnAddPicker.innerHTML = '';
-  for (const agent of available) {
+  // Show all agents - multiple columns per agent are allowed
+  for (const agent of agents) {
     const btn = document.createElement('button');
     btn.innerHTML = `<span>${escapeHtml(agent.name)}</span><span class="picker-role">${escapeHtml(agent.master ? 'master' : agent.role)}</span>`;
     btn.addEventListener('click', () => {
-      addColumn(agent.id);
+      addColumn(agent.id, true);
       columnAddPicker.classList.remove('visible');
     });
     columnAddPicker.appendChild(btn);
