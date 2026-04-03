@@ -82,12 +82,19 @@ export async function removeScheduledTask(alarmId: string): Promise<void> {
   await setScheduledTasks(tasks.filter((t) => t.alarmId !== alarmId));
 }
 
-export async function updateScheduledTaskRun(alarmId: string, result: string): Promise<void> {
+export async function updateScheduledTaskRun(alarmId: string, result: string, durationMs?: number): Promise<void> {
   const tasks = await getScheduledTasks();
   const task = tasks.find((t) => t.alarmId === alarmId);
   if (task) {
-    task.lastRunAt = new Date().toISOString();
+    const now = new Date().toISOString();
+    task.lastRunAt = now;
     task.lastResult = result.slice(0, 500);
+    // Append to run history (keep last 10)
+    if (!task.runHistory) task.runHistory = [];
+    task.runHistory.push({ timestamp: now, result, durationMs });
+    if (task.runHistory.length > 10) {
+      task.runHistory = task.runHistory.slice(-10);
+    }
     await setScheduledTasks(tasks);
   }
 }

@@ -1594,15 +1594,28 @@ function renderTasks(): void {
       const scheduleLabel = t.schedule.type === 'recurring'
         ? `Every ${t.schedule.periodInMinutes && t.schedule.periodInMinutes >= 60 ? Math.round(t.schedule.periodInMinutes / 60) + ' hours' : (t.schedule.periodInMinutes || '?') + ' min'}`
         : 'One-shot';
+      const runHistoryHtml = (t.runHistory && t.runHistory.length > 0)
+        ? `<div class="task-run-history" style="display:none;margin-top:8px;border-top:1px solid var(--border-subtle);padding-top:8px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">Run History (${t.runHistory.length})</div>
+            ${t.runHistory.slice().reverse().map((run) => `
+              <div style="margin-bottom:12px;padding:8px;background:var(--bg-surface);border-radius:6px;border:1px solid var(--border-subtle);">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${formatTimeFull(run.timestamp)}${run.durationMs ? ` (${Math.round(run.durationMs / 1000)}s)` : ''}</div>
+                <div class="task-run-result" style="font-size:13px;color:var(--text-primary);line-height:1.5;white-space:pre-wrap;word-break:break-word;">${escapeHtml(run.result)}</div>
+              </div>
+            `).join('')}
+          </div>`
+        : '';
+
       return `
       <div class="scheduled-task-item" data-alarm-id="${escapeHtml(t.alarmId)}">
         <div class="scheduled-task-info">
           <div class="task-desc">${escapeHtml(t.description)}</div>
-          <div class="task-schedule-badge"><span class="badge badge-info">${escapeHtml(scheduleLabel)}</span> <span class="badge badge-active">Active</span></div>
+          <div class="task-schedule-badge"><span class="badge badge-info">${escapeHtml(scheduleLabel)}</span> <span class="badge badge-active">Active</span>${t.runHistory?.length ? ` <span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);">${t.runHistory.length} runs</span>` : ''}</div>
           <div class="task-prompt">${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
-          ${t.lastRunAt ? `<div class="task-last-run">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) + (t.lastResult.length > 80 ? '...' : '') : ''}</div>` : ''}
+          ${t.lastRunAt ? `<div class="task-last-run" style="cursor:pointer;" data-toggle-history="true">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) + (t.lastResult.length > 80 ? '...' : '') : ''} <span style="color:var(--accent-text);font-size:11px;">▼ show details</span></div>` : '<div style="font-size:12px;color:var(--text-muted);">Not run yet</div>'}
+          ${runHistoryHtml}
         </div>
-        <div style="display:flex;gap:4px;">
+        <div style="display:flex;gap:4px;flex-shrink:0;">
           <button class="btn btn-ghost btn-sm" data-run-task="${escapeHtml(t.alarmId)}">Run Now</button>
           <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}">Cancel</button>
         </div>
@@ -1658,10 +1671,23 @@ function renderTasks(): void {
     });
   });
 
-  // Wire up click-to-expand for scheduled tasks
+  // Wire up click-to-expand and history toggle for scheduled tasks
   container.querySelectorAll<HTMLDivElement>('.scheduled-task-item').forEach((item) => {
+    // Toggle run history on "show details" click
+    const historyToggle = item.querySelector('[data-toggle-history]');
+    const historyPanel = item.querySelector('.task-run-history') as HTMLDivElement | null;
+    if (historyToggle && historyPanel) {
+      historyToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = historyPanel.style.display !== 'none';
+        historyPanel.style.display = isVisible ? 'none' : 'block';
+        const arrow = historyToggle.querySelector('span');
+        if (arrow) arrow.textContent = isVisible ? '▼ show details' : '▲ hide details';
+      });
+    }
+
     item.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('[data-cancel-task]') || (e.target as HTMLElement).closest('[data-run-task]')) return;
+      if ((e.target as HTMLElement).closest('[data-cancel-task]') || (e.target as HTMLElement).closest('[data-run-task]') || (e.target as HTMLElement).closest('[data-toggle-history]')) return;
       item.classList.toggle('expanded');
     });
 

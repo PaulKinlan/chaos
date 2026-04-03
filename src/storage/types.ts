@@ -123,6 +123,12 @@ export interface Embedding {
 
 // ── Scheduled tasks (alarm-driven agent work) ──
 
+export interface ScheduledTaskRun {
+  timestamp: string;      // ISO timestamp
+  result: string;         // Full result text
+  durationMs?: number;    // How long the run took
+}
+
 export interface ScheduledTask {
   alarmId: string;        // Chrome alarm name (namespaced: agentId:taskName)
   agentId: string;
@@ -131,6 +137,7 @@ export interface ScheduledTask {
   createdAt: string;      // ISO timestamp
   lastRunAt?: string;     // ISO timestamp of last execution
   lastResult?: string;    // Summary of last execution result
+  runHistory?: ScheduledTaskRun[]; // Recent run results (last 10)
   schedule: {
     type: 'once' | 'recurring';
     delayInMinutes?: number;    // For one-shot
