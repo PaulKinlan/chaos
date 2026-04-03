@@ -530,6 +530,15 @@ const columnAddPicker = document.getElementById('column-add-picker') as HTMLDivE
 let focusedColumnId: string | null = null;
 
 function getColumnForAgent(agentId: string): ChatColumn | undefined {
+  // Prefer the focused column if it matches the agent
+  if (focusedColumnId) {
+    const focused = columns.find((c) => c.id === focusedColumnId && c.agentId === agentId);
+    if (focused) return focused;
+  }
+  // Prefer a column that's currently streaming (active task)
+  const streaming = columns.find((c) => c.agentId === agentId && c.isStreaming);
+  if (streaming) return streaming;
+  // Fall back to first match
   return columns.find((c) => c.agentId === agentId);
 }
 
@@ -1815,11 +1824,15 @@ chrome.runtime.onMessage.addListener((msg) => {
       ? `[Context menu hook]\n\nUser-provided content: ${content}\n\nInstructions: ${hookPrompt}`
       : `The user sent you this content via context menu:\n\n${content}`;
 
+    // Mark this column as the active target for this agent's responses
+    focusedColumnId = col.id;
+
     // Send the agentic chat message through the port
     sendPortMessage({
       type: 'agenticChat',
       agentId,
       message: task,
+      columnId: col.id,
     });
   }
 });

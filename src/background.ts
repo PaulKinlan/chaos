@@ -124,6 +124,25 @@ async function registerContentExtractor(): Promise<void> {
   }
 }
 
+// ── Extension icon click → open app.html ──
+
+chrome.action.onClicked.addListener(async () => {
+  await openOrFocusChaosTab();
+});
+
+async function openOrFocusChaosTab(): Promise<chrome.tabs.Tab> {
+  const url = chrome.runtime.getURL('app.html');
+  const existing = await chrome.tabs.query({ url });
+  if (existing.length > 0 && existing[0].id) {
+    await chrome.tabs.update(existing[0].id, { active: true });
+    if (existing[0].windowId) {
+      await chrome.windows.update(existing[0].windowId, { focused: true });
+    }
+    return existing[0];
+  }
+  return chrome.tabs.create({ url });
+}
+
 // ── Installation ──
 
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -292,11 +311,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     agentId = menuId.replace('chaos-agent-', '');
   }
 
-  // Find or create the NTP tab and send the action there for visible progress
+  // Find or create the CHAOS tab and send the action there for visible progress
   try {
-    const ntpUrl = chrome.runtime.getURL('app.html');
-    const ntpTabs = await chrome.tabs.query({ url: ntpUrl });
-
     const messagePayload = {
       type: 'contextMenuAction',
       agentId,
@@ -304,29 +320,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       hookPrompt,
     };
 
-    if (ntpTabs.length > 0 && ntpTabs[0].id) {
-      // Focus the existing NTP tab
-      await chrome.tabs.update(ntpTabs[0].id, { active: true });
-      if (ntpTabs[0].windowId) {
-        await chrome.windows.update(ntpTabs[0].windowId, { focused: true });
-      }
-      chrome.tabs.sendMessage(ntpTabs[0].id, messagePayload);
-    } else {
-      // Create a new NTP tab and send message once loaded
-      const newTab = await chrome.tabs.create({ url: ntpUrl });
-      if (newTab.id) {
-        const tabId = newTab.id;
-        const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
-          if (updatedTabId === tabId && changeInfo.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            // Small delay to ensure the page script has initialized
-            setTimeout(() => {
-              chrome.tabs.sendMessage(tabId, messagePayload);
-            }, 500);
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-      }
+    const chaosTab = await openOrFocusChaosTab();
+    if (chaosTab.id) {
+      // Small delay to let the tab load if newly created
+      setTimeout(() => {
+        chrome.tabs.sendMessage(chaosTab.id!, messagePayload);
+      }, chaosTab.status === 'complete' ? 0 : 1000);
     }
   } catch (err) {
     console.error('Failed to open NTP for context menu action:', err);
@@ -1102,17 +1101,7 @@ async function handleOneShotMessage(
     }
 
     case 'openDashboard': {
-      const url = chrome.runtime.getURL('app.html');
-      // Check if a new tab page is already open and focus it
-      const existingTabs = await chrome.tabs.query({ url });
-      if (existingTabs.length > 0 && existingTabs[0].id) {
-        await chrome.tabs.update(existingTabs[0].id, { active: true });
-        if (existingTabs[0].windowId) {
-          await chrome.windows.update(existingTabs[0].windowId, { focused: true });
-        }
-        return { opened: true, focused: true };
-      }
-      await chrome.tabs.create({ url });
+      await openOrFocusChaosTab();
       return { opened: true };
     }
 

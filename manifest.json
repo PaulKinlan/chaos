@@ -28,14 +28,17 @@
     "service_worker": "src/background.ts",
     "type": "module"
   },
-  "chrome_url_overrides": {
-    "newtab": "app.html"
-  },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "CHAOS"
+    "default_title": "Open CHAOS"
   },
   "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+C",
+        "mac": "Command+Shift+C"
+      },
+      "description": "Open CHAOS agent manager"
+    },
     "activate-voice": {
       "suggested_key": {
         "default": "Ctrl+Shift+U",
