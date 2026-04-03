@@ -693,15 +693,17 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       if (progressType === 'thinking') {
         // Stream text deltas into a live-updating element
         if (!col.currentStreamEl) {
-          // Create a new streaming element for this step
-          const stepHeader = document.createElement('div');
-          stepHeader.style.cssText = 'font-size:11px;color:var(--accent-text);padding:4px 16px;font-weight:600;max-width:none;width:fit-content;margin-top:8px;';
-          stepHeader.textContent = `Step ${iteration} of ${totalIterations}`;
-          col.messagesEl.appendChild(stepHeader);
+          // Create a step divider
+          const stepDivider = document.createElement('div');
+          stepDivider.className = 'step-divider';
+          const stepText = document.createElement('span');
+          stepText.className = 'step-divider-text';
+          stepText.textContent = `Step ${iteration} of ${totalIterations}`;
+          stepDivider.appendChild(stepText);
+          col.messagesEl.appendChild(stepDivider);
 
           const streamEl = document.createElement('div');
-          streamEl.className = 'chat-message assistant';
-          streamEl.style.cssText = 'max-width:none;';
+          streamEl.className = 'chat-message assistant thinking-stream active';
           col.messagesEl.appendChild(streamEl);
           col.currentStreamEl = streamEl;
           col.currentStreamContent = '';
@@ -711,6 +713,10 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         renderChatMarkdown(col.currentStreamEl, col.currentStreamContent);
         columnScrollToBottom(col);
       } else if (progressType === 'tool-call') {
+        // Remove active indicator from previous stream element
+        if (col.currentStreamEl) {
+          col.currentStreamEl.classList.remove('active');
+        }
         // Reset streaming element so next text starts fresh after tool calls
         col.currentStreamEl = null;
         col.currentStreamContent = '';
@@ -718,12 +724,22 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         const toolName = msg.toolName as string;
         const toolArgs = msg.toolArgs as Record<string, unknown> | undefined;
         const toolEl = document.createElement('div');
-        toolEl.style.cssText = 'font-size:13px;padding:10px 16px;border-left:3px solid var(--accent);margin:2px 0;background:var(--bg-surface);border-radius:0 8px 8px 0;max-width:none;line-height:1.5;';
-        const argsLines = toolArgs ? Object.entries(toolArgs).map(([k, v]) => {
-          const val = typeof v === 'string' ? (v.length > 80 ? v.slice(0, 80) + '...' : v) : JSON.stringify(v);
-          return `<div style="color:var(--text-secondary);margin-top:2px;"><span style="color:var(--text-muted);">${escapeHtml(k)}:</span> ${escapeHtml(val)}</div>`;
-        }).join('') : '';
-        toolEl.innerHTML = `<div style="color:var(--accent-text);font-weight:600;margin-bottom:2px;">${escapeHtml(toolName)}</div>${argsLines}`;
+        toolEl.className = 'agentic-tool-call';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'agentic-tool-name';
+        nameEl.textContent = toolName;
+        toolEl.appendChild(nameEl);
+
+        if (toolArgs) {
+          for (const [k, v] of Object.entries(toolArgs)) {
+            const val = typeof v === 'string' ? (v.length > 80 ? v.slice(0, 80) + '...' : v) : JSON.stringify(v);
+            const argEl = document.createElement('div');
+            argEl.className = 'agentic-tool-arg';
+            argEl.innerHTML = `<span class="agentic-tool-arg-key">${escapeHtml(k)}:</span> <span class="agentic-tool-arg-val">${escapeHtml(val)}</span>`;
+            toolEl.appendChild(argEl);
+          }
+        }
+
         col.messagesEl.appendChild(toolEl);
         columnScrollToBottom(col);
       } else if (progressType === 'tool-result') {
@@ -735,24 +751,24 @@ function handlePortMessage(msg: Record<string, unknown>): void {
           const hasMore = fullText.length > 120;
 
           const resultEl = document.createElement('div');
-          resultEl.style.cssText = 'font-size:12px;padding:4px 16px 4px 20px;margin:0 0 4px 0;max-width:none;line-height:1.4;';
+          resultEl.className = 'agentic-tool-result';
 
           const previewEl = document.createElement('div');
-          previewEl.style.cssText = 'color:var(--text-muted);cursor:pointer;display:flex;align-items:center;gap:4px;';
-          previewEl.innerHTML = `<span style="color:var(--text-secondary);">→ ${escapeHtml(toolName)}</span> ${escapeHtml(preview)}${hasMore ? '...' : ''}${hasMore ? ' <span style="color:var(--accent-text);font-size:11px;">▶ expand</span>' : ''}`;
+          previewEl.className = 'agentic-tool-result-preview';
+          previewEl.innerHTML = `<span class="agentic-tool-result-label">\u2192 ${escapeHtml(toolName)}</span> ${escapeHtml(preview)}${hasMore ? '\u2026' : ''}${hasMore ? ' <span class="agentic-tool-result-toggle">\u25b6 expand</span>' : ''}`;
           resultEl.appendChild(previewEl);
 
           if (hasMore) {
             const fullEl = document.createElement('pre');
-            fullEl.style.cssText = 'display:none;margin-top:4px;padding:8px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;font-size:11px;color:var(--text-primary);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;font-family:monospace;';
+            fullEl.className = 'agentic-tool-result-full';
             fullEl.textContent = fullText;
             resultEl.appendChild(fullEl);
 
             previewEl.addEventListener('click', () => {
-              const isOpen = fullEl.style.display !== 'none';
-              fullEl.style.display = isOpen ? 'none' : 'block';
-              const arrow = previewEl.querySelector('span:last-child');
-              if (arrow) arrow.textContent = isOpen ? '▶ expand' : '▼ collapse';
+              const isOpen = fullEl.classList.contains('expanded');
+              fullEl.classList.toggle('expanded');
+              const toggle = previewEl.querySelector('.agentic-tool-result-toggle');
+              if (toggle) toggle.textContent = isOpen ? '\u25b6 expand' : '\u25bc collapse';
             });
           }
 
@@ -763,6 +779,10 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         // Track for duplicate detection (agenticDone), but don't create
         // a new element since 'thinking' deltas already streamed this text
         col.lastAgenticText = progressContent;
+        // Remove active streaming indicator
+        if (col.currentStreamEl) {
+          col.currentStreamEl.classList.remove('active');
+        }
         // Reset stream element for next step
         col.currentStreamEl = null;
         col.currentStreamContent = '';
