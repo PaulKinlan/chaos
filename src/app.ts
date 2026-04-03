@@ -40,6 +40,31 @@ let artifacts: ArtifactMeta[] = [];
 let activeAgentId: string | null = null;
 let activeView: string = 'chat';
 
+// ── Hash-based routing ──
+// Format: #agent={id}&view={name} or #settings
+
+function updateHash(): void {
+  if (activeView === 'global-settings') {
+    history.replaceState(null, '', '#settings');
+  } else if (activeAgentId) {
+    history.replaceState(null, '', `#agent=${activeAgentId}&view=${activeView}`);
+  } else {
+    history.replaceState(null, '', '#');
+  }
+}
+
+function parseHash(): { agentId: string | null; view: string } {
+  const hash = location.hash.slice(1);
+  if (hash === 'settings') {
+    return { agentId: null, view: 'global-settings' };
+  }
+  const params = new URLSearchParams(hash);
+  return {
+    agentId: params.get('agent'),
+    view: params.get('view') || 'chat',
+  };
+}
+
 // Tracks a "Run Now" scheduled task so agenticDone can update its record
 let pendingRunNowAlarmId: string | null = null;
 
@@ -235,6 +260,7 @@ function switchToAgent(agentId: string): void {
   saveChatConversation();
 
   activeAgentId = agentId;
+  updateHash();
 
   // Update tab highlights
   agentTabsScroll.querySelectorAll('.agent-tab').forEach((tab) => {
@@ -316,6 +342,7 @@ sidebarItems.forEach((btn) => {
     }
 
     activeView = view;
+    updateHash();
 
     // Update sidebar highlights
     sidebarItems.forEach((b) => b.classList.remove('active'));
@@ -332,6 +359,7 @@ sidebarItems.forEach((btn) => {
 // Global settings button
 document.getElementById('btn-global-settings')!.addEventListener('click', () => {
   activeView = 'global-settings';
+  updateHash();
 
   // Deselect sidebar items
   sidebarItems.forEach((b) => b.classList.remove('active'));
@@ -749,9 +777,27 @@ function handlePortMessage(msg: Record<string, unknown>): void {
   }
 }
 
+let hasRestoredFromHash = false;
+
 function onAgentListReceived(agentList: AgentMeta[]): void {
   agents = agentList;
   renderAgentTabs();
+
+  // On first load, restore state from URL hash
+  if (!hasRestoredFromHash) {
+    hasRestoredFromHash = true;
+    const hashState = parseHash();
+    if (hashState.view === 'global-settings') {
+      activeView = 'global-settings';
+      // Trigger the global settings view
+      document.getElementById('btn-global-settings')!.click();
+      return;
+    }
+    if (hashState.agentId && agents.find((a) => a.id === hashState.agentId)) {
+      activeAgentId = hashState.agentId;
+      activeView = hashState.view;
+    }
+  }
 
   // If we have an active agent, make sure it still exists
   if (activeAgentId && !agents.find((a) => a.id === activeAgentId)) {
@@ -766,11 +812,18 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
   // Re-render tabs with correct active state
   renderAgentTabs();
 
+  // Update sidebar active state to match activeView
+  sidebarItems.forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === activeView);
+  });
+
   // Update view visibility
   if (activeAgentId) {
     updateViewVisibility();
     // Load conversation for the active agent
     sendPortMessage({ type: 'getConversation', agentId: activeAgentId });
+    // Load data for the active view
+    loadCurrentViewData();
   } else {
     updateViewVisibility();
   }
@@ -3004,5 +3057,24 @@ async function init(): Promise<void> {
   port = connectPort();
   sendPortMessage({ type: 'listAgents' });
 }
+
+// Handle browser back/forward
+window.addEventListener('hashchange', () => {
+  const hashState = parseHash();
+  if (hashState.view === 'global-settings') {
+    activeView = 'global-settings';
+    document.getElementById('btn-global-settings')!.click();
+  } else if (hashState.agentId && agents.find((a) => a.id === hashState.agentId)) {
+    if (hashState.agentId !== activeAgentId) {
+      switchToAgent(hashState.agentId);
+    }
+    if (hashState.view !== activeView) {
+      activeView = hashState.view;
+      sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === activeView));
+      updateViewVisibility();
+      loadCurrentViewData();
+    }
+  }
+});
 
 init();
