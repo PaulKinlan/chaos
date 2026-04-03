@@ -33,48 +33,55 @@ export const tabRead = tool({
     }
 
     try {
-      // Try sending message first (content script may already be injected)
-      let response: Record<string, string>;
-      try {
-        response = await chrome.tabs.sendMessage(targetTabId, {
-          type: 'extractContent',
-        });
-      } catch {
-        // Content script not injected yet - inject dynamically
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: targetTabId },
-            files: ['src/content/extractor.ts'],
-          });
-          // Wait for script to initialize
-          await new Promise((r) => setTimeout(r, 300));
-          response = await chrome.tabs.sendMessage(targetTabId, {
-            type: 'extractContent',
-          });
-        } catch (injectErr) {
-          // Last resort: try to get basic info from the tab
-          const tabs = await chrome.tabs.query({});
-          const tab = tabs.find((t) => t.id === targetTabId);
-          return {
-            title: tab?.title ?? '',
-            url: tab?.url ?? '',
-            content: '',
-            excerpt: `Could not read page content: ${injectErr instanceof Error ? injectErr.message : String(injectErr)}. The page may not allow content scripts (e.g. chrome:// pages). Try using fetch_page with the URL instead.`,
-          };
-        }
+      // Use chrome.scripting.executeScript with an inline function
+      // This avoids content script file path issues and works reliably
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: targetTabId },
+        func: () => {
+          // Extract page content directly in the tab context
+          const title = document.title || '';
+          const url = location.href || '';
+
+          // Try to get main content
+          const selectors = ['main', 'article', '[role="main"]', '.post-content', '.entry-content', '.content', '#content'];
+          let contentEl: Element | null = null;
+          for (const sel of selectors) {
+            contentEl = document.querySelector(sel);
+            if (contentEl) break;
+          }
+
+          const rawText = ((contentEl || document.body) as HTMLElement)?.innerText || '';
+          // Truncate to ~8000 chars to avoid huge payloads
+          const content = rawText.slice(0, 8000);
+          const excerpt = rawText.slice(0, 200);
+
+          return { title, url, content, excerpt };
+        },
+      });
+
+      const result = results?.[0]?.result as { title: string; url: string; content: string; excerpt: string } | undefined;
+      if (result) {
+        return result;
       }
+
+      // Fallback to basic tab info
+      const tabs = await chrome.tabs.query({});
+      const tab = tabs.find((t) => t.id === targetTabId);
       return {
-        title: response.title ?? '',
-        url: response.url ?? '',
-        content: response.content ?? '',
-        excerpt: response.excerpt ?? '',
+        title: tab?.title ?? '',
+        url: tab?.url ?? '',
+        content: '',
+        excerpt: 'Could not extract page content. Try using fetch_page with the URL instead.',
       };
     } catch (err) {
+      // Can't inject into this page (chrome://, etc.)
+      const tabs = await chrome.tabs.query({});
+      const tab = tabs.find((t) => t.id === targetTabId);
       return {
-        title: '',
-        url: '',
+        title: tab?.title ?? '',
+        url: tab?.url ?? '',
         content: '',
-        excerpt: `Error: Could not extract content from tab ${targetTabId}: ${err instanceof Error ? err.message : String(err)}. Try using fetch_page with the URL instead.`,
+        excerpt: `Could not read page: ${err instanceof Error ? err.message : String(err)}. Try using fetch_page with the URL instead.`,
       };
     }
   },

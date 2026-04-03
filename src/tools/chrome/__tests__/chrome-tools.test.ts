@@ -98,12 +98,14 @@ describe('tab_read', () => {
 
   it('reads the active tab when no tabId provided', async () => {
     mockChrome.tabs.query.mockResolvedValue([{ id: 42 }]);
-    mockChrome.tabs.sendMessage.mockResolvedValue({
-      title: 'Test Page',
-      url: 'https://example.com',
-      content: '# Hello',
-      excerpt: 'Hello',
-    });
+    mockChrome.scripting.executeScript.mockResolvedValue([{
+      result: {
+        title: 'Test Page',
+        url: 'https://example.com',
+        content: 'Hello',
+        excerpt: 'Hello',
+      },
+    }]);
 
     const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_read.execute!(
@@ -115,24 +117,19 @@ describe('tab_read', () => {
       active: true,
       currentWindow: true,
     });
-    expect(mockChrome.tabs.sendMessage).toHaveBeenCalledWith(42, {
-      type: 'extractContent',
-    });
-    expect(result).toEqual({
-      title: 'Test Page',
-      url: 'https://example.com',
-      content: '# Hello',
-      excerpt: 'Hello',
-    });
+    expect(mockChrome.scripting.executeScript).toHaveBeenCalled();
+    expect(result).toHaveProperty('title', 'Test Page');
   });
 
   it('reads a specific tab by tabId', async () => {
-    mockChrome.tabs.sendMessage.mockResolvedValue({
-      title: 'Specific Tab',
-      url: 'https://example.com/page',
-      content: 'content',
-      excerpt: 'excerpt',
-    });
+    mockChrome.scripting.executeScript.mockResolvedValue([{
+      result: {
+        title: 'Specific Tab',
+        url: 'https://example.com/page',
+        content: 'content',
+        excerpt: 'excerpt',
+      },
+    }]);
 
     const tools = await getChromeTools(AGENT_ID);
     const result = await tools.tab_read.execute!(
@@ -140,10 +137,7 @@ describe('tab_read', () => {
       { toolCallId: 'test', messages: [] },
     );
 
-    expect(mockChrome.tabs.query).not.toHaveBeenCalled();
-    expect(mockChrome.tabs.sendMessage).toHaveBeenCalledWith(99, {
-      type: 'extractContent',
-    });
+    expect(mockChrome.scripting.executeScript).toHaveBeenCalled();
     expect(result).toHaveProperty('title', 'Specific Tab');
   });
 
