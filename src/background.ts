@@ -218,6 +218,29 @@ async function setupContextMenus(): Promise<void> {
       contexts: ['selection', 'page'],
     });
   }
+
+  // Add context-menu hook items
+  const hooks = await getHooks();
+  const contextMenuHooks = hooks.filter(
+    (h) => h.enabled && h.trigger.type === 'context-menu',
+  );
+  if (contextMenuHooks.length > 0) {
+    chrome.contextMenus.create({
+      id: 'chaos-hooks-separator',
+      parentId: 'chaos-parent',
+      type: 'separator',
+      contexts: ['selection', 'page'],
+    });
+    for (const hook of contextMenuHooks) {
+      const trigger = hook.trigger as Extract<import('./storage/types.js').HookTrigger, { type: 'context-menu' }>;
+      chrome.contextMenus.create({
+        id: `chaos-hook-${hook.id}`,
+        parentId: 'chaos-parent',
+        title: trigger.label || hook.description,
+        contexts: ['selection', 'page'],
+      });
+    }
+  }
 }
 
 /** Refresh context menu items when agents change. */
@@ -227,9 +250,10 @@ async function refreshContextMenus(): Promise<void> {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const menuId = String(info.menuItemId);
-  if (!menuId.startsWith('chaos-agent-')) return;
+  const isAgent = menuId.startsWith('chaos-agent-');
+  const isHook = menuId.startsWith('chaos-hook-');
+  if (!isAgent && !isHook) return;
 
-  const agentId = menuId.replace('chaos-agent-', '');
   let content = '';
 
   if (info.selectionText) {
@@ -248,63 +272,64 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   if (!content) return;
 
-  // Get agent name for notifications
-  const agentMeta = await getAgent(agentId).catch(() => null);
-  const agentName = agentMeta?.meta?.name || 'Agent';
+  let agentId: string;
+  let hookPrompt: string | undefined;
 
-  // Show notification that work has started
-  try {
-    const hasNotifs = await chrome.permissions.contains({ permissions: ['notifications'] });
-    if (hasNotifs) {
-      chrome.notifications.create(`chaos-ctx-${Date.now()}`, {
-        type: 'basic',
-        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-        title: `CHAOS: Sent to ${agentName}`,
-        message: content.slice(0, 100) + (content.length > 100 ? '...' : ''),
-      });
-    }
-  } catch {
-    // Notifications not available, continue silently
+  if (isHook) {
+    const hookId = menuId.replace('chaos-hook-', '');
+    const hooks = await getHooks();
+    const hook = hooks.find((h) => h.id === hookId);
+    if (!hook) return;
+    agentId = hook.agentId;
+    hookPrompt = hook.prompt;
+
+    // Update hook trigger stats
+    await updateHook(hook.id, {
+      lastTriggeredAt: new Date().toISOString(),
+      triggerCount: hook.triggerCount + 1,
+    });
+  } else {
+    agentId = menuId.replace('chaos-agent-', '');
   }
 
-  const userMsg = `The user sent you this content via context menu:\n\n${content}`;
-
-  // Run agentic loop with the content (multi-step autonomous)
+  // Find or create the NTP tab and send the action there for visible progress
   try {
-    startKeepalive();
-    const result = await runAgenticLoop({
+    const ntpUrl = chrome.runtime.getURL('app.html');
+    const ntpTabs = await chrome.tabs.query({ url: ntpUrl });
+
+    const messagePayload = {
+      type: 'contextMenuAction',
       agentId,
-      task: userMsg,
-    });
+      content,
+      hookPrompt,
+    };
 
-    // Save to conversation history so it appears in chat
-    const { getConversation: getConv, setConversation: setConv } = await import('./storage/idb.js');
-    const existing = await getConv(agentId).catch(() => null);
-    const messages = existing?.messages || [];
-    messages.push(
-      { role: 'user' as const, content: userMsg, timestamp: new Date().toISOString() },
-      { role: 'assistant' as const, content: result || '(no response)', timestamp: new Date().toISOString() },
-    );
-    await setConv({ id: agentId, agentId, timestamp: new Date().toISOString(), messages });
-
-    // Notify completion
-    try {
-      const hasNotifs = await chrome.permissions.contains({ permissions: ['notifications'] });
-      if (hasNotifs) {
-        chrome.notifications.create(`chaos-ctx-done-${Date.now()}`, {
-          type: 'basic',
-          iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-          title: `CHAOS: ${agentName} finished`,
-          message: (result || '(no response)').slice(0, 100) + ((result?.length || 0) > 100 ? '...' : ''),
-        });
+    if (ntpTabs.length > 0 && ntpTabs[0].id) {
+      // Focus the existing NTP tab
+      await chrome.tabs.update(ntpTabs[0].id, { active: true });
+      if (ntpTabs[0].windowId) {
+        await chrome.windows.update(ntpTabs[0].windowId, { focused: true });
       }
-    } catch {
-      // Notifications not available
+      chrome.tabs.sendMessage(ntpTabs[0].id, messagePayload);
+    } else {
+      // Create a new NTP tab and send message once loaded
+      const newTab = await chrome.tabs.create({ url: ntpUrl });
+      if (newTab.id) {
+        const tabId = newTab.id;
+        const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+          if (updatedTabId === tabId && changeInfo.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            // Small delay to ensure the page script has initialized
+            setTimeout(() => {
+              chrome.tabs.sendMessage(tabId, messagePayload);
+            }, 500);
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      }
     }
   } catch (err) {
-    console.error('Context menu agent loop failed:', err);
-  } finally {
-    stopKeepalive();
+    console.error('Failed to open NTP for context menu action:', err);
   }
 });
 
@@ -875,6 +900,7 @@ async function handleAddHook(
   msg: { hook: import('./storage/types.js').Hook },
 ): Promise<void> {
   await addHook(msg.hook);
+  await refreshContextMenus();
   port.postMessage({ type: 'hookAdded', hook: msg.hook });
 }
 
@@ -883,6 +909,7 @@ async function handleUpdateHookPort(
   msg: { hookId: string; updates: Partial<import('./storage/types.js').Hook> },
 ): Promise<void> {
   await updateHook(msg.hookId, msg.updates);
+  await refreshContextMenus();
   port.postMessage({ type: 'hookUpdated', hookId: msg.hookId });
 }
 
@@ -891,6 +918,7 @@ async function handleRemoveHook(
   msg: { hookId: string },
 ): Promise<void> {
   await removeHook(msg.hookId);
+  await refreshContextMenus();
   port.postMessage({ type: 'hookRemoved', hookId: msg.hookId });
 }
 

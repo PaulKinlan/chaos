@@ -186,4 +186,5 @@ export type HookTrigger =
   | { type: 'reading-list-changed' }
   | { type: 'window-created' }
   | { type: 'window-focused' }
-  | { type: 'window-closed' };
+  | { type: 'window-closed' }
+  | { type: 'context-menu'; label: string };

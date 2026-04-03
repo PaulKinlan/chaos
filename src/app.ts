@@ -1780,10 +1780,47 @@ window.addEventListener('message', (event) => {
   }
 });
 
-// Listen for hotkey toggle message from background
+// Listen for messages from background (hotkeys, context menu actions)
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'toggle-voice-input') {
     toggleVoiceInput();
+  }
+
+  if (msg?.type === 'contextMenuAction') {
+    const { agentId, content, hookPrompt } = msg as {
+      agentId: string;
+      content: string;
+      hookPrompt?: string;
+    };
+
+    // Switch to chat view
+    activeView = 'chat';
+    document.querySelectorAll<HTMLElement>('.sidebar-item').forEach((b) => {
+      b.classList.toggle('active', b.dataset.view === 'chat');
+    });
+    updateViewVisibility();
+
+    // Create a new column for this agent (allow duplicate so it doesn't clobber existing chats)
+    const col = addColumn(agentId, true);
+    if (!col) return;
+
+    // Show a system message about what was sent
+    const preview = content.length > 150 ? content.slice(0, 150) + '...' : content;
+    addChatSystemMessageToColumn(col, hookPrompt
+      ? `Context menu hook triggered. Content: "${preview}"`
+      : `Content received via context menu: "${preview}"`);
+
+    // Build the task message
+    const task = hookPrompt
+      ? `[Context menu hook]\n\nUser-provided content: ${content}\n\nInstructions: ${hookPrompt}`
+      : `The user sent you this content via context menu:\n\n${content}`;
+
+    // Send the agentic chat message through the port
+    sendPortMessage({
+      type: 'agenticChat',
+      agentId,
+      message: task,
+    });
   }
 });
 
@@ -3437,6 +3474,8 @@ function formatTrigger(trigger: HookTrigger): string {
       return 'Browser startup';
     case 'omnibox':
       return `Omnibox keyword: "${trigger.keyword}"`;
+    case 'context-menu':
+      return `Context menu: "${trigger.label}"`;
     default:
       return (trigger as HookTrigger).type;
   }
@@ -3533,6 +3572,13 @@ function updateTriggerFilters(): void {
           <input type="text" id="hook-filter-keyword" placeholder="e.g. summarize">
         </div>`;
       break;
+    case 'context-menu':
+      html = `
+        <div class="settings-field">
+          <label for="hook-filter-label">Menu Item Label</label>
+          <input type="text" id="hook-filter-label" placeholder="e.g. Summarize this page">
+        </div>`;
+      break;
     // tab-created, tab-closed, browser-startup have no filters
   }
 
@@ -3550,6 +3596,9 @@ const HOOK_PRESETS = [
   { label: 'Download organizer', description: 'Log and categorize downloads', trigger: 'download-completed', prompt: 'A file was downloaded. Note the filename and source in memories/downloads.md. If it looks like a document or resource, suggest how to use it.' },
   { label: 'Reading list reviewer', description: 'Review reading list changes', trigger: 'reading-list-changed', prompt: 'The reading list was updated. Check the current reading list items, summarize any new additions, and suggest which to read next based on my interests.' },
   { label: 'Away report', description: 'Generate a report when I return from idle', trigger: 'idle-changed', filter: 'active', prompt: 'The user just returned from being away. Check what tabs are open, review any pending messages from other agents, and provide a quick summary of what might need attention.' },
+  { label: 'Summarize this page', description: 'Summarize page content from context menu', trigger: 'context-menu', filter: 'Summarize this page', prompt: 'Read and summarize the content that was shared with you.' },
+  { label: 'Explain this', description: 'Explain selected text from context menu', trigger: 'context-menu', filter: 'Explain this', prompt: 'Explain the selected text in simple terms.' },
+  { label: 'Save to memory', description: 'Save content to memories from context menu', trigger: 'context-menu', filter: 'Save to memory', prompt: 'Save the shared content to your memories with appropriate categorization.' },
 ];
 
 function renderHookPresets(): void {
@@ -3650,6 +3699,12 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
       const keyword = (document.getElementById('hook-filter-keyword') as HTMLInputElement)?.value.trim() || '';
       if (!keyword) return;
       trigger = { type: 'omnibox', keyword };
+      break;
+    }
+    case 'context-menu': {
+      const label = (document.getElementById('hook-filter-label') as HTMLInputElement)?.value.trim() || '';
+      if (!label) return;
+      trigger = { type: 'context-menu', label };
       break;
     }
     default:
