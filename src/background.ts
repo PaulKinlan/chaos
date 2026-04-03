@@ -473,7 +473,7 @@ async function handleChat(
     pageContext?: { title: string; url: string; content: string };
   },
 ): Promise<void> {
-  port.postMessage({ type: 'chatStart' });
+  port.postMessage({ type: 'chatStart', agentId: msg.agentId });
 
   const abortController = new AbortController();
   activeAbortControllers.set(port, abortController);
@@ -487,7 +487,7 @@ async function handleChat(
       onChunk: (chunk: string) => {
         if (abortController.signal.aborted) return;
         try {
-          port.postMessage({ type: 'chatChunk', chunk });
+          port.postMessage({ type: 'chatChunk', chunk, agentId: msg.agentId });
         } catch {
           // Port disconnected — abort the loop
           abortController.abort();
@@ -496,7 +496,7 @@ async function handleChat(
       onToolCall: (call: { name: string; args: unknown; result: unknown }) => {
         if (abortController.signal.aborted) return;
         try {
-          port.postMessage({ type: 'toolCall', name: call.name, args: call.args, result: call.result });
+          port.postMessage({ type: 'toolCall', name: call.name, args: call.args, result: call.result, agentId: msg.agentId });
         } catch {
           // Port disconnected
           abortController.abort();
@@ -505,7 +505,7 @@ async function handleChat(
     });
 
     if (!abortController.signal.aborted) {
-      port.postMessage({ type: 'chatEnd', fullResponse });
+      port.postMessage({ type: 'chatEnd', fullResponse, agentId: msg.agentId });
     }
   } catch (err) {
     if (!abortController.signal.aborted) {
@@ -514,6 +514,7 @@ async function handleChat(
         type: 'chatError',
         error: parsed.message,
         provider: parsed.provider,
+        agentId: msg.agentId,
         lastMessage: {
           agentId: msg.agentId,
           message: msg.message,
@@ -536,7 +537,7 @@ async function handleAgenticChat(
     maxIterations?: number;
   },
 ): Promise<void> {
-  port.postMessage({ type: 'agenticStart' });
+  port.postMessage({ type: 'agenticStart', agentId: msg.agentId });
 
   const abortController = new AbortController();
   activeAbortControllers.set(port, abortController);
@@ -554,6 +555,7 @@ async function handleAgenticChat(
         try {
           port.postMessage({
             type: 'agenticProgress',
+            agentId: msg.agentId,
             progressType: update.type,
             content: update.content,
             toolName: update.toolName,
@@ -570,7 +572,7 @@ async function handleAgenticChat(
     });
 
     if (!abortController.signal.aborted) {
-      port.postMessage({ type: 'agenticDone', result });
+      port.postMessage({ type: 'agenticDone', result, agentId: msg.agentId });
     }
   } catch (err) {
     if (!abortController.signal.aborted) {
@@ -579,6 +581,7 @@ async function handleAgenticChat(
         type: 'chatError',
         error: parsed.message,
         provider: parsed.provider,
+        agentId: msg.agentId,
         lastMessage: {
           agentId: msg.agentId,
           message: msg.message,

@@ -70,11 +70,7 @@ let pendingRunNowAlarmId: string | null = null;
 
 // Chat state
 let port: chrome.runtime.Port | null = null;
-let isChatStreaming = false;
-let lastAgenticText = '';
-let chatPageContext: { title: string; url: string; content: string } | null = null;
-let currentStreamEl: HTMLDivElement | null = null;
-let currentStreamContent = '';
+// Chat streaming state is now per-column (see ChatColumn interface)
 let reconnectAttempts = 0;
 const MAX_RECONNECT_RETRIES = 3;
 
@@ -85,7 +81,7 @@ interface ConversationEntry {
   pageContext?: { title: string; url: string };
 }
 
-let conversationHistory: ConversationEntry[] = [];
+// Conversation history is now per-column (see ChatColumn interface)
 
 // Context menu state
 let contextMenuAgentId: string | null = null;
@@ -264,9 +260,6 @@ function renderAgentTabs(): void {
 function switchToAgent(agentId: string): void {
   if (activeAgentId === agentId) return;
 
-  // Save current conversation before switching
-  saveChatConversation();
-
   activeAgentId = agentId;
   updateHash();
 
@@ -278,17 +271,16 @@ function switchToAgent(agentId: string): void {
   // Show sidebar (in case we were on no-agent state)
   updateViewVisibility();
 
-  // Reset chat state
-  conversationHistory = [];
-  chatPageContext = null;
-  const chatPageContextBar = document.getElementById('chat-page-context')!;
-  chatPageContextBar.classList.remove('visible');
-  const chatMessagesDiv = document.getElementById('chat-messages')!;
-  chatMessagesDiv.innerHTML = '';
+  // Ensure there's a column for this agent
+  if (!getColumnForAgent(agentId)) {
+    addColumn(agentId);
+  }
 
-  // Load conversation for new agent
-  if (port) {
-    sendPortMessage({ type: 'getConversation', agentId });
+  // Focus the column for this agent
+  const col = getColumnForAgent(agentId);
+  if (col) {
+    focusedColumnId = col.id;
+    col.columnEl.scrollIntoView({ behavior: 'smooth', inline: 'start' });
   }
 
   // Refresh current view data
@@ -498,18 +490,48 @@ document.getElementById('ctx-delete-agent')!.addEventListener('click', () => {
 });
 
 // ══════════════════════════════════════════
-// ── Chat (port-based streaming)
+// ── Multi-column Chat (port-based streaming)
 // ══════════════════════════════════════════
 
-const chatMessagesDiv = document.getElementById('chat-messages') as HTMLDivElement;
-const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
-const chatBtnSend = document.getElementById('chat-btn-send') as HTMLButtonElement;
-const chatBtnClear = document.getElementById('chat-btn-clear') as HTMLButtonElement;
-const chatBtnMic = document.getElementById('chat-btn-mic') as HTMLButtonElement;
-const chatTyping = document.getElementById('chat-typing') as HTMLDivElement;
-const chatPageContextBar = document.getElementById('chat-page-context') as HTMLDivElement;
-const chatPageContextText = document.getElementById('chat-page-context-text') as HTMLSpanElement;
-const chatBtnDismissContext = document.getElementById('chat-btn-dismiss-context') as HTMLSpanElement;
+interface ChatColumn {
+  id: string;
+  agentId: string;
+  messagesEl: HTMLDivElement;
+  inputEl: HTMLTextAreaElement;
+  sendBtn: HTMLButtonElement;
+  clearBtn: HTMLButtonElement;
+  micBtn: HTMLButtonElement;
+  typingEl: HTMLDivElement;
+  columnEl: HTMLDivElement;
+  mentionDropdown: HTMLDivElement;
+  mentionDropdownHeader: HTMLDivElement;
+  mentionDropdownList: HTMLUListElement;
+  conversationHistory: ConversationEntry[];
+  isStreaming: boolean;
+  currentStreamEl: HTMLDivElement | null;
+  currentStreamContent: string;
+  lastAgenticText: string;
+  pageContext: { title: string; url: string; content: string } | null;
+}
+
+let columns: ChatColumn[] = [];
+const columnsContainer = document.getElementById('columns-container') as HTMLDivElement;
+const columnAddPicker = document.getElementById('column-add-picker') as HTMLDivElement;
+
+// Track which column is focused (for mention system, voice input, etc.)
+let focusedColumnId: string | null = null;
+
+function getColumnForAgent(agentId: string): ChatColumn | undefined {
+  return columns.find((c) => c.agentId === agentId);
+}
+
+function getFocusedColumn(): ChatColumn | undefined {
+  if (focusedColumnId) {
+    const col = columns.find((c) => c.id === focusedColumnId);
+    if (col) return col;
+  }
+  return columns[0];
+}
 
 function connectPort(): chrome.runtime.Port {
   const p = chrome.runtime.connect({ name: 'chaos-sidepanel' });
@@ -536,7 +558,8 @@ function connectPort(): chrome.runtime.Port {
       }, delay);
     } else {
       // Only show a message after all retries fail
-      addChatSystemMessage('Connection lost. Please reload the page.');
+      const col = getFocusedColumn();
+      if (col) addChatSystemMessageToColumn(col, 'Connection lost. Please reload the page.');
     }
   });
 
@@ -551,6 +574,9 @@ function sendPortMessage(msg: Record<string, unknown>): void {
 }
 
 function handlePortMessage(msg: Record<string, unknown>): void {
+  // Route chat-related messages to the correct column by agentId
+  const msgAgentId = msg.agentId as string | undefined;
+
   switch (msg.type) {
     case 'agentList':
       onAgentListReceived(msg.agents as AgentMeta[]);
@@ -558,99 +584,121 @@ function handlePortMessage(msg: Record<string, unknown>): void {
 
     case 'agentCreated': {
       const agent = msg.agent as AgentMeta;
-      addChatSystemMessage(`Agent "${agent.name}" created.`);
+      const col = getFocusedColumn();
+      if (col) addChatSystemMessageToColumn(col, `Agent "${agent.name}" created.`);
       createAgentModal.classList.remove('visible');
-      // Refresh agent list and switch to the new agent
       sendPortMessage({ type: 'listAgents' });
-      // We'll switch to the new agent when the list comes back
       activeAgentId = agent.id;
       break;
     }
 
     case 'agentDeleted':
       sendPortMessage({ type: 'listAgents' });
-      addChatSystemMessage('Agent deleted.');
-      break;
-
-    case 'chatStart':
-      isChatStreaming = true;
-      currentStreamContent = '';
-      currentStreamEl = addChatAssistantMessage('');
-      chatTyping.classList.add('visible');
-      chatBtnSend.disabled = true;
-      break;
-
-    case 'chatChunk':
-      if (currentStreamEl) {
-        currentStreamContent += msg.chunk as string;
-        renderChatMarkdown(currentStreamEl, currentStreamContent);
-        chatScrollToBottom();
+      // Remove column for deleted agent
+      if (msgAgentId) {
+        const col = getColumnForAgent(msgAgentId);
+        if (col) removeColumn(col.id);
       }
       break;
 
-    case 'toolCall':
-      addToolCallCard(
-        msg.name as string,
-        msg.args as unknown,
-        msg.result as unknown,
-      );
-      break;
-
-    case 'chatEnd':
-      isChatStreaming = false;
-      chatTyping.classList.remove('visible');
-      chatBtnSend.disabled = false;
-      if (currentStreamEl && msg.fullResponse) {
-        renderChatMarkdown(currentStreamEl, msg.fullResponse as string);
+    case 'chatStart': {
+      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      if (col) {
+        col.isStreaming = true;
+        col.currentStreamContent = '';
+        col.currentStreamEl = addChatAssistantMessageToColumn(col, '');
+        col.typingEl.classList.add('visible');
+        col.sendBtn.disabled = true;
       }
-      if (msg.fullResponse) {
-        conversationHistory.push({
-          role: 'assistant',
-          content: msg.fullResponse as string,
-          timestamp: new Date().toISOString(),
-        });
-        saveChatConversation();
-      }
-      currentStreamEl = null;
-      currentStreamContent = '';
-      chatScrollToBottom();
       break;
+    }
 
-    case 'chatError':
-      isChatStreaming = false;
-      chatTyping.classList.remove('visible');
-      chatBtnSend.disabled = false;
-      if (currentStreamEl) {
-        currentStreamEl.remove();
+    case 'chatChunk': {
+      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      if (col && col.currentStreamEl) {
+        col.currentStreamContent += msg.chunk as string;
+        renderChatMarkdown(col.currentStreamEl, col.currentStreamContent);
+        columnScrollToBottom(col);
       }
-      currentStreamEl = null;
-      currentStreamContent = '';
-      addChatErrorMessage(msg.error as string);
       break;
+    }
 
-    case 'agenticStart':
-      isChatStreaming = true;
-      chatTyping.classList.add('visible');
-      chatBtnSend.disabled = true;
+    case 'toolCall': {
+      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      if (col) {
+        addToolCallCardToColumn(col, msg.name as string, msg.args as unknown, msg.result as unknown);
+      }
       break;
+    }
+
+    case 'chatEnd': {
+      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      if (col) {
+        col.isStreaming = false;
+        col.typingEl.classList.remove('visible');
+        col.sendBtn.disabled = false;
+        if (col.currentStreamEl && msg.fullResponse) {
+          renderChatMarkdown(col.currentStreamEl, msg.fullResponse as string);
+        }
+        if (msg.fullResponse) {
+          col.conversationHistory.push({
+            role: 'assistant',
+            content: msg.fullResponse as string,
+            timestamp: new Date().toISOString(),
+          });
+          saveColumnConversation(col);
+        }
+        col.currentStreamEl = null;
+        col.currentStreamContent = '';
+        columnScrollToBottom(col);
+      }
+      break;
+    }
+
+    case 'chatError': {
+      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      if (col) {
+        col.isStreaming = false;
+        col.typingEl.classList.remove('visible');
+        col.sendBtn.disabled = false;
+        if (col.currentStreamEl) {
+          col.currentStreamEl.remove();
+        }
+        col.currentStreamEl = null;
+        col.currentStreamContent = '';
+        addChatErrorMessageToColumn(col, msg.error as string);
+      }
+      break;
+    }
+
+    case 'agenticStart': {
+      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      if (col) {
+        col.isStreaming = true;
+        col.typingEl.classList.add('visible');
+        col.sendBtn.disabled = true;
+      }
+      break;
+    }
 
     case 'agenticProgress': {
+      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      if (!col) break;
+
       const progressType = msg.progressType as string;
       const iteration = msg.iteration as number;
       const totalIterations = msg.totalIterations as number;
       const progressContent = msg.content as string;
 
       if (progressType === 'thinking') {
-        // Step header - full width, left aligned
         const stepEl = document.createElement('div');
         stepEl.style.cssText = 'font-size:13px;color:var(--accent-text);padding:8px 16px;background:var(--accent-subtle);border-radius:8px;margin:8px 0 4px 0;font-weight:600;max-width:none;width:fit-content;';
         stepEl.textContent = `Step ${iteration} of ${totalIterations}`;
-        chatMessagesDiv.appendChild(stepEl);
-        chatScrollToBottom();
+        col.messagesEl.appendChild(stepEl);
+        columnScrollToBottom(col);
       } else if (progressType === 'tool-call') {
         const toolName = msg.toolName as string;
         const toolArgs = msg.toolArgs as Record<string, unknown> | undefined;
-        // Tool call card - readable size, full width
         const toolEl = document.createElement('div');
         toolEl.style.cssText = 'font-size:13px;padding:10px 16px;border-left:3px solid var(--accent);margin:2px 0;background:var(--bg-surface);border-radius:0 8px 8px 0;max-width:none;line-height:1.5;';
         const argsLines = toolArgs ? Object.entries(toolArgs).map(([k, v]) => {
@@ -658,61 +706,60 @@ function handlePortMessage(msg: Record<string, unknown>): void {
           return `<div style="color:var(--text-secondary);margin-top:2px;"><span style="color:var(--text-muted);">${escapeHtml(k)}:</span> ${escapeHtml(val)}</div>`;
         }).join('') : '';
         toolEl.innerHTML = `<div style="color:var(--accent-text);font-weight:600;margin-bottom:2px;">${escapeHtml(toolName)}</div>${argsLines}`;
-        chatMessagesDiv.appendChild(toolEl);
-        chatScrollToBottom();
+        col.messagesEl.appendChild(toolEl);
+        columnScrollToBottom(col);
       } else if (progressType === 'tool-result') {
-        // Brief result indicator
         const resultContent = msg.toolResult as string | Record<string, unknown> | undefined;
         if (resultContent) {
           const resultEl = document.createElement('div');
           resultEl.style.cssText = 'font-size:12px;color:var(--text-muted);padding:4px 16px 4px 20px;margin:0 0 4px 0;max-width:none;line-height:1.4;';
           const preview = typeof resultContent === 'string' ? resultContent.slice(0, 150) : JSON.stringify(resultContent).slice(0, 150);
-          resultEl.textContent = `→ ${preview}${(typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent)).length > 150 ? '...' : ''}`;
-          chatMessagesDiv.appendChild(resultEl);
-          chatScrollToBottom();
+          resultEl.textContent = `-> ${preview}${(typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent)).length > 150 ? '...' : ''}`;
+          col.messagesEl.appendChild(resultEl);
+          columnScrollToBottom(col);
         }
       } else if (progressType === 'text' && progressContent) {
-        // Track last intermediate text to avoid duplicate on agenticDone
-        lastAgenticText = progressContent;
-        // Show intermediate text as a regular assistant message
+        col.lastAgenticText = progressContent;
         const textEl = document.createElement('div');
         textEl.className = 'chat-message assistant';
         textEl.dataset.agenticIntermediate = 'true';
         renderChatMarkdown(textEl, progressContent);
-        chatMessagesDiv.appendChild(textEl);
-        chatScrollToBottom();
+        col.messagesEl.appendChild(textEl);
+        columnScrollToBottom(col);
       } else if (progressType === 'step-complete') {
         // Subtle separator
       } else if (progressType === 'error') {
-        addChatErrorMessage(progressContent);
+        addChatErrorMessageToColumn(col, progressContent);
       }
       break;
     }
 
-    case 'agenticDone':
-      isChatStreaming = false;
-      chatTyping.classList.remove('visible');
-      chatBtnSend.disabled = false;
-      // Only add final result if it's different from the last intermediate text
-      if (msg.result && (msg.result as string) !== lastAgenticText) {
-        const finalEl = document.createElement('div');
-        finalEl.className = 'chat-message assistant';
-        renderChatMarkdown(finalEl, msg.result as string);
-        chatMessagesDiv.appendChild(finalEl);
-        chatScrollToBottom();
+    case 'agenticDone': {
+      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      if (col) {
+        col.isStreaming = false;
+        col.typingEl.classList.remove('visible');
+        col.sendBtn.disabled = false;
+        if (msg.result && (msg.result as string) !== col.lastAgenticText) {
+          const finalEl = document.createElement('div');
+          finalEl.className = 'chat-message assistant';
+          renderChatMarkdown(finalEl, msg.result as string);
+          col.messagesEl.appendChild(finalEl);
+          columnScrollToBottom(col);
+        }
+        col.lastAgenticText = '';
+        if (msg.result) {
+          col.conversationHistory.push({
+            role: 'assistant',
+            content: msg.result as string,
+            timestamp: new Date().toISOString(),
+          });
+          saveColumnConversation(col);
+        }
+        col.currentStreamEl = null;
+        col.currentStreamContent = '';
+        columnScrollToBottom(col);
       }
-      lastAgenticText = '';
-      if (msg.result) {
-        conversationHistory.push({
-          role: 'assistant',
-          content: msg.result as string,
-          timestamp: new Date().toISOString(),
-        });
-        saveChatConversation();
-      }
-      currentStreamEl = null;
-      currentStreamContent = '';
-      chatScrollToBottom();
 
       // If this was a "Run Now" scheduled task, update its run record
       if (pendingRunNowAlarmId) {
@@ -723,38 +770,45 @@ function handlePortMessage(msg: Record<string, unknown>): void {
           .catch(() => {});
       }
       break;
+    }
 
-    case 'extractedContent':
-      if (msg.content) {
+    case 'extractedContent': {
+      const col = getFocusedColumn();
+      if (msg.content && col) {
         const content = msg.content as { title: string; url: string; content: string };
-        chatPageContext = content;
-        chatPageContextText.textContent = `Page loaded: ${content.title}`;
-        chatPageContextBar.classList.add('visible');
-        addChatSystemMessage(`Page content loaded: "${content.title}"`);
-      } else {
-        addChatSystemMessage(`Could not extract page content: ${msg.error || 'unknown error'}`);
+        col.pageContext = content;
+        addChatSystemMessageToColumn(col, `Page content loaded: "${content.title}"`);
+      } else if (col) {
+        addChatSystemMessageToColumn(col, `Could not extract page content: ${msg.error || 'unknown error'}`);
       }
       break;
+    }
 
     case 'apiKeys':
       // handled by settings
       break;
 
-    case 'apiKeysSaved':
-      addChatSystemMessage('Settings saved.');
+    case 'apiKeysSaved': {
+      const col = getFocusedColumn();
+      if (col) addChatSystemMessageToColumn(col, 'Settings saved.');
       break;
+    }
 
     case 'conversationLoaded': {
-      const loadedMessages = msg.messages as ConversationEntry[];
-      conversationHistory = loadedMessages;
-      chatMessagesDiv.innerHTML = '';
-      for (const entry of loadedMessages) {
-        if (entry.role === 'user') {
-          addChatUserMessage(entry.content);
-        } else if (entry.role === 'assistant') {
-          addChatAssistantMessage(entry.content);
-        } else if (entry.role === 'system') {
-          addChatSystemMessage(entry.content);
+      const loadedAgentId = msg.agentId as string | undefined;
+      const col = loadedAgentId ? getColumnForAgent(loadedAgentId) : getFocusedColumn();
+      if (col) {
+        const loadedMessages = msg.messages as ConversationEntry[];
+        col.conversationHistory = loadedMessages;
+        col.messagesEl.innerHTML = '';
+        for (const entry of loadedMessages) {
+          if (entry.role === 'user') {
+            addChatUserMessageToColumn(col, entry.content);
+          } else if (entry.role === 'assistant') {
+            addChatAssistantMessageToColumn(col, entry.content);
+          } else if (entry.role === 'system') {
+            addChatSystemMessageToColumn(col, entry.content);
+          }
         }
       }
       break;
@@ -763,11 +817,16 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     case 'conversationSaved':
       break;
 
-    case 'conversationCleared':
-      conversationHistory = [];
-      chatMessagesDiv.innerHTML = '';
-      addChatSystemMessage('Conversation cleared.');
+    case 'conversationCleared': {
+      const clearAgentId = msg.agentId as string | undefined;
+      const col = clearAgentId ? getColumnForAgent(clearAgentId) : getFocusedColumn();
+      if (col) {
+        col.conversationHistory = [];
+        col.messagesEl.innerHTML = '';
+        addChatSystemMessageToColumn(col, 'Conversation cleared.');
+      }
       break;
+    }
 
     case 'hooksList':
       renderHooksList(msg.hooks as Hook[]);
@@ -776,12 +835,13 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     case 'hookAdded':
     case 'hookUpdated':
     case 'hookRemoved':
-      // Refresh will be triggered by setTimeout in the UI handlers
       break;
 
-    case 'error':
-      addChatSystemMessage(`Error: ${msg.error}`);
+    case 'error': {
+      const col = getFocusedColumn();
+      if (col) addChatSystemMessageToColumn(col, `Error: ${msg.error}`);
       break;
+    }
   }
 }
 
@@ -828,59 +888,356 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
   // Update view visibility
   if (activeAgentId) {
     updateViewVisibility();
-    // Load conversation for the active agent
-    sendPortMessage({ type: 'getConversation', agentId: activeAgentId });
-    // Load data for the active view
+
+    // Initialize columns if none exist
+    if (columns.length === 0) {
+      // Try restoring saved column config first
+      restoreColumnConfig().then(() => {
+        if (columns.length === 0) {
+          initializeColumns();
+        }
+        // Auto-add columns for any agents not yet shown
+        // (handles agents created by other sessions)
+      });
+    } else {
+      // Update column headers in case agent names changed
+      for (const col of columns) {
+        const agent = agents.find((a) => a.id === col.agentId);
+        if (agent) {
+          const nameEl = col.columnEl.querySelector('.column-agent-name');
+          if (nameEl) nameEl.textContent = agent.name;
+        }
+      }
+    }
+
     loadCurrentViewData();
   } else {
     updateViewVisibility();
   }
 }
 
-// ── Chat message rendering ──
+// ── Column management ──
 
-function addChatUserMessage(text: string): void {
+function addColumn(agentId: string): ChatColumn {
+  // Don't add duplicate columns for same agent
+  const existing = getColumnForAgent(agentId);
+  if (existing) return existing;
+
+  const colId = `col-${agentId}-${Date.now()}`;
+
+  // Build column DOM
+  const columnEl = document.createElement('div');
+  columnEl.className = 'chat-column';
+  columnEl.dataset.columnId = colId;
+  columnEl.dataset.agentId = agentId;
+
+  const agent = agents.find((a) => a.id === agentId);
+  const aName = agent ? agent.name : agentId;
+  const aRole = agent ? (agent.master ? 'master' : agent.role) : 'agent';
+
+  // Header
+  const headerEl = document.createElement('div');
+  headerEl.className = 'chat-column-header';
+  headerEl.innerHTML = `
+    <span class="column-agent-name">${escapeHtml(aName)}</span>
+    <span class="role-badge ${roleBadgeClass(aRole)}">${escapeHtml(aRole)}</span>
+    <button class="column-clear-btn" title="Clear conversation">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    </button>
+    <button class="column-close-btn" title="Close column">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  `;
+  columnEl.appendChild(headerEl);
+
+  // Messages area
+  const messagesEl = document.createElement('div');
+  messagesEl.className = 'chat-messages';
+  columnEl.appendChild(messagesEl);
+
+  // Typing indicator
+  const typingEl = document.createElement('div');
+  typingEl.className = 'chat-typing';
+  typingEl.innerHTML = '<span></span><span></span><span></span>';
+  columnEl.appendChild(typingEl);
+
+  // Input area
+  const inputArea = document.createElement('div');
+  inputArea.className = 'chat-input-area';
+
+  const inputWrapper = document.createElement('div');
+  inputWrapper.className = 'chat-input-wrapper';
+
+  // Mention dropdown per column
+  const mentionDropdownEl = document.createElement('div');
+  mentionDropdownEl.className = 'mention-dropdown';
+  const mentionHeaderEl = document.createElement('div');
+  mentionHeaderEl.className = 'mention-dropdown-header';
+  const mentionListEl = document.createElement('ul');
+  mentionListEl.className = 'mention-dropdown-list';
+  mentionDropdownEl.appendChild(mentionHeaderEl);
+  mentionDropdownEl.appendChild(mentionListEl);
+  inputWrapper.appendChild(mentionDropdownEl);
+
+  const textareaEl = document.createElement('textarea');
+  textareaEl.placeholder = 'Type a message... (@ to mention)';
+  textareaEl.rows = 1;
+  inputWrapper.appendChild(textareaEl);
+
+  const micBtn = document.createElement('button');
+  micBtn.className = 'chat-btn-mic';
+  micBtn.title = 'Voice input';
+  micBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+  inputWrapper.appendChild(micBtn);
+
+  inputArea.appendChild(inputWrapper);
+
+  const sendBtn = document.createElement('button');
+  sendBtn.className = 'chat-btn-send';
+  sendBtn.title = 'Send';
+  sendBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+  inputArea.appendChild(sendBtn);
+
+  columnEl.appendChild(inputArea);
+
+  // Build state object
+  const clearBtn = headerEl.querySelector('.column-clear-btn') as HTMLButtonElement;
+  const closeBtn = headerEl.querySelector('.column-close-btn') as HTMLButtonElement;
+
+  const column: ChatColumn = {
+    id: colId,
+    agentId,
+    messagesEl,
+    inputEl: textareaEl,
+    sendBtn,
+    clearBtn,
+    micBtn,
+    typingEl,
+    columnEl,
+    mentionDropdown: mentionDropdownEl,
+    mentionDropdownHeader: mentionHeaderEl,
+    mentionDropdownList: mentionListEl,
+    conversationHistory: [],
+    isStreaming: false,
+    currentStreamEl: null,
+    currentStreamContent: '',
+    lastAgenticText: '',
+    pageContext: null,
+  };
+
+  columns.push(column);
+
+  // Insert before the [+] button
+  const addBtn = columnsContainer.querySelector('.columns-add-btn');
+  if (addBtn) {
+    columnsContainer.insertBefore(columnEl, addBtn);
+  } else {
+    columnsContainer.appendChild(columnEl);
+  }
+
+  // Wire up event handlers
+  sendBtn.addEventListener('click', () => sendColumnMessage(column));
+
+  textareaEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !columnMentionVisible(column)) {
+      e.preventDefault();
+      sendColumnMessage(column);
+    }
+  });
+
+  textareaEl.addEventListener('input', () => {
+    columnAutoResize(column);
+    handleColumnMentionInput(column);
+  });
+
+  textareaEl.addEventListener('focus', () => {
+    focusedColumnId = colId;
+  });
+
+  textareaEl.addEventListener('keydown', (e) => {
+    handleColumnMentionKeydown(column, e);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    sendPortMessage({ type: 'clearConversation', agentId: column.agentId });
+  });
+
+  closeBtn.addEventListener('click', () => {
+    removeColumn(colId);
+  });
+
+  micBtn.addEventListener('click', () => {
+    focusedColumnId = colId;
+    toggleVoiceInput();
+  });
+
+  // Update layout classes
+  updateColumnsLayout();
+
+  // Load conversation
+  if (port) {
+    sendPortMessage({ type: 'getConversation', agentId });
+  }
+
+  // Save column config
+  saveColumnConfig();
+
+  return column;
+}
+
+function removeColumn(columnId: string): void {
+  const idx = columns.findIndex((c) => c.id === columnId);
+  if (idx === -1) return;
+
+  const col = columns[idx];
+  col.columnEl.remove();
+  columns.splice(idx, 1);
+
+  if (focusedColumnId === columnId) {
+    focusedColumnId = columns.length > 0 ? columns[0].id : null;
+  }
+
+  updateColumnsLayout();
+  saveColumnConfig();
+}
+
+function updateColumnsLayout(): void {
+  // Ensure [+] button exists
+  if (!columnsContainer.querySelector('.columns-add-btn')) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'columns-add-btn';
+    addBtn.title = 'Add chat column';
+    addBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+    addBtn.addEventListener('click', (e) => {
+      showColumnAddPicker(e);
+    });
+    columnsContainer.appendChild(addBtn);
+  }
+
+  // Set layout classes
+  columnsContainer.classList.toggle('single-column', columns.length === 1);
+
+  // When columns fit, use flex fill; when they overflow, use fixed width
+  const totalMinWidth = columns.length * 400 + 48; // 48 for add button
+  const containerWidth = columnsContainer.clientWidth;
+  columnsContainer.classList.toggle('fit-columns', totalMinWidth <= containerWidth && columns.length > 1);
+}
+
+function showColumnAddPicker(e: MouseEvent): void {
+  // Build the picker with agents not already shown
+  const shownAgentIds = new Set(columns.map((c) => c.agentId));
+  const available = agents.filter((a) => !shownAgentIds.has(a.id));
+
+  if (available.length === 0) {
+    return; // All agents already have columns
+  }
+
+  columnAddPicker.innerHTML = '';
+  for (const agent of available) {
+    const btn = document.createElement('button');
+    btn.innerHTML = `<span>${escapeHtml(agent.name)}</span><span class="picker-role">${escapeHtml(agent.master ? 'master' : agent.role)}</span>`;
+    btn.addEventListener('click', () => {
+      addColumn(agent.id);
+      columnAddPicker.classList.remove('visible');
+    });
+    columnAddPicker.appendChild(btn);
+  }
+
+  // Position near the click
+  columnAddPicker.style.left = `${e.clientX - 100}px`;
+  columnAddPicker.style.top = `${e.clientY - 10}px`;
+  columnAddPicker.classList.add('visible');
+
+  // Close on outside click
+  const close = (ev: MouseEvent) => {
+    if (!columnAddPicker.contains(ev.target as Node)) {
+      columnAddPicker.classList.remove('visible');
+      document.removeEventListener('mousedown', close);
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
+function saveColumnConfig(): void {
+  const config = columns.map((c) => c.agentId);
+  chrome.storage.local.set({ 'chaos:columnConfig': config });
+}
+
+async function restoreColumnConfig(): Promise<void> {
+  const result = await chrome.storage.local.get('chaos:columnConfig');
+  const config = result['chaos:columnConfig'] as string[] | undefined;
+
+  if (config && config.length > 0) {
+    // Only restore columns for agents that still exist
+    for (const agentId of config) {
+      if (agents.find((a) => a.id === agentId) && !getColumnForAgent(agentId)) {
+        addColumn(agentId);
+      }
+    }
+  }
+}
+
+function initializeColumns(): void {
+  // Clear existing columns
+  for (const col of columns) {
+    col.columnEl.remove();
+  }
+  columns = [];
+
+  // Default: add column for active agent, or master agent
+  if (activeAgentId) {
+    addColumn(activeAgentId);
+  } else if (agents.length > 0) {
+    const master = agents.find((a) => a.master);
+    addColumn(master ? master.id : agents[0].id);
+  }
+
+  updateColumnsLayout();
+}
+
+// ── Column-scoped chat message rendering ──
+
+function addChatUserMessageToColumn(col: ChatColumn, text: string): void {
   const el = document.createElement('div');
   el.className = 'chat-message user';
-  // Render mention badges if present, otherwise plain text
   const mentionPattern = /@(tab|bookmark|history|agent)\[[^\]]*\]\([^)]*\)/;
   if (mentionPattern.test(text)) {
     el.innerHTML = DOMPurify.sanitize(renderMentionBadges(escapeHtml(text)));
   } else {
     el.textContent = text;
   }
-  chatMessagesDiv.appendChild(el);
-  chatScrollToBottom();
+  col.messagesEl.appendChild(el);
+  columnScrollToBottom(col);
 }
 
-function addChatAssistantMessage(content: string): HTMLDivElement {
+function addChatAssistantMessageToColumn(col: ChatColumn, content: string): HTMLDivElement {
   const el = document.createElement('div');
   el.className = 'chat-message assistant';
   if (content) {
     renderChatMarkdown(el, content);
   }
-  chatMessagesDiv.appendChild(el);
-  chatScrollToBottom();
+  col.messagesEl.appendChild(el);
+  columnScrollToBottom(col);
   return el;
 }
 
-function addChatSystemMessage(text: string): void {
+function addChatSystemMessageToColumn(col: ChatColumn, text: string): void {
   const el = document.createElement('div');
   el.className = 'chat-message system';
   el.textContent = text;
-  chatMessagesDiv.appendChild(el);
-  chatScrollToBottom();
+  col.messagesEl.appendChild(el);
+  columnScrollToBottom(col);
 }
 
-function addChatErrorMessage(error: string): void {
+function addChatErrorMessageToColumn(col: ChatColumn, error: string): void {
   const el = document.createElement('div');
   el.className = 'chat-message error';
   el.textContent = `Error: ${error}`;
-  chatMessagesDiv.appendChild(el);
-  chatScrollToBottom();
+  col.messagesEl.appendChild(el);
+  columnScrollToBottom(col);
 }
 
-function addToolCallCard(name: string, args: unknown, result: unknown): void {
+function addToolCallCardToColumn(col: ChatColumn, name: string, args: unknown, result: unknown): void {
   const el = document.createElement('div');
   el.className = 'chat-message tool-call';
 
@@ -927,8 +1284,8 @@ function addToolCallCard(name: string, args: unknown, result: unknown): void {
 
   el.appendChild(header);
   el.appendChild(details);
-  chatMessagesDiv.appendChild(el);
-  chatScrollToBottom();
+  col.messagesEl.appendChild(el);
+  columnScrollToBottom(col);
 }
 
 function renderChatMarkdown(el: HTMLDivElement, content: string): void {
@@ -942,24 +1299,19 @@ function renderChatMarkdown(el: HTMLDivElement, content: string): void {
   }
 }
 
-function chatScrollToBottom(): void {
-  chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+function columnScrollToBottom(col: ChatColumn): void {
+  col.messagesEl.scrollTop = col.messagesEl.scrollHeight;
 }
 
-// ── Chat send ──
+// ── Column-scoped send ──
 
-function sendChatMessage(): void {
-  const text = chatInput.value.trim();
-  if (!text || isChatStreaming) return;
+function sendColumnMessage(col: ChatColumn): void {
+  const text = col.inputEl.value.trim();
+  if (!text || col.isStreaming) return;
 
-  if (!activeAgentId) {
-    addChatSystemMessage('Please select or create an agent first.');
-    return;
-  }
-
-  addChatUserMessage(text);
-  chatInput.value = '';
-  chatAutoResize();
+  addChatUserMessageToColumn(col, text);
+  col.inputEl.value = '';
+  columnAutoResize(col);
 
   const entry: ConversationEntry = {
     role: 'user',
@@ -969,58 +1321,33 @@ function sendChatMessage(): void {
 
   const chatMsg: Record<string, unknown> = {
     type: 'chat',
-    agentId: activeAgentId,
+    agentId: col.agentId,
     message: text,
   };
 
-  if (chatPageContext) {
-    chatMsg.pageContext = chatPageContext;
-    entry.pageContext = { title: chatPageContext.title, url: chatPageContext.url };
-    chatPageContext = null;
-    chatPageContextBar.classList.remove('visible');
+  if (col.pageContext) {
+    chatMsg.pageContext = col.pageContext;
+    entry.pageContext = { title: col.pageContext.title, url: col.pageContext.url };
+    col.pageContext = null;
   }
 
-  conversationHistory.push(entry);
+  col.conversationHistory.push(entry);
   sendPortMessage(chatMsg);
 }
 
-function saveChatConversation(): void {
-  if (!activeAgentId || conversationHistory.length === 0) return;
+function saveColumnConversation(col: ChatColumn): void {
+  if (col.conversationHistory.length === 0) return;
   sendPortMessage({
     type: 'saveConversation',
-    agentId: activeAgentId,
-    messages: conversationHistory,
+    agentId: col.agentId,
+    messages: col.conversationHistory,
   });
 }
 
-chatBtnSend.addEventListener('click', sendChatMessage);
-
-chatInput.addEventListener('keydown', (e) => {
-  // Don't send when mention dropdown is handling the key
-  if (e.key === 'Enter' && !e.shiftKey && !mentionVisible) {
-    e.preventDefault();
-    sendChatMessage();
-  }
-});
-
-function chatAutoResize(): void {
-  chatInput.style.height = 'auto';
-  chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + 'px';
+function columnAutoResize(col: ChatColumn): void {
+  col.inputEl.style.height = 'auto';
+  col.inputEl.style.height = Math.min(col.inputEl.scrollHeight, 160) + 'px';
 }
-
-chatInput.addEventListener('input', chatAutoResize);
-
-// ── Chat actions ──
-
-chatBtnClear.addEventListener('click', () => {
-  if (!activeAgentId) return;
-  sendPortMessage({ type: 'clearConversation', agentId: activeAgentId });
-});
-
-chatBtnDismissContext.addEventListener('click', () => {
-  chatPageContext = null;
-  chatPageContextBar.classList.remove('visible');
-});
 
 // ── Chat voice input (iframe-based recognition) ──
 
@@ -1038,17 +1365,18 @@ function toggleVoiceInput(): void {
 
 function startVoiceInput(): void {
   if (isRecording) return;
+  const col = getFocusedColumn();
+  if (!col) return;
   isRecording = true;
   voiceFinalTranscript = '';
-  chatInput.dataset.lastInterim = '';
-  chatBtnMic.classList.add('recording');
+  col.inputEl.dataset.lastInterim = '';
+  col.micBtn.classList.add('recording');
 
   // Create iframe pointing to recognition frame
   recognitionIframe = document.createElement('iframe');
   recognitionIframe.src = chrome.runtime.getURL('src/voice/recognition-frame.html');
   recognitionIframe.allow = 'microphone';
-  // Position near the mic button, allow pointer events for mic permission prompt
-  const micRect = chatBtnMic.getBoundingClientRect();
+  const micRect = col.micBtn.getBoundingClientRect();
   recognitionIframe.style.cssText = `
     position: fixed;
     bottom: ${window.innerHeight - micRect.top + 8}px;
@@ -1066,9 +1394,12 @@ function startVoiceInput(): void {
 function stopVoiceInput(): void {
   if (!isRecording) return;
   isRecording = false;
-  chatBtnMic.classList.remove('recording');
+  const col = getFocusedColumn();
+  if (col) {
+    col.micBtn.classList.remove('recording');
+    delete col.inputEl.dataset.lastInterim;
+  }
 
-  // Tell iframe to stop
   if (recognitionIframe?.contentWindow) {
     recognitionIframe.contentWindow.postMessage(
       { target: 'chaos-recognition', type: 'stop' },
@@ -1076,7 +1407,6 @@ function stopVoiceInput(): void {
     );
   }
 
-  // Remove iframe after a brief delay to allow final results
   setTimeout(() => {
     if (recognitionIframe) {
       recognitionIframe.remove();
@@ -1085,58 +1415,55 @@ function stopVoiceInput(): void {
   }, 200);
 
   voiceFinalTranscript = '';
-  delete chatInput.dataset.lastInterim;
 }
 
 // Listen for messages from the recognition iframe
 window.addEventListener('message', (event) => {
   if (event.data?.source !== 'chaos-recognition') return;
+  const col = getFocusedColumn();
 
   switch (event.data.type) {
     case 'recognition-started':
-      // Recognition is active
       break;
 
     case 'recognition-result': {
+      if (!col) break;
       const { finalTranscript, interimTranscript } = event.data;
       if (finalTranscript) {
         voiceFinalTranscript += finalTranscript + ' ';
       }
-      const existingText = chatInput.value.substring(
+      const existingText = col.inputEl.value.substring(
         0,
-        chatInput.value.length - (chatInput.dataset.lastInterim?.length || 0)
+        col.inputEl.value.length - (col.inputEl.dataset.lastInterim?.length || 0)
       );
-      chatInput.value = existingText + voiceFinalTranscript + (interimTranscript || '');
-      chatInput.dataset.lastInterim = interimTranscript || '';
-      chatInput.scrollTop = chatInput.scrollHeight;
+      col.inputEl.value = existingText + voiceFinalTranscript + (interimTranscript || '');
+      col.inputEl.dataset.lastInterim = interimTranscript || '';
+      col.inputEl.scrollTop = col.inputEl.scrollHeight;
       break;
     }
 
     case 'recognition-error':
       if (!event.data.recoverable) {
-        addChatSystemMessage(`Speech recognition error: ${event.data.error}`);
+        if (col) addChatSystemMessageToColumn(col, `Speech recognition error: ${event.data.error}`);
         stopVoiceInput();
       }
       break;
 
     case 'recognition-ended':
-      // Only clean up if we didn't already stop (e.g. iframe died)
       if (isRecording) {
         isRecording = false;
-        chatBtnMic.classList.remove('recording');
+        if (col) {
+          col.micBtn.classList.remove('recording');
+          delete col.inputEl.dataset.lastInterim;
+        }
         if (recognitionIframe) {
           recognitionIframe.remove();
           recognitionIframe = null;
         }
         voiceFinalTranscript = '';
-        delete chatInput.dataset.lastInterim;
       }
       break;
   }
-});
-
-chatBtnMic.addEventListener('click', () => {
-  toggleVoiceInput();
 });
 
 // Listen for hotkey toggle message from background
@@ -1147,7 +1474,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 // ══════════════════════════════════════════
-// ── Mention Autocomplete
+// ── Mention Autocomplete (per-column)
 // ══════════════════════════════════════════
 
 interface MentionItem {
@@ -1158,19 +1485,15 @@ interface MentionItem {
   id: string;
 }
 
-const mentionDropdown = document.getElementById('mention-dropdown') as HTMLDivElement;
-const mentionDropdownHeader = document.getElementById('mention-dropdown-header') as HTMLDivElement;
-const mentionDropdownList = document.getElementById('mention-dropdown-list') as HTMLUListElement;
-
+// Per-column mention state
+let mentionActiveColumn: ChatColumn | null = null;
 let mentionItems: MentionItem[] = [];
 let mentionActiveIndex = -1;
-let mentionVisible = false;
-let mentionStartPos = -1; // position of the '@' character in the textarea
+let mentionStartPos = -1;
 
 const MENTION_CATEGORIES = ['tab', 'bookmark', 'history', 'agent'] as const;
 type MentionCategory = typeof MENTION_CATEGORIES[number];
 
-// SVG icons for each category
 const MENTION_ICONS: Record<MentionCategory, string> = {
   tab: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>',
   bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
@@ -1185,28 +1508,23 @@ const MENTION_LABELS: Record<MentionCategory, string> = {
   agent: 'Agents',
 };
 
-/**
- * Parse the current mention query from the textarea.
- * Returns null if the cursor is not in a mention context.
- * Returns { category, filter, start } if it is.
- */
-function parseMentionQuery(): { category: MentionCategory | null; filter: string; start: number } | null {
-  const cursorPos = chatInput.selectionStart;
-  const text = chatInput.value;
+function columnMentionVisible(col: ChatColumn): boolean {
+  return mentionActiveColumn === col && col.mentionDropdown.classList.contains('visible');
+}
 
-  // Scan backwards from cursor to find '@'
+function parseMentionQueryForColumn(col: ChatColumn): { category: MentionCategory | null; filter: string; start: number } | null {
+  const cursorPos = col.inputEl.selectionStart;
+  const text = col.inputEl.value;
+
   let atPos = -1;
   for (let i = cursorPos - 1; i >= 0; i--) {
     const ch = text[i];
     if (ch === '@') {
-      // Only valid if at start of input or preceded by whitespace/newline
       if (i === 0 || /\s/.test(text[i - 1])) {
         atPos = i;
       }
       break;
     }
-    // Stop scanning if we hit a space before finding a category keyword
-    // but allow spaces after category (e.g. "@tab meeting notes")
     if (ch === '\n') break;
   }
 
@@ -1214,10 +1532,8 @@ function parseMentionQuery(): { category: MentionCategory | null; filter: string
 
   const afterAt = text.slice(atPos + 1, cursorPos);
 
-  // Check if it matches a category
   for (const cat of MENTION_CATEGORIES) {
     if (afterAt.toLowerCase() === cat.slice(0, afterAt.length) && afterAt.length <= cat.length && !afterAt.includes(' ')) {
-      // Still typing the category name
       return { category: null, filter: afterAt, start: atPos };
     }
     if (afterAt.toLowerCase().startsWith(cat + ' ') || afterAt.toLowerCase() === cat) {
@@ -1226,12 +1542,10 @@ function parseMentionQuery(): { category: MentionCategory | null; filter: string
     }
   }
 
-  // Just '@' with no recognized category prefix yet
   if (afterAt === '') {
     return { category: null, filter: '', start: atPos };
   }
 
-  // Partial text that doesn't match any category - check if it could be a prefix
   const matchesAnyPrefix = MENTION_CATEGORIES.some(cat =>
     cat.startsWith(afterAt.toLowerCase())
   );
@@ -1263,18 +1577,11 @@ async function fetchMentionItems(category: MentionCategory, filter: string): Pro
           const title = tab.title || 'Untitled';
           const url = tab.url || '';
           if (query && !title.toLowerCase().includes(query) && !url.toLowerCase().includes(query)) continue;
-          items.push({
-            type: 'tab',
-            title,
-            subtitle: url,
-            value: `@tab[${title}](${tab.id})`,
-            id: String(tab.id),
-          });
+          items.push({ type: 'tab', title, subtitle: url, value: `@tab[${title}](${tab.id})`, id: String(tab.id) });
         }
       } catch { /* permission denied or API error */ }
       break;
     }
-
     case 'bookmark': {
       const hasBookmarks = await hasPermission('bookmarks');
       if (!hasBookmarks) return [{
@@ -1287,20 +1594,13 @@ async function fetchMentionItems(category: MentionCategory, filter: string): Pro
       try {
         const results = await chrome.bookmarks.search(filter || ' ');
         for (const bm of results) {
-          if (!bm.url) continue; // skip folders
+          if (!bm.url) continue;
           const title = bm.title || 'Untitled';
-          items.push({
-            type: 'bookmark',
-            title,
-            subtitle: bm.url,
-            value: `@bookmark[${title}](${bm.url})`,
-            id: bm.url,
-          });
+          items.push({ type: 'bookmark', title, subtitle: bm.url, value: `@bookmark[${title}](${bm.url})`, id: bm.url });
         }
       } catch { /* permission denied or API error */ }
       break;
     }
-
     case 'history': {
       const hasHistory = await hasPermission('history');
       if (!hasHistory) return [{
@@ -1311,39 +1611,22 @@ async function fetchMentionItems(category: MentionCategory, filter: string): Pro
         id: '__permission__',
       }];
       try {
-        const results = await chrome.history.search({
-          text: filter || '',
-          maxResults: 20,
-          startTime: Date.now() - 7 * 24 * 60 * 60 * 1000, // last 7 days
-        });
+        const results = await chrome.history.search({ text: filter || '', maxResults: 20, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 });
         for (const item of results) {
           if (!item.url) continue;
           const title = item.title || 'Untitled';
           if (query && !title.toLowerCase().includes(query) && !item.url.toLowerCase().includes(query)) continue;
-          items.push({
-            type: 'history',
-            title,
-            subtitle: item.url,
-            value: `@history[${title}](${item.url})`,
-            id: item.url,
-          });
+          items.push({ type: 'history', title, subtitle: item.url, value: `@history[${title}](${item.url})`, id: item.url });
         }
       } catch { /* permission denied or API error */ }
       break;
     }
-
     case 'agent': {
       for (const agent of agents) {
         const title = agent.name;
         const subtitle = agent.role;
         if (query && !title.toLowerCase().includes(query) && !subtitle.toLowerCase().includes(query)) continue;
-        items.push({
-          type: 'agent',
-          title,
-          subtitle,
-          value: `@agent[${title}](${agent.id})`,
-          id: agent.id,
-        });
+        items.push({ type: 'agent', title, subtitle, value: `@agent[${title}](${agent.id})`, id: agent.id });
       }
       break;
     }
@@ -1352,30 +1635,26 @@ async function fetchMentionItems(category: MentionCategory, filter: string): Pro
   return items.slice(0, 8);
 }
 
-function showMentionDropdown(items: MentionItem[], category: MentionCategory | null): void {
+function showColumnMentionDropdown(col: ChatColumn, items: MentionItem[], category: MentionCategory | null): void {
+  mentionActiveColumn = col;
   mentionItems = items;
   mentionActiveIndex = items.length > 0 ? 0 : -1;
-  mentionVisible = true;
 
-  // Header
   if (category) {
-    mentionDropdownHeader.innerHTML = `${MENTION_ICONS[category]}<span>${MENTION_LABELS[category]}</span>`;
-    mentionDropdownHeader.style.display = '';
+    col.mentionDropdownHeader.innerHTML = `${MENTION_ICONS[category]}<span>${MENTION_LABELS[category]}</span>`;
   } else {
-    mentionDropdownHeader.innerHTML = `<span>Type a category: tab, bookmark, history, agent</span>`;
-    mentionDropdownHeader.style.display = '';
+    col.mentionDropdownHeader.innerHTML = `<span>Type a category: tab, bookmark, history, agent</span>`;
   }
+  col.mentionDropdownHeader.style.display = '';
 
-  // List
-  mentionDropdownList.innerHTML = '';
+  col.mentionDropdownList.innerHTML = '';
 
   if (items.length === 0 && category) {
     const emptyEl = document.createElement('li');
     emptyEl.className = 'mention-dropdown-empty';
     emptyEl.textContent = 'No results found';
-    mentionDropdownList.appendChild(emptyEl);
+    col.mentionDropdownList.appendChild(emptyEl);
   } else if (!category) {
-    // Show category chips
     for (const cat of MENTION_CATEGORIES) {
       const li = document.createElement('li');
       li.className = 'mention-dropdown-item';
@@ -1388,12 +1667,11 @@ function showMentionDropdown(items: MentionItem[], category: MentionCategory | n
       `;
       li.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        insertCategoryText(cat);
+        insertColumnCategoryText(col, cat);
       });
-      mentionDropdownList.appendChild(li);
+      col.mentionDropdownList.appendChild(li);
     }
-    // Highlight first
-    const firstItem = mentionDropdownList.querySelector('.mention-dropdown-item');
+    const firstItem = col.mentionDropdownList.querySelector('.mention-dropdown-item');
     if (firstItem) firstItem.classList.add('active');
   } else {
     for (let i = 0; i < items.length; i++) {
@@ -1409,140 +1687,127 @@ function showMentionDropdown(items: MentionItem[], category: MentionCategory | n
       `;
       li.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        selectMentionItem(item);
+        selectColumnMentionItem(col, item);
       });
       li.addEventListener('mouseenter', () => {
         mentionActiveIndex = i;
-        updateMentionActiveItem();
+        updateColumnMentionActiveItem(col);
       });
-      mentionDropdownList.appendChild(li);
+      col.mentionDropdownList.appendChild(li);
     }
   }
 
-  mentionDropdown.classList.add('visible');
+  col.mentionDropdown.classList.add('visible');
 }
 
-function hideMentionDropdown(): void {
-  mentionVisible = false;
+function hideColumnMentionDropdown(col: ChatColumn): void {
   mentionItems = [];
   mentionActiveIndex = -1;
   mentionStartPos = -1;
-  mentionDropdown.classList.remove('visible');
+  mentionActiveColumn = null;
+  col.mentionDropdown.classList.remove('visible');
 }
 
-function updateMentionActiveItem(): void {
-  const items = mentionDropdownList.querySelectorAll('.mention-dropdown-item');
+function updateColumnMentionActiveItem(col: ChatColumn): void {
+  const items = col.mentionDropdownList.querySelectorAll('.mention-dropdown-item');
   items.forEach((el, i) => {
     el.classList.toggle('active', i === mentionActiveIndex);
   });
-  // Scroll active item into view
-  const activeEl = mentionDropdownList.querySelector('.mention-dropdown-item.active');
+  const activeEl = col.mentionDropdownList.querySelector('.mention-dropdown-item.active');
   if (activeEl) {
     activeEl.scrollIntoView({ block: 'nearest' });
   }
 }
 
-function insertCategoryText(category: MentionCategory): void {
+function insertColumnCategoryText(col: ChatColumn, category: MentionCategory): void {
   if (mentionStartPos === -1) return;
-  const before = chatInput.value.slice(0, mentionStartPos);
-  const after = chatInput.value.slice(chatInput.selectionStart);
-  chatInput.value = before + '@' + category + ' ' + after;
+  const before = col.inputEl.value.slice(0, mentionStartPos);
+  const after = col.inputEl.value.slice(col.inputEl.selectionStart);
+  col.inputEl.value = before + '@' + category + ' ' + after;
   const newCursorPos = mentionStartPos + 1 + category.length + 1;
-  chatInput.selectionStart = newCursorPos;
-  chatInput.selectionEnd = newCursorPos;
-  chatInput.focus();
-  // Trigger re-evaluation
-  handleMentionInput();
+  col.inputEl.selectionStart = newCursorPos;
+  col.inputEl.selectionEnd = newCursorPos;
+  col.inputEl.focus();
+  handleColumnMentionInput(col);
 }
 
-function selectMentionItem(item: MentionItem): void {
+function selectColumnMentionItem(col: ChatColumn, item: MentionItem): void {
   if (item.id === '__permission__' || !item.value) {
-    hideMentionDropdown();
+    hideColumnMentionDropdown(col);
     return;
   }
 
   if (mentionStartPos === -1) return;
-  const before = chatInput.value.slice(0, mentionStartPos);
-  const after = chatInput.value.slice(chatInput.selectionStart);
-  chatInput.value = before + item.value + ' ' + after;
+  const before = col.inputEl.value.slice(0, mentionStartPos);
+  const after = col.inputEl.value.slice(col.inputEl.selectionStart);
+  col.inputEl.value = before + item.value + ' ' + after;
   const newCursorPos = mentionStartPos + item.value.length + 1;
-  chatInput.selectionStart = newCursorPos;
-  chatInput.selectionEnd = newCursorPos;
-  chatInput.focus();
-  chatAutoResize();
-  hideMentionDropdown();
+  col.inputEl.selectionStart = newCursorPos;
+  col.inputEl.selectionEnd = newCursorPos;
+  col.inputEl.focus();
+  columnAutoResize(col);
+  hideColumnMentionDropdown(col);
 }
 
 let mentionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function handleMentionInput(): Promise<void> {
-  const query = parseMentionQuery();
+async function handleColumnMentionInput(col: ChatColumn): Promise<void> {
+  const query = parseMentionQueryForColumn(col);
 
   if (!query) {
-    hideMentionDropdown();
+    hideColumnMentionDropdown(col);
     return;
   }
 
   mentionStartPos = query.start;
 
   if (!query.category) {
-    // Show category picker, filtered by what they've typed
     const filtered = MENTION_CATEGORIES.filter(cat =>
       !query.filter || cat.startsWith(query.filter.toLowerCase())
     );
 
     if (filtered.length === 0) {
-      hideMentionDropdown();
+      hideColumnMentionDropdown(col);
       return;
     }
 
-    // Build pseudo-items for category display
-    showMentionDropdown([], null);
-    // Filter the displayed categories
-    const listItems = mentionDropdownList.querySelectorAll('.mention-dropdown-item');
+    showColumnMentionDropdown(col, [], null);
+    const listItems = col.mentionDropdownList.querySelectorAll('.mention-dropdown-item');
     listItems.forEach((li, idx) => {
       const cat = MENTION_CATEGORIES[idx];
       (li as HTMLElement).style.display = filtered.includes(cat) ? '' : 'none';
     });
     mentionActiveIndex = MENTION_CATEGORIES.indexOf(filtered[0]);
-    updateMentionActiveItem();
+    updateColumnMentionActiveItem(col);
     return;
   }
 
-  // Debounce the actual data fetch
   if (mentionDebounceTimer) clearTimeout(mentionDebounceTimer);
   mentionDebounceTimer = setTimeout(async () => {
     const items = await fetchMentionItems(query.category!, query.filter);
-    // Re-check query is still valid after async
-    const currentQuery = parseMentionQuery();
+    const currentQuery = parseMentionQueryForColumn(col);
     if (!currentQuery || currentQuery.category !== query.category) return;
-    showMentionDropdown(items, query.category);
+    showColumnMentionDropdown(col, items, query.category);
   }, 150);
 }
 
-// Hook into the chat input
-chatInput.addEventListener('input', () => {
-  handleMentionInput();
-});
+function handleColumnMentionKeydown(col: ChatColumn, e: KeyboardEvent): void {
+  if (!columnMentionVisible(col)) return;
 
-chatInput.addEventListener('keydown', (e) => {
-  if (!mentionVisible) return;
-
-  const allItems = mentionDropdownList.querySelectorAll('.mention-dropdown-item');
+  const allItems = col.mentionDropdownList.querySelectorAll('.mention-dropdown-item');
   const visibleItems = Array.from(allItems).filter(el => (el as HTMLElement).style.display !== 'none');
   const visibleCount = visibleItems.length;
 
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     if (visibleCount > 0) {
-      // Find current visible index
       const currentVisibleIdx = visibleItems.findIndex((_, i) => {
         const allIdx = Array.from(allItems).indexOf(visibleItems[i]);
         return allIdx === mentionActiveIndex;
       });
       const nextVisibleIdx = (currentVisibleIdx + 1) % visibleCount;
       mentionActiveIndex = Array.from(allItems).indexOf(visibleItems[nextVisibleIdx]);
-      updateMentionActiveItem();
+      updateColumnMentionActiveItem(col);
     }
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
@@ -1553,24 +1818,27 @@ chatInput.addEventListener('keydown', (e) => {
       });
       const prevVisibleIdx = (currentVisibleIdx - 1 + visibleCount) % visibleCount;
       mentionActiveIndex = Array.from(allItems).indexOf(visibleItems[prevVisibleIdx]);
-      updateMentionActiveItem();
+      updateColumnMentionActiveItem(col);
     }
   } else if (e.key === 'Enter' || e.key === 'Tab') {
     e.preventDefault();
-    const activeItem = mentionDropdownList.querySelector('.mention-dropdown-item.active') as HTMLElement | null;
+    const activeItem = col.mentionDropdownList.querySelector('.mention-dropdown-item.active') as HTMLElement | null;
     if (activeItem) {
       activeItem.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     }
   } else if (e.key === 'Escape') {
     e.preventDefault();
-    hideMentionDropdown();
+    hideColumnMentionDropdown(col);
   }
-});
+}
 
 // Close dropdown when clicking outside
 document.addEventListener('mousedown', (e) => {
-  if (mentionVisible && !mentionDropdown.contains(e.target as Node) && e.target !== chatInput) {
-    hideMentionDropdown();
+  if (mentionActiveColumn) {
+    const col = mentionActiveColumn;
+    if (columnMentionVisible(col) && !col.mentionDropdown.contains(e.target as Node) && e.target !== col.inputEl) {
+      hideColumnMentionDropdown(col);
+    }
   }
 });
 
@@ -1808,7 +2076,8 @@ function renderTasks(): void {
         updateViewVisibility();
 
         // Add a system message indicating the scheduled task is running
-        addChatSystemMessage(`Running scheduled task: ${task.description}`);
+        const runCol = getColumnForAgent(task.agentId) || getFocusedColumn();
+        if (runCol) addChatSystemMessageToColumn(runCol, `Running scheduled task: ${task.description}`);
 
         // Track this so the agenticDone handler can update the task record
         pendingRunNowAlarmId = alarmId;
@@ -2355,14 +2624,14 @@ async function loadAgentSettings(): Promise<void> {
         disabledTools: disabled.length > 0 ? disabled : undefined,
         enabledTools: undefined,
       });
-      addChatSystemMessage('Tool configuration saved.');
+      { const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Tool configuration saved.'); }
     });
 
     // Save CLAUDE.md
     document.getElementById('btn-save-claude-md')!.addEventListener('click', async () => {
       const content = (document.getElementById('agent-claude-md') as HTMLTextAreaElement).value;
       await sendMsg({ type: 'setClaudeMd', agentId: meta.id, content });
-      addChatSystemMessage('CLAUDE.md saved.');
+      { const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'CLAUDE.md saved.'); }
     });
 
     // Delete agent
@@ -2715,7 +2984,7 @@ createConfirmBtn.addEventListener('click', async () => {
       await sendMsg({ type: 'createAgent', name, role, visibility });
       sendPortMessage({ type: 'listAgents' });
     } catch (err) {
-      addChatSystemMessage(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`);
+      { const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Failed to create agent: ${err instanceof Error ? err.message : String(err)}`); }
     }
   }
 });

@@ -631,24 +631,175 @@
     .status-failed { background: var(--danger-subtle); color: var(--danger-text); }
 
     /* ══════════════════════════════════════
-       Chat View
+       Chat View — Multi-column layout
        ══════════════════════════════════════ */
+    .columns-container {
+      display: flex;
+      gap: 0;
+      height: 100%;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+    }
+
+    /* When few columns, let them fill the space */
+    .columns-container.fit-columns .chat-column {
+      flex: 1 1 400px;
+    }
+
+    .chat-column {
+      flex: 0 0 400px;
+      min-width: 320px;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border-subtle);
+      scroll-snap-align: start;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .chat-column:last-of-type {
+      border-right: none;
+    }
+
+    /* Single column takes full width, no max */
+    .columns-container.single-column .chat-column {
+      flex: 1 1 100%;
+      max-width: none;
+    }
+
+    .columns-add-btn {
+      flex: 0 0 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-left: 1px solid var(--border-subtle);
+      transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+      scroll-snap-align: end;
+    }
+
+    .columns-add-btn:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+
+    .chat-column-header {
+      display: flex;
+      align-items: center;
+      padding: var(--sp-2) var(--sp-3);
+      border-bottom: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+      gap: var(--sp-2);
+    }
+
+    .chat-column-header .column-agent-name {
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--text-primary);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-column-header .role-badge {
+      font-size: var(--text-xs);
+      flex-shrink: 0;
+    }
+
+    .chat-column-header .column-close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 2px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      flex-shrink: 0;
+      transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+    }
+
+    .chat-column-header .column-close-btn:hover {
+      color: var(--danger-text);
+      background: var(--danger-subtle);
+    }
+
+    .chat-column-header .column-clear-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 2px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      flex-shrink: 0;
+      transition: color var(--duration-fast) var(--ease-out);
+    }
+
+    .chat-column-header .column-clear-btn:hover {
+      color: var(--text-primary);
+    }
+
+    /* Column add picker dropdown */
+    .column-add-picker {
+      position: fixed;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      box-shadow: 0 4px 16px var(--shadow-color-lg);
+      padding: var(--sp-2);
+      z-index: 9999;
+      min-width: 180px;
+      display: none;
+    }
+
+    .column-add-picker.visible {
+      display: block;
+    }
+
+    .column-add-picker button {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      width: 100%;
+      padding: var(--sp-2) var(--sp-3);
+      border: none;
+      background: none;
+      color: var(--text-primary);
+      font-size: var(--text-sm);
+      cursor: pointer;
+      border-radius: 6px;
+      text-align: left;
+    }
+
+    .column-add-picker button:hover {
+      background: var(--bg-hover);
+    }
+
+    .column-add-picker .picker-role {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+
     .chat-container {
       display: flex;
       flex-direction: column;
       height: 100%;
       width: 100%;
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 0 var(--sp-6);
+      padding: 0 var(--sp-3);
     }
 
     .chat-header {
-      display: flex;
-      align-items: center;
-      gap: var(--sp-3);
-      padding: var(--sp-3) 0;
-      flex-shrink: 0;
+      display: none; /* Header is now per-column */
     }
 
     .chat-page-context {
@@ -2196,6 +2347,10 @@
       .chat-message {
         max-width: 95%;
       }
+
+      .chat-column {
+        min-width: 280px;
+      }
     }
   </style>
 </head>
@@ -2271,42 +2426,11 @@
 
       <!-- ════════ Chat View ════════ -->
       <div class="view-panel" id="view-chat">
-        <div class="chat-container">
-          <div class="chat-header">
-            <button class="btn btn-ghost btn-sm" id="chat-btn-clear" title="Clear conversation">
-              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-              Clear
-            </button>
-          </div>
-
-          <div class="chat-page-context" id="chat-page-context">
-            <span id="chat-page-context-text"></span>
-            <span class="dismiss" id="chat-btn-dismiss-context">
-              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </span>
-          </div>
-
-          <div class="chat-messages" id="chat-messages"></div>
-
-          <div class="chat-typing" id="chat-typing">
-            <span></span><span></span><span></span>
-          </div>
-
-          <div class="chat-input-area">
-            <div class="chat-input-wrapper">
-              <div class="mention-dropdown" id="mention-dropdown">
-                <div class="mention-dropdown-header" id="mention-dropdown-header"></div>
-                <ul class="mention-dropdown-list" id="mention-dropdown-list"></ul>
-              </div>
-              <textarea id="chat-input" placeholder="Type a message... (@ to mention)" rows="1"></textarea>
-              <button id="chat-btn-mic" title="Voice input" class="chat-btn-mic">
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-              </button>
-            </div>
-            <button id="chat-btn-send" class="chat-btn-send" title="Send">
-              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            </button>
-          </div>
+        <div class="columns-container" id="columns-container">
+          <!-- Columns rendered dynamically by app.ts -->
+        </div>
+        <div class="column-add-picker" id="column-add-picker">
+          <!-- Agent picker rendered dynamically -->
         </div>
       </div>
 
