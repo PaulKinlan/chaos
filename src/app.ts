@@ -3544,8 +3544,8 @@ function renderHooksList(hooks: Hook[]): void {
       // Show the form
       document.getElementById('hooks-create-form')!.style.display = 'block';
 
-      // Delete the old hook so saving creates a fresh one
-      sendPortMessage({ type: 'removeHook', hookId });
+      // Track which hook we're editing (deleted only on save, not on edit click)
+      editingHookId = hookId;
     });
   });
 }
@@ -3580,6 +3580,7 @@ function formatTrigger(trigger: HookTrigger): string {
 // ── Hooks create form ──
 
 const hooksTriggerType = document.getElementById('hook-trigger-type') as HTMLSelectElement;
+let editingHookId: string | null = null; // Set when editing an existing hook
 const hooksTriggerFilters = document.getElementById('hook-trigger-filters')!;
 
 function updateTriggerFilters(): void {
@@ -3740,6 +3741,7 @@ document.getElementById('hooks-btn-create')!.addEventListener('click', () => {
 
 document.getElementById('hooks-btn-cancel')!.addEventListener('click', () => {
   document.getElementById('hooks-create-form')!.style.display = 'none';
+  editingHookId = null; // Cancel editing without deleting
 });
 
 document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
@@ -3817,6 +3819,12 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
     createdAt: new Date().toISOString(),
     triggerCount: 0,
   };
+
+  // If editing, delete the old hook first
+  if (editingHookId) {
+    sendPortMessage({ type: 'removeHook', hookId: editingHookId });
+    editingHookId = null;
+  }
 
   sendPortMessage({ type: 'addHook', hook });
 
