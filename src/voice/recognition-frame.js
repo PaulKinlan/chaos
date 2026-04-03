@@ -1,15 +1,16 @@
 // Recognition frame - runs SpeechRecognition in an iframe context.
 // Communicates with parent via postMessage.
 //
-// Note: We do NOT use getUserMedia. SpeechRecognition handles mic access
-// internally. getUserMedia was causing "Requested device not found" errors
-// on some systems and is unnecessary for transcription.
+// getUserMedia is called first to request mic permission (required on
+// chrome-extension:// pages). Then SpeechRecognition is started.
+// Same pattern as the utter Chrome extension.
 
 (function () {
   var statusText = document.getElementById('status-text');
   var pulseEl = document.getElementById('pulse');
 
   var recognition = null;
+  var micStream = null;
   var lastInterimTranscript = '';
   var isActive = true;
 
@@ -25,8 +26,18 @@
 
   init();
 
-  function init() {
+  async function init() {
     try {
+      // Request mic permission first (required on chrome-extension:// pages)
+      // This triggers the browser's permission prompt
+      statusText.textContent = 'Requesting mic...';
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (micErr) {
+        // getUserMedia failed - try starting recognition anyway
+        // (may work on some pages without explicit mic permission)
+        console.warn('getUserMedia failed, trying recognition directly:', micErr);
+      }
       startRecognition();
     } catch (err) {
       showError(err.message || String(err));
@@ -175,6 +186,10 @@
     if (recognition) {
       try { recognition.stop(); } catch (e) {}
       recognition = null;
+    }
+    if (micStream) {
+      micStream.getTracks().forEach(function(t) { t.stop(); });
+      micStream = null;
     }
   });
 

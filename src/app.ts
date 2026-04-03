@@ -2131,18 +2131,15 @@ function renderTasks(): void {
         const task = scheduledTasks.find((t) => t.alarmId === alarmId);
         if (!task) return;
 
-        // Switch to chat view for this agent so the user sees progress
-        if (activeAgentId !== task.agentId) {
-          switchToAgent(task.agentId);
-        }
+        // Switch to chat view and create a NEW column for this task
         activeView = 'chat';
         sidebarItems.forEach((b) => {
           b.classList.toggle('active', b.dataset.view === 'chat');
         });
         updateViewVisibility();
 
-        // Add a system message indicating the scheduled task is running
-        const runCol = getColumnForAgent(task.agentId) || getFocusedColumn();
+        // Create a new column (allow duplicate) so it doesn't interfere with existing conversations
+        const runCol = addColumn(task.agentId, true);
         if (runCol) addChatSystemMessageToColumn(runCol, `Running scheduled task: ${task.description}`);
 
         // Track this so the agenticDone handler can update the task record
