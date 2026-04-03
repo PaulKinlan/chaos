@@ -28,8 +28,20 @@ const DEFAULT_SETTINGS: Settings = {
 
 export async function getAgentList(): Promise<AgentMeta[]> {
   try {
+    // Try sync storage first (primary)
     const result = await chrome.storage.sync.get(KEYS.AGENT_LIST);
-    const agents = result[KEYS.AGENT_LIST];
+    let agents = result[KEYS.AGENT_LIST];
+
+    // Fall back to local storage if sync is empty (may have been written by quota fallback)
+    if (!agents || !Array.isArray(agents) || agents.length === 0) {
+      const localResult = await chrome.storage.local.get(KEYS.AGENT_LIST);
+      if (Array.isArray(localResult[KEYS.AGENT_LIST]) && localResult[KEYS.AGENT_LIST].length > 0) {
+        agents = localResult[KEYS.AGENT_LIST];
+        // Migrate back to sync
+        try { await chrome.storage.sync.set({ [KEYS.AGENT_LIST]: agents }); } catch { /* ignore */ }
+      }
+    }
+
     if (!Array.isArray(agents)) return [];
     // Ensure each agent has required fields (defensive against schema changes)
     return agents.filter((a: unknown) =>
