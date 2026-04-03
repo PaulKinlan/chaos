@@ -1594,16 +1594,26 @@ function renderTasks(): void {
       const scheduleLabel = t.schedule.type === 'recurring'
         ? `Every ${t.schedule.periodInMinutes && t.schedule.periodInMinutes >= 60 ? Math.round(t.schedule.periodInMinutes / 60) + ' hours' : (t.schedule.periodInMinutes || '?') + ' min'}`
         : 'One-shot';
-      const runHistoryHtml = (t.runHistory && t.runHistory.length > 0)
-        ? `<div class="task-run-history" style="display:none;margin-top:8px;border-top:1px solid var(--border-subtle);padding-top:8px;">
-            <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">Run History (${t.runHistory.length})</div>
-            ${t.runHistory.slice().reverse().map((run) => `
-              <div style="margin-bottom:12px;padding:8px;background:var(--bg-surface);border-radius:6px;border:1px solid var(--border-subtle);">
-                <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${formatTimeFull(run.timestamp)}${run.durationMs ? ` (${Math.round(run.durationMs / 1000)}s)` : ''}</div>
-                <div class="task-run-result" style="font-size:13px;color:var(--text-primary);line-height:1.5;white-space:pre-wrap;word-break:break-word;">${escapeHtml(run.result)}</div>
-              </div>
-            `).join('')}
-          </div>`
+      // Build the expandable details panel
+      let detailsContent = '';
+      if (t.runHistory && t.runHistory.length > 0) {
+        detailsContent = `<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">Run History (${t.runHistory.length})</div>` +
+          t.runHistory.slice().reverse().map((run) => `
+            <div style="margin-bottom:12px;padding:8px;background:var(--bg-surface);border-radius:6px;border:1px solid var(--border-subtle);">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${formatTimeFull(run.timestamp)}${run.durationMs ? ` (${Math.round(run.durationMs / 1000)}s)` : ''}</div>
+              <div style="font-size:13px;color:var(--text-primary);line-height:1.5;white-space:pre-wrap;word-break:break-word;">${escapeHtml(run.result)}</div>
+            </div>
+          `).join('');
+      } else if (t.lastResult) {
+        // Fallback: show lastResult for tasks created before runHistory existed
+        detailsContent = `<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">Last Result</div>
+          <div style="padding:8px;background:var(--bg-surface);border-radius:6px;border:1px solid var(--border-subtle);">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${t.lastRunAt ? formatTimeFull(t.lastRunAt) : ''}</div>
+            <div style="font-size:13px;color:var(--text-primary);line-height:1.5;white-space:pre-wrap;word-break:break-word;">${escapeHtml(t.lastResult)}</div>
+          </div>`;
+      }
+      const runHistoryHtml = detailsContent
+        ? `<div class="task-run-history" style="display:none;margin-top:8px;border-top:1px solid var(--border-subtle);padding-top:8px;">${detailsContent}</div>`
         : '';
 
       return `
@@ -1612,7 +1622,7 @@ function renderTasks(): void {
           <div class="task-desc">${escapeHtml(t.description)}</div>
           <div class="task-schedule-badge"><span class="badge badge-info">${escapeHtml(scheduleLabel)}</span> <span class="badge badge-active">Active</span>${t.runHistory?.length ? ` <span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);">${t.runHistory.length} runs</span>` : ''}</div>
           <div class="task-prompt">${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
-          ${t.lastRunAt ? `<div class="task-last-run" style="cursor:pointer;" data-toggle-history="true">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) + (t.lastResult.length > 80 ? '...' : '') : ''} <span style="color:var(--accent-text);font-size:11px;">▼ show details</span></div>` : '<div style="font-size:12px;color:var(--text-muted);">Not run yet</div>'}
+          ${t.lastRunAt ? `<div class="task-last-run" style="${detailsContent ? 'cursor:pointer;' : ''}" ${detailsContent ? 'data-toggle-history="true"' : ''}>Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) + (t.lastResult.length > 80 ? '...' : '') : ''}${detailsContent ? ' <span style="color:var(--accent-text);font-size:11px;">▼ show details</span>' : ''}</div>` : '<div style="font-size:12px;color:var(--text-muted);">Not run yet</div>'}
           ${runHistoryHtml}
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0;">
