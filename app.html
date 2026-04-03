@@ -1036,7 +1036,10 @@
       margin: var(--sp-2) 0;
       border: 1px solid var(--border-subtle);
       border-radius: 8px;
-      overflow: hidden;
+      width: 100%;
+      max-width: none;
+      align-self: stretch;
+      flex-shrink: 0;
     }
 
     .step-details[open] {
@@ -1047,11 +1050,13 @@
       display: flex;
       align-items: center;
       gap: var(--sp-2);
-      padding: var(--sp-2) var(--sp-3);
+      padding: var(--sp-3) var(--sp-4);
       cursor: pointer;
       font-size: var(--text-sm);
       color: var(--text-secondary);
       list-style: none;
+      min-height: 36px;
+      user-select: none;
     }
 
     .step-summary::-webkit-details-marker { display: none; }
@@ -1086,8 +1091,9 @@
     }
 
     .step-content {
-      padding: var(--sp-2) var(--sp-3);
+      padding: var(--sp-3) var(--sp-4);
       border-top: 1px solid var(--border-subtle);
+      overflow: visible;
     }
 
     .agentic-tool-call {
