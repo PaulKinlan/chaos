@@ -921,11 +921,9 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         col.isStreaming = false;
         col.typingEl.classList.remove('visible');
         col.sendBtn.disabled = false;
-        // Finalize last step
+        // Finalize last step but keep it open so user can see the result
         finalizeStepSummary(col);
-        if (col.currentStepDetails) {
-          col.currentStepDetails.removeAttribute('open');
-        }
+        // Don't close the last step - it contains the final work
         if (msg.result && (msg.result as string) !== col.lastAgenticText) {
           const finalEl = document.createElement('div');
           finalEl.className = 'chat-message assistant';
@@ -3870,9 +3868,9 @@ function openRefineModal(textarea: HTMLTextAreaElement, context: string): void {
         refineResult.style.display = '';
       }
     })
-    .catch(() => {
+    .catch((err) => {
       refineLoading.style.display = 'none';
-      refineResult.value = '(Error refining prompt. Check your API key settings.)';
+      refineResult.value = `(Error: ${err instanceof Error ? err.message : 'Failed to refine prompt. Check your API key in Global Settings.'})`;
       refineResult.style.display = '';
     });
 }

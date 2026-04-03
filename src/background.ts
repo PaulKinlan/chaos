@@ -1106,22 +1106,24 @@ async function handleOneShotMessage(
     }
 
     case 'refinePrompt': {
-      const rawPrompt = msg.prompt as string;
-      const context = msg.context as string || '';
+      try {
+        const rawPrompt = msg.prompt as string;
+        const context = msg.context as string || '';
 
-      const { getSettings, getApiKeys: getKeys } = await import('./storage/chrome-storage.js');
-      const settings = await getSettings();
-      const keys = await getKeys();
-      const apiKey = keys[settings.activeProvider];
-      if (!apiKey) return { error: 'No API key configured' };
+        const { getSettings, getApiKeys: getKeys } = await import('./storage/chrome-storage.js');
+        const settings = await getSettings();
+        const keys = await getKeys();
+        const provider = settings.activeProvider as keyof typeof keys;
+        const apiKey = keys[provider];
+        if (!apiKey) return { error: `No API key configured for ${settings.activeProvider}. Add one in Global Settings.` };
 
-      const { createLanguageModel } = await import('./agents/provider-registry.js');
-      const { generateText } = await import('ai');
-      const model = createLanguageModel(settings.activeProvider, apiKey, settings.model);
+        const { createLanguageModel } = await import('./agents/provider-registry.js');
+        const { generateText } = await import('ai');
+        const model = createLanguageModel(settings.activeProvider, apiKey, settings.model);
 
-      const result = await generateText({
-        model,
-        system: `You are a prompt refinement assistant. The user has written a rough prompt for an AI agent task. Your job is to improve it by:
+        const result = await generateText({
+          model,
+          system: `You are a prompt refinement assistant. The user has written a rough prompt for an AI agent task. Your job is to improve it by:
 - Making it more specific and actionable
 - Adding clear step-by-step instructions
 - Specifying what tools the agent should use (e.g. tab_read, fetch_page, write_file)
@@ -1130,10 +1132,14 @@ async function handleOneShotMessage(
 - Keeping the user's intent intact
 
 Return ONLY the refined prompt text, nothing else. No explanations or commentary.`,
-        prompt: `Context: ${context}\n\nOriginal prompt:\n${rawPrompt}`,
-      });
+          prompt: `Context: ${context}\n\nOriginal prompt:\n${rawPrompt}`,
+        });
 
-      return { refined: result.text };
+        return { refined: result.text };
+      } catch (err) {
+        console.error('refinePrompt failed:', err);
+        return { error: `Refinement failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
     }
 
     default:
