@@ -103,11 +103,33 @@ async function readDirRecursive(
   });
 }
 
+// ── Content script registration ──
+
+async function registerContentExtractor(): Promise<void> {
+  try {
+    const hasScripting = await chrome.permissions.contains({
+      permissions: ['scripting'],
+      origins: ['<all_urls>'],
+    });
+    if (!hasScripting) return;
+
+    await chrome.scripting.registerContentScripts([{
+      id: 'chaos-extractor',
+      matches: ['<all_urls>'],
+      js: ['src/content/extractor.js'],
+      runAt: 'document_idle',
+    }]);
+  } catch {
+    // May already be registered — that's fine
+  }
+}
+
 // ── Installation ──
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('CHAOS extension installed', details.reason);
   setupContextMenus();
+  registerContentExtractor();
 
   // On update, reload existing NTP tabs so they pick up the new extension version
   if (details.reason === 'update') {
@@ -152,6 +174,12 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       console.error('Failed to create default agent:', err);
     }
   }
+});
+
+// ── Startup ──
+
+chrome.runtime.onStartup?.addListener(() => {
+  registerContentExtractor();
 });
 
 // ── Initialize hooks event listeners ──
@@ -638,7 +666,7 @@ async function handleExtractContent(port: chrome.runtime.Port): Promise<void> {
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ['src/content/extractor.ts'],
+          files: ['src/content/extractor.js'],
         });
         // Retry after injection
         await new Promise((r) => setTimeout(r, 200));

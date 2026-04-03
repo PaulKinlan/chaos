@@ -1,17 +1,68 @@
 /**
  * Fetch Page Tool
  *
- * Fetches a URL using the browser's fetch API and extracts text content.
- * Uses regex-based HTML parsing since DOMParser is not available in
- * service worker context.
+ * Fetches a URL and extracts content as markdown.
+ * Uses an offscreen document with Readability + Turndown for proper DOM parsing.
+ * Falls back to regex-based extraction if offscreen is unavailable.
  */
 
 import { tool } from 'ai';
 import { z } from 'zod';
 
 /**
+ * Ensure the offscreen parser document exists.
+ * Returns true if available, false if offscreen API is not supported.
+ */
+async function ensureOffscreenParser(): Promise<boolean> {
+  try {
+    // Check if offscreen API is available
+    if (!chrome.offscreen) return false;
+
+    // Check if document already exists
+    const contexts = await (chrome.runtime as unknown as {
+      getContexts(filter: { contextTypes: string[] }): Promise<{ documentUrl: string }[]>;
+    }).getContexts?.({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+
+    if (contexts && contexts.length > 0) return true;
+
+    // Create the offscreen document
+    await chrome.offscreen.createDocument({
+      url: 'src/offscreen-parser.html',
+      reasons: [chrome.offscreen.Reason.DOM_PARSER],
+      justification: 'Parse HTML content with DOMParser and Readability',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Parse HTML using the offscreen document (Readability + Turndown).
+ */
+async function parseWithOffscreen(html: string, url: string): Promise<{ title: string; content: string } | null> {
+  try {
+    const available = await ensureOffscreenParser();
+    if (!available) return null;
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'parseHtml',
+      html,
+      url,
+    }) as { title: string; content: string } | undefined;
+
+    if (response?.content) {
+      return response;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Strip HTML tags and decode common entities.
- * Works in service worker context (no DOMParser needed).
+ * Regex fallback for when offscreen document is unavailable.
  */
 function htmlToText(html: string): string {
   // Remove script, style, nav, footer, noscript, svg, iframe blocks
@@ -61,10 +112,9 @@ function htmlToText(html: string): string {
 }
 
 /**
- * Try to extract main content from HTML using regex.
+ * Try to extract main content from HTML using regex (fallback).
  */
 function extractMainContent(html: string): string {
-  // Try to find main/article content
   const mainPatterns = [
     /<main[^>]*>([\s\S]*?)<\/main>/i,
     /<article[^>]*>([\s\S]*?)<\/article>/i,
@@ -79,7 +129,6 @@ function extractMainContent(html: string): string {
     }
   }
 
-  // Fall back to body content
   const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   if (bodyMatch) {
     return htmlToText(bodyMatch[1]);
@@ -90,7 +139,7 @@ function extractMainContent(html: string): string {
 
 export const fetchPage = tool({
   description:
-    'Fetch a web page by URL and return its main content as text. Handles CORS errors, 404s, and timeouts gracefully.',
+    'Fetch a web page by URL and return its main content as markdown. Uses Readability for article extraction when available. Handles CORS errors, 404s, and timeouts gracefully.',
   inputSchema: z.object({
     url: z.string().url().describe('The URL to fetch'),
   }),
@@ -119,14 +168,22 @@ export const fetchPage = tool({
 
       const html = await response.text();
 
-      // Extract title
+      // Try offscreen document parsing first (Readability + Turndown)
+      const offscreenResult = await parseWithOffscreen(html, url);
+      if (offscreenResult) {
+        return {
+          title: offscreenResult.title,
+          content: offscreenResult.content,
+          url,
+        };
+      }
+
+      // Fallback: regex-based extraction
       const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
       const title = titleMatch ? titleMatch[1].trim() : '';
 
-      // Extract main content
       const rawContent = extractMainContent(html);
 
-      // Truncate very long content
       const maxLength = 12000;
       const content =
         rawContent.length > maxLength

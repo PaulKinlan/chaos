@@ -20,6 +20,25 @@ const turndown = new TurndownService({
   bulletListMarker: '-',
 });
 
+// Strip noise elements that don't contribute to main content
+const NOISE_TAGS = new Set(['style', 'script', 'noscript', 'iframe', 'head', 'nav', 'footer', 'header', 'aside', 'form', 'input', 'button', 'select', 'textarea', 'svg']);
+turndown.addRule('remove-noise', {
+  filter: (node) => NOISE_TAGS.has(node.nodeName.toLowerCase()),
+  replacement: () => '',
+});
+
+// Keep link text but remove the link itself (cleaner for AI context)
+turndown.addRule('flatten-links', {
+  filter: ['a'],
+  replacement: (content) => content,
+});
+
+// Remove images (not useful for text extraction)
+turndown.addRule('remove-images', {
+  filter: ['img'],
+  replacement: () => '',
+});
+
 // ── Extraction result type ──
 
 interface ExtractedContent {

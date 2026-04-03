@@ -2,8 +2,10 @@
  * Tab Read Tool
  *
  * Reads the active tab's content via content script extraction.
- * Sends an 'extractContent' message to the tab's content script
- * and returns the extracted title, URL, content, and excerpt.
+ * Uses a three-tier approach:
+ * 1. Send message to already-injected content script (Readability + Turndown)
+ * 2. Inject content script via chrome.scripting.executeScript, then message it
+ * 3. Fall back to inline innerText extraction as last resort
  */
 
 import { tool } from 'ai';
@@ -32,29 +34,63 @@ export const tabRead = tool({
       targetTabId = activeTab.id;
     }
 
+    // Tier 1: Try messaging the already-injected content script
     try {
-      // Use chrome.scripting.executeScript with an inline function
-      // This avoids content script file path issues and works reliably
+      const response = await chrome.tabs.sendMessage(targetTabId, {
+        type: 'extractContent',
+      }) as { title: string; url: string; content: string; excerpt: string } | undefined;
+
+      if (response?.content) {
+        return response;
+      }
+    } catch {
+      // Content script not present — try tier 2
+    }
+
+    // Tier 2: Inject content script file, then message it
+    try {
+      const hasScripting = await chrome.permissions.contains({
+        permissions: ['scripting'],
+        origins: ['<all_urls>'],
+      });
+
+      if (hasScripting) {
+        await chrome.scripting.executeScript({
+          target: { tabId: targetTabId },
+          files: ['src/content/extractor.js'],
+        });
+
+        // Brief delay for script to initialise listener
+        await new Promise((r) => setTimeout(r, 200));
+
+        const response = await chrome.tabs.sendMessage(targetTabId, {
+          type: 'extractContent',
+        }) as { title: string; url: string; content: string; excerpt: string } | undefined;
+
+        if (response?.content) {
+          return response;
+        }
+      }
+    } catch {
+      // Injection failed — try tier 3
+    }
+
+    // Tier 3: Inline innerText fallback (works without content script file)
+    try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: targetTabId },
         func: () => {
-          // Extract page content directly in the tab context
           const title = document.title || '';
           const url = location.href || '';
-
-          // Try to get main content
           const selectors = ['main', 'article', '[role="main"]', '.post-content', '.entry-content', '.content', '#content'];
           let contentEl: Element | null = null;
           for (const sel of selectors) {
             contentEl = document.querySelector(sel);
             if (contentEl) break;
           }
-
           const rawText = ((contentEl || document.body) as HTMLElement)?.innerText || '';
-          // Truncate to ~8000 chars to avoid huge payloads
           const content = rawText.slice(0, 8000);
           const excerpt = rawText.slice(0, 200);
-
           return { title, url, content, excerpt };
         },
       });
@@ -63,26 +99,18 @@ export const tabRead = tool({
       if (result) {
         return result;
       }
-
-      // Fallback to basic tab info
-      const tabs = await chrome.tabs.query({});
-      const tab = tabs.find((t) => t.id === targetTabId);
-      return {
-        title: tab?.title ?? '',
-        url: tab?.url ?? '',
-        content: '',
-        excerpt: 'Could not extract page content. Try using fetch_page with the URL instead.',
-      };
-    } catch (err) {
-      // Can't inject into this page (chrome://, etc.)
-      const tabs = await chrome.tabs.query({});
-      const tab = tabs.find((t) => t.id === targetTabId);
-      return {
-        title: tab?.title ?? '',
-        url: tab?.url ?? '',
-        content: '',
-        excerpt: `Could not read page: ${err instanceof Error ? err.message : String(err)}. Try using fetch_page with the URL instead.`,
-      };
+    } catch {
+      // Can't inject into this page at all
     }
+
+    // Last resort: return basic tab info
+    const tabs = await chrome.tabs.query({});
+    const tab = tabs.find((t) => t.id === targetTabId);
+    return {
+      title: tab?.title ?? '',
+      url: tab?.url ?? '',
+      content: '',
+      excerpt: 'Could not extract page content. Try using fetch_page with the URL instead.',
+    };
   },
 });
