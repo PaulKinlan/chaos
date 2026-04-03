@@ -1129,7 +1129,27 @@ function showColumnAddPicker(e: MouseEvent): void {
   const available = agents.filter((a) => !shownAgentIds.has(a.id));
 
   if (available.length === 0) {
-    return; // All agents already have columns
+    // All agents already have columns - offer to create a new one
+    columnAddPicker.innerHTML = '';
+    const createBtn = document.createElement('button');
+    createBtn.innerHTML = '<span>+ Create new agent</span>';
+    createBtn.addEventListener('click', () => {
+      columnAddPicker.classList.remove('visible');
+      document.getElementById('btn-create-agent')?.click();
+    });
+    columnAddPicker.appendChild(createBtn);
+
+    columnAddPicker.style.left = `${e.clientX - 100}px`;
+    columnAddPicker.style.top = `${e.clientY - 10}px`;
+    columnAddPicker.classList.add('visible');
+    const close = (ev: MouseEvent) => {
+      if (!columnAddPicker.contains(ev.target as Node)) {
+        columnAddPicker.classList.remove('visible');
+        document.removeEventListener('mousedown', close);
+      }
+    };
+    setTimeout(() => document.addEventListener('mousedown', close), 0);
+    return;
   }
 
   columnAddPicker.innerHTML = '';

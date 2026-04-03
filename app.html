@@ -635,11 +635,12 @@
        ══════════════════════════════════════ */
     .columns-container {
       display: flex;
-      gap: 0;
+      gap: var(--sp-3);
       height: 100%;
       overflow-x: auto;
       scroll-snap-type: x mandatory;
       scroll-behavior: smooth;
+      padding: var(--sp-3);
     }
 
     /* When few columns, let them fill the space */
@@ -653,14 +654,13 @@
       max-width: 600px;
       display: flex;
       flex-direction: column;
-      border-right: 1px solid var(--border-subtle);
+      background: var(--bg-raised);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
       scroll-snap-align: start;
       height: 100%;
       overflow: hidden;
-    }
-
-    .chat-column:last-of-type {
-      border-right: none;
+      box-shadow: 0 2px 8px var(--shadow-color, rgba(0,0,0,0.15));
     }
 
     /* Single column takes full width, no max */
@@ -670,28 +670,35 @@
     }
 
     .columns-add-btn {
-      flex: 0 0 48px;
+      flex: 0 0 64px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border: none;
+      border: 2px dashed var(--border-default);
+      border-radius: 12px;
       background: none;
       color: var(--text-muted);
       cursor: pointer;
-      border-left: 1px solid var(--border-subtle);
-      transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+      transition: all var(--duration-fast) var(--ease-out);
       scroll-snap-align: end;
+      margin: var(--sp-6) 0;
+      align-self: center;
+      min-height: 120px;
+      box-shadow: 0 1px 4px var(--shadow-color, rgba(0,0,0,0.1));
     }
 
     .columns-add-btn:hover {
-      color: var(--text-primary);
-      background: var(--bg-hover);
+      color: var(--accent-text);
+      border-color: var(--accent);
+      background: var(--accent-subtle);
+      box-shadow: 0 4px 16px var(--shadow-color, rgba(0,0,0,0.2));
+      transform: translateY(-1px);
     }
 
     .chat-column-header {
       display: flex;
       align-items: center;
-      padding: var(--sp-2) var(--sp-3);
+      padding: var(--sp-3) var(--sp-4);
       border-bottom: 1px solid var(--border-subtle);
       flex-shrink: 0;
       gap: var(--sp-2);
@@ -842,7 +849,7 @@
     .chat-messages {
       flex: 1;
       overflow-y: auto;
-      padding: var(--sp-3) 0;
+      padding: var(--sp-4);
       display: flex;
       flex-direction: column;
       gap: var(--sp-3);
@@ -1055,7 +1062,7 @@
     .chat-input-area {
       display: flex;
       gap: var(--sp-2);
-      padding: var(--sp-3) 0;
+      padding: var(--sp-3) var(--sp-4);
       border-top: 1px solid var(--border-subtle);
       flex-shrink: 0;
       align-items: flex-end;
