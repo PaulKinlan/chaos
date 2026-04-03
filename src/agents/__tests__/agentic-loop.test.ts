@@ -66,23 +66,38 @@ vi.mock('../../storage/chrome-storage.js', () => ({
 
 // ── AI SDK mock ──
 
-// Track generateText calls and allow configuring responses per call
-let generateTextCallCount = 0;
-let generateTextResponses: Array<{
+// Track streamText calls and allow configuring responses per call
+let streamTextCallCount = 0;
+let streamTextResponses: Array<{
   text: string;
-  steps: Array<{ toolCalls: Array<{ toolName: string; args: unknown }> }>;
-  response: { messages: Array<{ role: string; content: string }> };
+  toolCalls?: Array<{ toolName: string; args: unknown }>;
 }> = [];
 
 vi.mock('ai', () => ({
-  generateText: vi.fn(async () => {
-    const idx = generateTextCallCount++;
-    const resp = generateTextResponses[idx] ?? {
-      text: 'Done.',
-      steps: [{ toolCalls: [] }],
-      response: { messages: [{ role: 'assistant', content: 'Done.' }] },
+  streamText: vi.fn(() => {
+    const idx = streamTextCallCount++;
+    const resp = streamTextResponses[idx] ?? { text: 'Done.' };
+    const toolCalls = resp.toolCalls || [];
+
+    // Create an async iterable for fullStream
+    async function* mockFullStream() {
+      // Yield text deltas
+      if (resp.text) {
+        yield { type: 'text-delta' as const, text: resp.text };
+      }
+      // Yield tool calls
+      for (const tc of toolCalls) {
+        yield { type: 'tool-call' as const, toolName: tc.toolName, toolCallId: `tc-${idx}`, args: tc.args };
+      }
+    }
+
+    return {
+      fullStream: mockFullStream(),
+      text: Promise.resolve(resp.text),
+      response: Promise.resolve({
+        messages: [{ role: 'assistant', content: resp.text }],
+      }),
     };
-    return resp;
   }),
   tool: vi.fn((config: any) => config),
   stepCountIs: vi.fn((count: number) => ({ type: 'stepCount', count })),
@@ -131,8 +146,8 @@ import { runAgenticLoop, type ProgressUpdate } from '../agentic-loop.js';
 
 beforeEach(() => {
   for (const key of Object.keys(mockFiles)) delete mockFiles[key];
-  generateTextCallCount = 0;
-  generateTextResponses = [];
+  streamTextCallCount = 0;
+  streamTextResponses = [];
   vi.clearAllMocks();
 
   // Set up agent CLAUDE.md
@@ -152,11 +167,10 @@ beforeEach(() => {
 
 describe('runAgenticLoop', () => {
   it('completes immediately when no tool calls are made', async () => {
-    generateTextResponses = [
+    streamTextResponses = [
       {
         text: 'Task complete. Here is the summary.',
-        steps: [{ toolCalls: [] }],
-        response: { messages: [{ role: 'assistant', content: 'Task complete.' }] },
+        
       },
     ];
 
@@ -166,29 +180,26 @@ describe('runAgenticLoop', () => {
     });
 
     expect(result).toBe('Task complete. Here is the summary.');
-    const { generateText } = await import('ai');
-    expect(vi.mocked(generateText)).toHaveBeenCalledTimes(1);
+    const { streamText } = await import('ai');
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
   });
 
   it('continues the loop when tools are called, stops when no tools', async () => {
-    generateTextResponses = [
+    streamTextResponses = [
       // Step 1: tool call
       {
         text: '',
-        steps: [{ toolCalls: [{ toolName: 'read_file', args: { path: 'data.md' } }] }],
-        response: { messages: [{ role: 'assistant', content: '' }] },
+        toolCalls: [{ toolName: 'read_file', args: { path: 'data.md' } }],
       },
       // Step 2: another tool call
       {
         text: 'Intermediate thoughts.',
-        steps: [{ toolCalls: [{ toolName: 'write_file', args: { path: 'out.md', content: 'result' } }] }],
-        response: { messages: [{ role: 'assistant', content: 'Intermediate.' }] },
+        toolCalls: [{ toolName: 'write_file', args: { path: 'out.md', content: 'result' } }],
       },
       // Step 3: no tool calls — done
       {
         text: 'All done. Report written.',
-        steps: [{ toolCalls: [] }],
-        response: { messages: [{ role: 'assistant', content: 'All done.' }] },
+        
       },
     ];
 
@@ -198,16 +209,15 @@ describe('runAgenticLoop', () => {
     });
 
     expect(result).toBe('All done. Report written.');
-    const { generateText } = await import('ai');
-    expect(vi.mocked(generateText)).toHaveBeenCalledTimes(3);
+    const { streamText } = await import('ai');
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(3);
   });
 
   it('respects max iteration limit', async () => {
     // All responses have tool calls — will hit the limit
-    generateTextResponses = Array.from({ length: 5 }, () => ({
+    streamTextResponses = Array.from({ length: 5 }, () => ({
       text: 'Still working...',
-      steps: [{ toolCalls: [{ toolName: 'read_file', args: { path: 'x.md' } }] }],
-      response: { messages: [{ role: 'assistant', content: 'Working...' }] },
+      toolCalls: [{ toolName: 'read_file', args: { path: 'x.md' } }],
     }));
 
     const result = await runAgenticLoop({
@@ -217,8 +227,8 @@ describe('runAgenticLoop', () => {
     });
 
     expect(result).toBe('Still working...');
-    const { generateText } = await import('ai');
-    expect(vi.mocked(generateText)).toHaveBeenCalledTimes(3);
+    const { streamText } = await import('ai');
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(3);
   });
 
   it('handles abort signal cancellation', async () => {
@@ -237,21 +247,19 @@ describe('runAgenticLoop', () => {
     // Should have reported error and returned empty
     expect(progress.some((p) => p.type === 'error' && p.content === 'Aborted')).toBe(true);
     expect(result).toBe('');
-    const { generateText } = await import('ai');
-    expect(vi.mocked(generateText)).not.toHaveBeenCalled();
+    const { streamText } = await import('ai');
+    expect(vi.mocked(streamText)).not.toHaveBeenCalled();
   });
 
   it('fires progress updates correctly', async () => {
-    generateTextResponses = [
+    streamTextResponses = [
       {
         text: '',
-        steps: [{ toolCalls: [{ toolName: 'read_file', args: { path: 'a.md' } }] }],
-        response: { messages: [{ role: 'assistant', content: '' }] },
+        toolCalls: [{ toolName: 'read_file', args: { path: 'a.md' } }],
       },
       {
         text: 'Final answer.',
-        steps: [{ toolCalls: [] }],
-        response: { messages: [{ role: 'assistant', content: 'Final.' }] },
+        
       },
     ];
 
@@ -305,10 +313,9 @@ describe('runAgenticLoop', () => {
   });
 
   it('reports max-iteration error via onProgress', async () => {
-    generateTextResponses = Array.from({ length: 3 }, () => ({
+    streamTextResponses = Array.from({ length: 3 }, () => ({
       text: 'Working...',
-      steps: [{ toolCalls: [{ toolName: 'read_file', args: { path: 'x.md' } }] }],
-      response: { messages: [{ role: 'assistant', content: 'Working...' }] },
+      toolCalls: [{ toolName: 'read_file', args: { path: 'x.md' } }],
     }));
 
     const progress: ProgressUpdate[] = [];
@@ -326,11 +333,10 @@ describe('runAgenticLoop', () => {
   });
 
   it('logs activity for agentic tasks', async () => {
-    generateTextResponses = [
+    streamTextResponses = [
       {
         text: 'Done with task.',
-        steps: [{ toolCalls: [] }],
-        response: { messages: [{ role: 'assistant', content: 'Done.' }] },
+        
       },
     ];
 

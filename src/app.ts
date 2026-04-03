@@ -691,12 +691,30 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       const progressContent = msg.content as string;
 
       if (progressType === 'thinking') {
-        const stepEl = document.createElement('div');
-        stepEl.style.cssText = 'font-size:13px;color:var(--accent-text);padding:8px 16px;background:var(--accent-subtle);border-radius:8px;margin:8px 0 4px 0;font-weight:600;max-width:none;width:fit-content;';
-        stepEl.textContent = `Step ${iteration} of ${totalIterations}`;
-        col.messagesEl.appendChild(stepEl);
+        // Stream text deltas into a live-updating element
+        if (!col.currentStreamEl) {
+          // Create a new streaming element for this step
+          const stepHeader = document.createElement('div');
+          stepHeader.style.cssText = 'font-size:11px;color:var(--accent-text);padding:4px 16px;font-weight:600;max-width:none;width:fit-content;margin-top:8px;';
+          stepHeader.textContent = `Step ${iteration} of ${totalIterations}`;
+          col.messagesEl.appendChild(stepHeader);
+
+          const streamEl = document.createElement('div');
+          streamEl.className = 'chat-message assistant';
+          streamEl.style.cssText = 'max-width:none;';
+          col.messagesEl.appendChild(streamEl);
+          col.currentStreamEl = streamEl;
+          col.currentStreamContent = '';
+        }
+        // Append the text delta
+        col.currentStreamContent = (col.currentStreamContent || '') + progressContent;
+        renderChatMarkdown(col.currentStreamEl, col.currentStreamContent);
         columnScrollToBottom(col);
       } else if (progressType === 'tool-call') {
+        // Reset streaming element so next text starts fresh after tool calls
+        col.currentStreamEl = null;
+        col.currentStreamContent = '';
+
         const toolName = msg.toolName as string;
         const toolArgs = msg.toolArgs as Record<string, unknown> | undefined;
         const toolEl = document.createElement('div');
@@ -710,22 +728,44 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         columnScrollToBottom(col);
       } else if (progressType === 'tool-result') {
         const resultContent = msg.toolResult as string | Record<string, unknown> | undefined;
+        const toolName = msg.toolName as string || '';
         if (resultContent) {
+          const fullText = typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent, null, 2);
+          const preview = fullText.slice(0, 120);
+          const hasMore = fullText.length > 120;
+
           const resultEl = document.createElement('div');
-          resultEl.style.cssText = 'font-size:12px;color:var(--text-muted);padding:4px 16px 4px 20px;margin:0 0 4px 0;max-width:none;line-height:1.4;';
-          const preview = typeof resultContent === 'string' ? resultContent.slice(0, 150) : JSON.stringify(resultContent).slice(0, 150);
-          resultEl.textContent = `-> ${preview}${(typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent)).length > 150 ? '...' : ''}`;
+          resultEl.style.cssText = 'font-size:12px;padding:4px 16px 4px 20px;margin:0 0 4px 0;max-width:none;line-height:1.4;';
+
+          const previewEl = document.createElement('div');
+          previewEl.style.cssText = 'color:var(--text-muted);cursor:pointer;display:flex;align-items:center;gap:4px;';
+          previewEl.innerHTML = `<span style="color:var(--text-secondary);">→ ${escapeHtml(toolName)}</span> ${escapeHtml(preview)}${hasMore ? '...' : ''}${hasMore ? ' <span style="color:var(--accent-text);font-size:11px;">▶ expand</span>' : ''}`;
+          resultEl.appendChild(previewEl);
+
+          if (hasMore) {
+            const fullEl = document.createElement('pre');
+            fullEl.style.cssText = 'display:none;margin-top:4px;padding:8px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;font-size:11px;color:var(--text-primary);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;font-family:monospace;';
+            fullEl.textContent = fullText;
+            resultEl.appendChild(fullEl);
+
+            previewEl.addEventListener('click', () => {
+              const isOpen = fullEl.style.display !== 'none';
+              fullEl.style.display = isOpen ? 'none' : 'block';
+              const arrow = previewEl.querySelector('span:last-child');
+              if (arrow) arrow.textContent = isOpen ? '▶ expand' : '▼ collapse';
+            });
+          }
+
           col.messagesEl.appendChild(resultEl);
           columnScrollToBottom(col);
         }
       } else if (progressType === 'text' && progressContent) {
+        // Track for duplicate detection (agenticDone), but don't create
+        // a new element since 'thinking' deltas already streamed this text
         col.lastAgenticText = progressContent;
-        const textEl = document.createElement('div');
-        textEl.className = 'chat-message assistant';
-        textEl.dataset.agenticIntermediate = 'true';
-        renderChatMarkdown(textEl, progressContent);
-        col.messagesEl.appendChild(textEl);
-        columnScrollToBottom(col);
+        // Reset stream element for next step
+        col.currentStreamEl = null;
+        col.currentStreamContent = '';
       } else if (progressType === 'step-complete') {
         // Subtle separator
       } else if (progressType === 'error') {

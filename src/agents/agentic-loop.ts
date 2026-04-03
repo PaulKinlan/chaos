@@ -11,7 +11,7 @@
  * streamed to the caller via the onProgress callback.
  */
 
-import { generateText, stepCountIs, tool, type ToolSet, type ModelMessage } from 'ai';
+import { streamText, stepCountIs, tool, type ToolSet, type ModelMessage } from 'ai';
 import { z } from 'zod';
 import { opfs } from '../storage/opfs.js';
 import { getAgentList, getApiKeys, getSettings } from '../storage/chrome-storage.js';
@@ -572,9 +572,8 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
       totalIterations: maxIterations,
     });
 
-    // Call LLM with full history + tools
-    // maxSteps allows the model to do multi-tool-call chains within a single outer iteration
-    const result = await generateText({
+    // Stream LLM response - stream text in real-time, collect tool calls
+    const result = streamText({
       model,
       system: systemPrompt,
       messages,
@@ -583,36 +582,62 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
       abortSignal: signal,
     });
 
-    // Collect tool calls from all steps in this iteration
+    // Consume the stream: text deltas streamed live, tool calls collected
     const iterationToolCalls: { toolName: string; args: unknown }[] = [];
-    for (const step of result.steps) {
-      for (const tc of step.toolCalls) {
-        const args = 'args' in tc ? tc.args : undefined;
-        iterationToolCalls.push({ toolName: tc.toolName, args });
-        allToolCallNames.push(tc.toolName);
+    let iterationText = '';
+
+    for await (const part of result.fullStream) {
+      if (signal?.aborted) break;
+
+      switch (part.type) {
+        case 'text-delta':
+          iterationText += part.text;
+          // Stream text chunks to the UI in real-time
+          onProgress?.({
+            type: 'thinking',
+            content: part.text,
+            iteration: i + 1,
+            totalIterations: maxIterations,
+          });
+          break;
+
+        case 'tool-call': {
+          const toolArgs = 'args' in part ? part.args : ('input' in part ? (part as any).input : undefined);
+          iterationToolCalls.push({ toolName: part.toolName, args: toolArgs });
+          allToolCallNames.push(part.toolName);
+          onProgress?.({
+            type: 'tool-call',
+            content: `Called ${part.toolName}`,
+            toolName: part.toolName,
+            toolArgs,
+            iteration: i + 1,
+            totalIterations: maxIterations,
+          });
+          break;
+        }
+
+        case 'tool-result':
+          // Tool result from inner step
+          onProgress?.({
+            type: 'tool-result',
+            content: '',
+            toolName: part.toolName,
+            toolResult: 'result' in part ? part.result : ('output' in part ? (part as any).output : undefined),
+            iteration: i + 1,
+            totalIterations: maxIterations,
+          });
+          break;
       }
     }
 
     const hasToolCalls = iterationToolCalls.length > 0;
 
-    // Report tool call progress
-    for (const tc of iterationToolCalls) {
-      onProgress?.({
-        type: 'tool-call',
-        content: `Called ${tc.toolName}`,
-        toolName: tc.toolName,
-        toolArgs: tc.args,
-        iteration: i + 1,
-        totalIterations: maxIterations,
-      });
-    }
-
-    // Report text
-    lastText = result.text;
-    if (result.text) {
+    // Report complete text for this step (if not already streamed piecemeal)
+    lastText = iterationText;
+    if (iterationText) {
       onProgress?.({
         type: 'text',
-        content: result.text,
+        content: iterationText,
         iteration: i + 1,
         totalIterations: maxIterations,
       });
@@ -627,15 +652,21 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
 
     // Append the response messages to our conversation history
     // so the next iteration sees the full context
-    for (const msg of result.response.messages) {
+    const response = await result.response;
+    for (const msg of response.messages) {
       messages.push(msg as ModelMessage);
     }
 
+    // Get the final text for this iteration
+    const finalText = await result.text;
+    lastText = finalText || iterationText;
+
     // If no tool calls were made, the agent considers itself done
     if (!hasToolCalls) {
+      const doneText = lastText;
       onProgress?.({
         type: 'done',
-        content: result.text,
+        content: doneText,
         iteration: i + 1,
         totalIterations: maxIterations,
       });
@@ -644,11 +675,11 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
       await appendActivityLog(agentId, {
         timestamp: new Date().toISOString(),
         role: 'assistant',
-        summary: `[Agentic] ${result.text.slice(0, 200)}`,
+        summary: `[Agentic] ${doneText.slice(0, 200)}`,
         toolCalls: allToolCallNames.length > 0 ? allToolCallNames : undefined,
       });
 
-      return result.text;
+      return doneText;
     }
 
     // Otherwise, add a user message prompting the agent to continue
