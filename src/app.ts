@@ -693,13 +693,9 @@ function handlePortMessage(msg: Record<string, unknown>): void {
 
     case 'agenticProgress': {
       const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
-      if (!col) {
-        console.warn('CHAOS: agenticProgress received but no column found for agent:', msgAgentId);
-        break;
-      }
+      if (!col) break;
 
       const progressType = msg.progressType as string;
-      console.log('CHAOS progress:', progressType, 'step:', msg.iteration, 'agent:', msgAgentId);
       const iteration = msg.iteration as number;
       const totalIterations = msg.totalIterations as number;
       const progressContent = msg.content as string;
