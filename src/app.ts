@@ -105,6 +105,24 @@ function formatTime(iso: string): string {
   });
 }
 
+function formatDuration(minutes: number): string {
+  if (minutes < 1) return 'less than a minute';
+  if (minutes === 1) return 'minute';
+  if (minutes < 60) return `${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  if (hours === 1) return 'hour';
+  if (hours < 24) return `${hours} hours`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return 'day';
+  if (days === 7) return 'week';
+  if (days < 7) return `${days} days`;
+  const weeks = Math.round(days / 7);
+  if (weeks === 1) return 'week';
+  if (days === 14) return '2 weeks';
+  if (days === 30 || days === 31) return 'month';
+  return `${days} days`;
+}
+
 function formatTimeFull(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString(undefined, {
@@ -2310,7 +2328,7 @@ function renderTasks(): void {
   } else {
     html += agentScheduled.map((t) => {
       const scheduleLabel = t.schedule.type === 'recurring'
-        ? `Every ${t.schedule.periodInMinutes && t.schedule.periodInMinutes >= 60 ? Math.round(t.schedule.periodInMinutes / 60) + ' hours' : (t.schedule.periodInMinutes || '?') + ' min'}`
+        ? `Every ${formatDuration(t.schedule.periodInMinutes || 0)}`
         : 'One-shot';
       // Build the expandable details panel
       let detailsContent = '';
