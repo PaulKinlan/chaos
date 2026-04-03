@@ -1263,8 +1263,8 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
   // Update layout classes
   updateColumnsLayout();
 
-  // Load conversation
-  if (port) {
+  // Load conversation (only for primary columns, not duplicates)
+  if (port && !allowDuplicate) {
     sendPortMessage({ type: 'getConversation', agentId });
   }
 
