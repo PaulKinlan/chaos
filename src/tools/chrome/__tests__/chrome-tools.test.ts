@@ -98,7 +98,7 @@ describe('tab_read', () => {
 
   it('reads the active tab when no tabId provided', async () => {
     mockChrome.tabs.query.mockResolvedValue([{ id: 42 }]);
-    mockChrome.scripting.executeScript.mockResolvedValue([{
+    (mockChrome.scripting.executeScript as any).mockResolvedValue([{
       result: {
         title: 'Test Page',
         url: 'https://example.com',
@@ -122,7 +122,7 @@ describe('tab_read', () => {
   });
 
   it('reads a specific tab by tabId', async () => {
-    mockChrome.scripting.executeScript.mockResolvedValue([{
+    (mockChrome.scripting.executeScript as any).mockResolvedValue([{
       result: {
         title: 'Specific Tab',
         url: 'https://example.com/page',
