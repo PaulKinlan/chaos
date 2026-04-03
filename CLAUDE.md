@@ -7,11 +7,16 @@
 3. Run `npx vitest run` - all tests must pass
 4. Grep for patterns you just fixed across the entire codebase (e.g. if you fix `__dirname`, check all files)
 
-## After making changes
+## After making changes (MANDATORY)
 
-1. Keep `docs/prd.md` and `docs/architecture.md` up to date with any changes to features, architecture, or design decisions
-2. If a new feature is added, update the relevant sections in both docs
-3. If a design decision changes, update the docs to reflect the new approach
+**You MUST update docs for every significant change.** This is not optional.
+
+1. **`docs/prd.md`**: Update when adding features, changing user-facing behavior, or modifying the product model. Add new features to the feature list. Update UI descriptions. Document new tool categories.
+2. **`docs/architecture.md`**: Update when changing technical architecture, adding new modules, changing data flow, adding new storage, or modifying the agent loop. Keep the architecture diagram current.
+3. **`plans/`**: If the change relates to an active plan, update that plan to reflect what was implemented vs what's still pending.
+4. **`README.md`**: Update the feature list when major features land.
+
+If you're making 3+ related changes in a batch, update docs BEFORE committing the code changes.
 
 ## Data store migrations (CRITICAL)
 
