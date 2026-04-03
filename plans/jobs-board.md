@@ -1,248 +1,192 @@
-# Plan: Jobs Board / Central Task Interface
+# Plan: Master Agent + Shared Workspace
 
-## Problem
+## Summary
 
-The current UX forces the user to decide which agent should handle each request. You have to pick an agent tab, type your message, and hope you chose the right one. This creates friction:
+One master agent is the primary interface. Most users only ever interact with this agent. The master can create specialist sub-agents when work requires it. Artifacts and tasks are shared across all agents as a common workspace. Each agent keeps its own private memory.
 
-- "Should I ask the researcher or the coder to investigate this bug?"
-- "I want a report written, but it needs research first, then writing, then review"
-- The user becomes the orchestrator, manually routing work between agents
+## Core Model
 
-Meanwhile, the Tasks, Messages, and Artifacts views are per-agent but the data is actually shared. You have to click into each agent to see what's happening across the system.
+### Master Agent
 
-## Vision
+- Created automatically on install (already happens: "Assistant", neutral role)
+- Marked as `master: true` in AgentMeta
+- The default landing page is the master agent's chat
+- The user talks to the master for everything
+- The master plans work, breaks it down, delegates to sub-agents when needed
+- The master has a `create_agent` tool so it can spin up specialists on its own
+- The master can also do work directly (it has all the same tools as any agent)
 
-A central "Jobs Board" as the default NTP view. The user posts tasks. Agents figure out who does what.
+### Sub-Agents (Specialists)
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  CHAOS                                    [+ New Job]  ⚙ │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│  Jobs Board                                              │
-│                                                          │
-│  ┌─────────────────────────────────────────────────────┐│
-│  │ 🟢 Research OpenClaw ecosystem changes              ││
-│  │    Assigned: Researcher → Writer                    ││
-│  │    Status: Step 3 of 5 — Writing summary            ││
-│  │    Started: 2 min ago                               ││
-│  └─────────────────────────────────────────────────────┘│
-│                                                          │
-│  ┌─────────────────────────────────────────────────────┐│
-│  │ ⏳ Review PR #142 and summarize changes              ││
-│  │    Assigned: Coder                                  ││
-│  │    Status: Queued                                   ││
-│  └─────────────────────────────────────────────────────┘│
-│                                                          │
-│  ┌─────────────────────────────────────────────────────┐│
-│  │ ✅ Daily briefing for March 3                        ││
-│  │    Assigned: Planner                                ││
-│  │    Status: Complete — 3 min ago                     ││
-│  │    [View Result]                                    ││
-│  └─────────────────────────────────────────────────────┘│
-│                                                          │
-│  ── Scheduled ──────────────────────────────────────────│
-│  │ 🔄 Daily OpenClaw report    Every 24h    Next: 9am  ││
-│  │ 🔄 Bookmark summarizer      On trigger   Active     ││
-│                                                          │
-├──────────────────────────────────────────────────────────┤
-│  [Jobs Board]  [Agents]  [Activity]  [Settings]          │
-└──────────────────────────────────────────────────────────┘
-```
+- Created by the master agent OR by the user via the + button
+- Have a specific role (researcher, coder, writer, etc.)
+- Appear as secondary tabs alongside the master
+- The user CAN drop into a sub-agent's tab to:
+  - See what it's working on
+  - Ask it follow-up questions
+  - Browse its memory
+  - See its hooks and scheduled tasks
+- Sub-agents can set up their own hooks and scheduled tasks based on their role
+- Sub-agents are NOT required. A single master agent works fine for most users.
 
-## How it works
+### Shared Workspace
 
-### 1. User posts a job (not a message to an agent)
+**Artifacts**: Top-level, shared across all agents.
+- Any agent can publish an artifact
+- Any agent can read artifacts from other agents
+- The user sees all artifacts in one place
+- This is how agents pass work products between each other
 
-The input is at the top of the Jobs Board. The user types what they want done:
+**Tasks**: Top-level, shared across all agents.
+- The master creates tasks and assigns them to sub-agents
+- Sub-agents can also create tasks for each other
+- The user sees all tasks in one place: queued, running, complete
+- Scheduled/recurring tasks shown here too
 
-- "Research what's happening in the OpenClaw ecosystem this week and write a summary"
-- "Check my bookmarks from today and organize them"
-- "Review the code in the tab I have open"
+**Messages**: Shared inter-agent communication log.
+- Master → sub-agent instructions
+- Sub-agent → master status updates and results
+- Sub-agent → sub-agent coordination
+- The user can see all of this for transparency
 
-No agent selection required. The user describes the outcome, not who should do it.
+### Private (Per-Agent)
 
-### 2. A dispatcher assigns the job
+**Memory**: Each agent's OPFS storage (memories/, people/, ideas/, CLAUDE.md, activity-log.jsonl, TODO.md) is private to that agent. The master doesn't read sub-agents' memory directly. They communicate through messages and artifacts.
 
-When a job is posted, a dispatcher (which could be a lightweight LLM call or a rule-based system) decides:
+**Conversations**: Per-agent chat history. The master has its own conversation thread. Each sub-agent has its own.
 
-- Which agent(s) should handle it
-- Whether it needs multiple agents in sequence (pipeline)
-- Whether agents should collaborate (parallel work + merge)
-
-**Dispatcher options:**
-
-**Option A: LLM-based dispatcher**
-A short LLM call that reads the job description + agent roles/capabilities and returns an assignment:
-```
-Given these agents: [Researcher (web research, summarization), Coder (code analysis, debugging), Writer (drafting, editing)]
-And this job: "Research OpenClaw and write a summary"
-Assign: Researcher → Writer (pipeline: research first, then writing)
-```
-Cost: one cheap LLM call per job. Flexible. Can handle novel requests.
-
-**Option B: Rule-based dispatcher**
-Pattern matching on keywords:
-- "research" / "find" / "search" → Researcher
-- "write" / "draft" / "summarize" → Writer
-- "code" / "debug" / "review PR" → Coder
-- "schedule" / "remind" / "plan" → Planner
-- Multiple keywords → pipeline
-
-Cheaper but less flexible. Good for common patterns.
-
-**Option C: Agent self-selection**
-Broadcast the job to all agents. Each agent evaluates whether it's a good fit (based on its role, current workload, capabilities) and bids. Highest-confidence agent takes it, or multiple agents form a pipeline.
-
-Most autonomous but slowest and most expensive.
-
-**Recommendation:** Start with Option A (LLM dispatch), fall back to Option B (rules) if no API key is set.
-
-### 3. Agents execute the job
-
-Once assigned, the agentic loop runs. For multi-agent jobs:
-
-**Pipeline:** Agent A completes their part, publishes an artifact, sends a message to Agent B saying "your turn, here's what I found." Agent B picks up and continues.
-
-**Parallel:** Multiple agents work simultaneously on different aspects. Results merged at the end.
-
-**Handoff protocol:**
-```
-1. Dispatcher creates a Job with stages: [research, write, review]
-2. Stage 1: Researcher runs agentic loop, saves result as artifact
-3. Dispatcher detects stage 1 complete, triggers stage 2
-4. Stage 2: Writer runs with artifact from stage 1 as context
-5. Dispatcher detects stage 2 complete, triggers stage 3
-6. Stage 3: Reviewer runs with artifact from stage 2
-7. Job marked complete, final artifact available to user
-```
-
-This uses the existing inter-agent communication (messages + artifacts + shared task board) but with a dispatcher orchestrating the flow.
-
-### 4. User sees progress and results
-
-The Jobs Board shows:
-- Active jobs with real-time progress (which step, what the agent is doing)
-- Completed jobs with results (click to view full output)
-- Scheduled/recurring jobs
-- Job history
-
-Clicking a job shows:
-- Full execution trace (which agents worked on it, what tools they used)
-- Intermediate artifacts
-- Final result
-- Option to re-run or modify
-
-## Data Model
-
-```typescript
-interface Job {
-  id: string;
-  description: string;        // What the user asked for
-  status: 'queued' | 'dispatching' | 'running' | 'complete' | 'failed';
-  createdAt: string;
-  completedAt?: string;
-
-  // Dispatch result
-  stages: JobStage[];
-  currentStageIndex: number;
-
-  // Result
-  finalResult?: string;
-  artifacts?: string[];        // Paths to shared artifacts produced
-}
-
-interface JobStage {
-  agentId: string;
-  agentName: string;
-  description: string;        // What this agent should do
-  status: 'pending' | 'running' | 'complete' | 'failed';
-  startedAt?: string;
-  completedAt?: string;
-  result?: string;
-  artifactPath?: string;
-}
-```
+**Hooks**: Per-agent. The master might instruct a sub-agent to set up a hook, or a sub-agent might decide on its own based on its role and context.
 
 ## UI Changes
 
-### New default view: Jobs Board
+### Navigation (minimal change from current)
 
-Replace the per-agent chat as the default NTP view. The Jobs Board becomes the primary interface.
-
-**Top navigation changes:**
 ```
-[Jobs Board]  [Agent 1]  [Agent 2]  [Agent 3]  [+]  ⚙
+[Master Agent]  [Sub-Agent 1]  [Sub-Agent 2]  [+]  ⚙
+
+Sidebar:
+  Chat          (per-agent)
+  Tasks         (SHARED - top level)
+  Messages      (SHARED - top level)
+  Artifacts     (SHARED - top level)
+  Memory        (per-agent)
+  Hooks         (per-agent)
+  Agent         (per-agent settings)
 ```
 
-Jobs Board is a top-level tab alongside agent tabs. It's the default/first tab.
+The key change: Tasks, Messages, and Artifacts show ALL data across all agents when viewed from any tab. They're not filtered to the active agent by default (though a filter dropdown is available).
 
-**Jobs Board layout:**
-- Input at top: "What do you want done?"
-- Active jobs section: cards with progress
-- Completed jobs section: cards with results
-- Scheduled section: recurring jobs and hooks
+The master agent tab could have a subtle visual distinction (e.g., a star/crown icon, slightly different tab style) to indicate it's the primary.
 
-### Agent tabs remain
+### Default landing
 
-You can still click into an individual agent to:
-- Chat directly (for quick one-off questions that don't need dispatch)
-- View their memory
-- Configure their tools
-- See their hooks and scheduled tasks
+When you open a new tab: master agent's chat view. This is where most interaction happens.
 
-### Shared views
+### Sub-agent creation flow
 
-Tasks, Messages, and Artifacts become views on the Jobs Board (not per-agent):
-- All messages across all agents
-- All shared tasks
-- All artifacts
-- Filterable by agent, date, job
+Two paths:
 
-## Migration from current UI
+1. **User creates**: Click +, pick role, name it. Same as now.
+2. **Master creates**: During an agentic loop, the master decides it needs a specialist. It calls `create_agent` tool with a role and purpose. The sub-agent tab appears. The master sends it a task via the shared task board.
 
-The current per-agent tab model stays but becomes secondary. The Jobs Board is added as the new default landing page.
+## New Tools for Master Agent
 
-**Phase 1: Add Jobs Board as a new view**
-- New sidebar item or top-level tab
-- Simple job posting + dispatcher (LLM-based)
-- Single-agent jobs only (dispatcher picks one agent)
+### `create_agent`
+- Input: { name, role, purpose (written into the sub-agent's CLAUDE.md) }
+- Creates a new agent with the specified role
+- Returns the agent ID so the master can send it tasks/messages
+- Only available to the master agent
 
-**Phase 2: Multi-agent pipelines**
-- Dispatcher can create multi-stage jobs
-- Stage transitions handled automatically
-- Artifacts passed between stages
+### `assign_task`
+- Input: { agentId, description, prompt, blockedBy? }
+- Creates a task in the shared task board assigned to the specified agent
+- The sub-agent picks it up on its next agentic loop iteration (or via a scheduled alarm)
 
-**Phase 3: Agent self-selection and negotiation**
-- Agents bid on jobs
-- Agents can delegate parts of a job to other agents
-- Inter-agent communication used for coordination
+### `get_agent_status`
+- Input: { agentId }
+- Returns: agent's current status, recent activity, pending tasks
+- Lets the master check on sub-agents
 
-**Phase 4: Jobs Board as default**
-- Move Jobs Board to be the default NTP view
-- Agent tabs become the detail/management view
-- Shared views (messages, artifacts) move to Jobs Board
+### `broadcast_message`
+- Input: { message }
+- Sends a message to all visible agents
+- For announcements, context updates
+
+## Execution Flow
+
+### Simple task (master handles it)
+
+```
+User: "What's the weather like?"
+Master: [uses web search tool, responds directly]
+```
+
+No sub-agents involved. Same as today.
+
+### Complex task (master delegates)
+
+```
+User: "Research the OpenClaw ecosystem and write a detailed report"
+Master:
+  1. Thinks: "This needs research then writing. I'll create a researcher."
+  2. Calls create_agent("OpenClaw Researcher", "researcher", "Focus on OpenClaw ecosystem...")
+  3. Calls assign_task(researcher_id, "Research OpenClaw...", prompt)
+  4. Tells user: "I've created a researcher agent and assigned the task. I'll compile the report when research is done."
+
+Researcher agent (triggered by task):
+  1. Runs agentic loop with the task prompt
+  2. Does web searches, reads pages, takes notes
+  3. Publishes research artifact to shared space
+  4. Marks task as complete
+  5. Sends message to master: "Research complete, see artifact"
+
+Master (picks up the message, possibly via scheduled check):
+  1. Reads the artifact
+  2. Writes the report (or creates a writer agent for this)
+  3. Responds to user with the final report
+```
+
+### Recurring task (master sets up, sub-agent executes)
+
+```
+User: "Every morning, give me a summary of tech news"
+Master:
+  1. Checks if a researcher sub-agent exists, creates one if not
+  2. Sets up a scheduled task on the researcher: daily at 8am
+  3. Sets up a hook on itself: when researcher publishes a daily-news artifact, summarize it and notify user
+```
+
+## Migration
+
+### Phase 1: Mark master agent + shared views
+- Add `master: boolean` to AgentMeta
+- First agent created on install is marked as master
+- Tasks, Messages, Artifacts views show ALL agents' data (add agent filter dropdown)
+- Master agent tab gets a visual indicator
+
+### Phase 2: Master tools
+- Add create_agent, assign_task, get_agent_status, broadcast_message tools
+- Only available to the master agent
+- Master's CLAUDE.md updated to explain its orchestration role
+
+### Phase 3: Automatic sub-agent management
+- Master creates and tears down sub-agents as needed
+- Task handoff protocol: task created → sub-agent picks up → artifact published → master notified
+- Sub-agents can be temporary (created for a task, archived when done)
+
+### Phase 4: Polish
+- Sub-agent activity visible from master's chat (inline status updates)
+- "Delegate" button in chat UI (explicitly tell master to delegate current request)
+- Job/task timeline view showing the full execution flow across agents
 
 ## Open Questions
 
-1. **Dispatcher cost**: Every job needs an LLM call to dispatch. For simple "remind me" tasks, this adds unnecessary latency and cost. Should we bypass dispatch for tasks that match the currently-focused agent?
+1. **Sub-agent lifecycle**: Should sub-agents persist forever or be temporary? Maybe both: user-created agents persist, master-created agents can be marked as temporary and archived after their task completes.
 
-2. **User override**: Can the user override the dispatcher and assign a job to a specific agent? Yes, probably via @agent mention in the job description.
+2. **Master failover**: What if the master is misconfigured or its CLAUDE.md gets corrupted? Need a way to designate a new master or reset.
 
-3. **Job modification**: Can the user modify a running job? (e.g., "actually, also include data from last week"). This would need to interrupt the current stage and re-plan.
+3. **Cost control**: Master creating sub-agents means more LLM calls. Should there be a limit on how many sub-agents the master can create? Or a user confirmation before creation?
 
-4. **Scheduling integration**: Scheduled tasks and hooks should also be expressible as jobs. "Every Monday, research X and write a report" becomes a recurring job.
+4. **Notification flow**: When a sub-agent completes a task, how does the user know? Desktop notification? Badge on the master tab? Inline message in the master's chat?
 
-5. **Priority**: Should jobs have priority levels? If multiple jobs are queued, which runs first?
-
-6. **Concurrency**: Can multiple jobs run simultaneously? The agentic loop is async, so technically yes, but LLM rate limits and cost might be a concern.
-
-7. **Failure handling**: If a stage fails, should the dispatcher retry with a different agent? Or escalate to the user?
-
-## Related
-
-- Current shared task board (`/shared/tasks.jsonl`) - precursor to Jobs Board
-- Inter-agent messages - used for pipeline handoffs
-- Artifacts - used to pass work between stages
-- Scheduled tasks - become recurring jobs
-- Hooks - become job triggers
+5. **Sub-agent visibility**: Should the user see ALL sub-agent activity in the master's chat? Or only summaries? Too much detail clutters the master conversation. Too little makes it opaque.
