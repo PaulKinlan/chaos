@@ -213,7 +213,7 @@ async function setupContextMenus(): Promise<void> {
   chrome.contextMenus.create({
     id: 'chaos-parent',
     title: 'Send to CHAOS agent',
-    contexts: ['selection', 'page'],
+    contexts: ['selection', 'page', 'link', 'image', 'video', 'audio'],
   });
 
   // Add child items per agent
@@ -273,22 +273,40 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const isHook = menuId.startsWith('chaos-hook-');
   if (!isAgent && !isHook) return;
 
-  let content = '';
+  // Build rich context from all available info
+  const parts: string[] = [];
 
+  if (info.linkUrl) {
+    parts.push(`Link URL: ${info.linkUrl}`);
+  }
   if (info.selectionText) {
-    content = info.selectionText;
-  } else if (tab?.id) {
-    // Extract full page content
+    parts.push(`Selected text: ${info.selectionText}`);
+  }
+  if (info.srcUrl) {
+    parts.push(`Media URL: ${info.srcUrl}`);
+  }
+  if (tab?.title) {
+    parts.push(`Page title: ${tab.title}`);
+  }
+  if (tab?.url) {
+    parts.push(`Page URL: ${tab.url}`);
+  }
+
+  // If no selection or link, try to extract page content
+  if (!info.selectionText && !info.linkUrl && tab?.id) {
     try {
       const response = await chrome.tabs.sendMessage(tab.id, {
         type: 'extractContent',
       });
-      content = response?.content || '';
+      if (response?.content) {
+        parts.push(`Page content:\n${response.content}`);
+      }
     } catch {
-      content = `(Could not extract content from: ${tab.url || 'this page'})`;
+      // Content extraction failed, continue with what we have
     }
   }
 
+  const content = parts.join('\n\n');
   if (!content) return;
 
   let agentId: string;
