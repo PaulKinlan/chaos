@@ -3230,14 +3230,14 @@
                 </details>
               </div>
             </div>
-            <div class="settings-card" style="grid-column: 1 / -1;">
-              <h3>Tool Permissions</h3>
-              <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Control which tools agents can use. "Always" allows without prompting, "Ask" prompts before use, "Never" blocks the tool entirely.</p>
-              <div id="tool-permissions-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;"></div>
+            <details class="settings-card" style="grid-column: 1 / -1;">
+              <summary style="cursor:pointer;user-select:none;"><h3 style="display:inline;">Tool Permissions</h3></summary>
+              <p style="font-size:var(--text-xs);color:var(--text-secondary);margin:12px 0;">Control which tools agents can use. "Always" allows without prompting, "Ask" prompts before use, "Never" blocks the tool entirely.</p>
+              <div id="tool-permissions-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;"></div>
               <div class="settings-actions">
                 <button class="btn btn-primary" id="btn-save-permissions">Save Permissions</button>
               </div>
-            </div>
+            </details>
           </div>
         </div>
       </div>

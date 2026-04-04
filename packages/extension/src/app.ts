@@ -3731,20 +3731,41 @@ async function loadPermissions(): Promise<void> {
 
   const toolNames = Object.keys(DEFAULT_PERMISSIONS).sort();
 
-  grid.innerHTML = toolNames
-    .map((name) => {
+  // Group tools by category (prefix before first underscore)
+  const groups: Record<string, string[]> = {};
+  for (const name of toolNames) {
+    const cat = name.split('_')[0] || 'other';
+    (groups[cat] ??= []).push(name);
+  }
+
+  const categoryLabels: Record<string, string> = {
+    read: 'File (Read)', write: 'File (Write)', edit: 'File (Edit)',
+    append: 'File (Append)', mkdir: 'File (Mkdir)', list: 'File (List)',
+    tab: 'Tabs', bookmark: 'Bookmarks', history: 'History',
+    alarm: 'Alarms', message: 'Messages', task: 'Tasks',
+    artifact: 'Artifacts', agent: 'Agents', fetch: 'Web',
+  };
+
+  grid.innerHTML = Object.entries(groups).map(([cat, names]) => {
+    const label = categoryLabels[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
+    const rows = names.map((name) => {
       const level = perms[name] ?? 'ask';
       return `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-base);border-radius:6px;border:1px solid var(--border-subtle);">
-        <span style="font-size:var(--text-sm);font-family:var(--font-mono);color:var(--text-secondary);">${escapeHtml(name)}</span>
-        <select class="perm-select" data-tool="${escapeHtml(name)}" style="background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;padding:4px 8px;font-size:var(--text-xs);outline:none;">
-          <option value="always"${level === 'always' ? ' selected' : ''}>Always</option>
-          <option value="ask"${level === 'ask' ? ' selected' : ''}>Ask</option>
-          <option value="never"${level === 'never' ? ' selected' : ''}>Never</option>
-        </select>
-      </div>`;
-    })
-    .join('');
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg-base);border-radius:4px;border:1px solid var(--border-subtle);">
+          <span style="font-size:var(--text-xs);font-family:var(--font-mono);color:var(--text-secondary);">${escapeHtml(name)}</span>
+          <select class="perm-select" data-tool="${escapeHtml(name)}" style="background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;padding:2px 6px;font-size:var(--text-xs);outline:none;">
+            <option value="always"${level === 'always' ? ' selected' : ''}>Always</option>
+            <option value="ask"${level === 'ask' ? ' selected' : ''}>Ask</option>
+            <option value="never"${level === 'never' ? ' selected' : ''}>Never</option>
+          </select>
+        </div>`;
+    }).join('');
+    return `
+      <details style="border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;">
+        <summary style="padding:8px 12px;cursor:pointer;font-size:var(--text-sm);font-weight:500;color:var(--text-primary);background:var(--bg-raised);user-select:none;">${escapeHtml(label)} <span style="font-size:var(--text-xs);color:var(--text-muted);">(${names.length})</span></summary>
+        <div style="display:grid;gap:4px;padding:8px;">${rows}</div>
+      </details>`;
+  }).join('');
 }
 
 document.getElementById('btn-save-permissions')!.addEventListener('click', async () => {
