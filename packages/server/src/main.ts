@@ -263,8 +263,9 @@ Deno.serve(serveOptions, async (req: Request) => {
       logger.info('server', 'WebSocket disconnected', { userId: wsUserId });
     };
 
-    socket.onerror = (err) => {
-      logger.error('server', 'WebSocket error', { userId: wsUserId, error: String(err) });
+    socket.onerror = (err: Event | ErrorEvent) => {
+      const msg = (err as ErrorEvent).message || (err as ErrorEvent).error || err.type || 'unknown';
+      logger.error('server', 'WebSocket error', { userId: wsUserId, error: String(msg) });
       removeConnection(wsUserId, socket);
     };
 
