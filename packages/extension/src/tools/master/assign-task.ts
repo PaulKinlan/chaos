@@ -10,6 +10,13 @@ import { z } from 'zod';
 import { appendTaskEvent } from '../../storage/shared.js';
 import { getAgent } from '../../agents/manager.js';
 
+// Set by background.ts so we can trigger task execution directly
+let taskExecutor: ((agentId: string, taskId: string) => void) | null = null;
+
+export function setTaskExecutor(executor: (agentId: string, taskId: string) => void): void {
+  taskExecutor = executor;
+}
+
 export function createAssignTaskTool(_masterAgentId: string) {
   return tool({
     description:
@@ -42,15 +49,19 @@ export function createAssignTaskTool(_masterAgentId: string) {
           },
         });
 
-        // Trigger the sub-agent via message passing (immediate, no alarm delay)
-        try {
-          chrome.runtime.sendMessage({
-            type: 'executeAssignedTask',
-            agentId,
-            taskId,
-          });
-        } catch {
-          // Message passing may not be available in tests
+        // Trigger the sub-agent directly (fire-and-forget, runs in parallel)
+        if (taskExecutor) {
+          // Use setTimeout to not block the master's current step
+          setTimeout(() => taskExecutor!(agentId, taskId), 0);
+        } else {
+          // Fallback to message passing
+          try {
+            chrome.runtime.sendMessage({
+              type: 'executeAssignedTask',
+              agentId,
+              taskId,
+            });
+          } catch { /* */ }
         }
 
         return {

@@ -65,6 +65,7 @@ import {
   ensurePermission,
 } from './permissions.js';
 import { initHooksListeners, setHookUiPortGetter } from './hooks/listener.js';
+import { setTaskExecutor } from './tools/master/assign-task.js';
 import {
   isChannelPollAlarm,
   handlePollAlarm,
@@ -231,6 +232,7 @@ chrome.runtime.onStartup?.addListener(() => {
 // ── Initialize hooks event listeners ──
 initHooksListeners();
 setHookUiPortGetter(() => activeUiPort);
+setTaskExecutor((agentId, taskId) => executeAssignedTask(agentId, taskId));
 
 // ── Context menus ──
 
