@@ -1208,14 +1208,17 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
     b.classList.toggle('active', b.dataset.view === activeView);
   });
 
-  // Only update view visibility on first load or when no view is showing.
-  // Do NOT reset on every agent list refresh — it loses user's current state.
+  // Update view visibility carefully:
+  // - Always update when no agent (show empty state)
+  // - On first load (no view active): show the correct view and load data
+  // - On subsequent agent list refreshes: DON'T touch the view (preserves user state)
   if (!activeAgentId) {
-    updateViewVisibility(); // Show the no-agent state
+    updateViewVisibility();
   } else {
     const anyViewActive = document.querySelector('.view-panel.active') !== null;
     if (!anyViewActive) {
       updateViewVisibility();
+      loadCurrentViewData(); // Only load data on first render
     }
   }
 

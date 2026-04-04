@@ -759,6 +759,7 @@ async function handleAgenticChat(
     maxIterations?: number;
   },
 ): Promise<void> {
+  console.log(`[background] handleAgenticChat: agentId=${msg.agentId}, message=${msg.message.slice(0, 80)}...`);
   port.postMessage({ type: 'agenticStart', agentId: msg.agentId });
 
   const abortController = new AbortController();
@@ -766,6 +767,7 @@ async function handleAgenticChat(
   startKeepalive();
 
   try {
+    console.log(`[background] Starting runAgenticLoop for ${msg.agentId}`);
     const result = await runAgenticLoop({
       agentId: msg.agentId,
       task: msg.message,
@@ -793,10 +795,12 @@ async function handleAgenticChat(
       },
     });
 
+    console.log(`[background] runAgenticLoop completed for ${msg.agentId}, result length: ${result?.length ?? 0}`);
     if (!abortController.signal.aborted) {
       port.postMessage({ type: 'agenticDone', result, agentId: msg.agentId });
     }
   } catch (err) {
+    console.error(`[background] handleAgenticChat error for ${msg.agentId}:`, err);
     if (!abortController.signal.aborted) {
       const parsed = parseApiError(err);
       port.postMessage({
