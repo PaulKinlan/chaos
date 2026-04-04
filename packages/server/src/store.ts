@@ -136,13 +136,21 @@ export async function getMessages(
   // Read from KV (source of truth)
   if (isKvAvailable() && getKv()) {
     const kv = getKv()!;
-    const prefix = since ? ["messages", userId, since] : ["messages", userId];
     const msgs: StoredMessage[] = [];
-    const iter = kv.list<StoredMessage>({ prefix }, {
+    // Always scan all messages for this user, filter by timestamp in code
+    // KV keys: ["messages", userId, timestamp, id] — sorted lexicographically
+    const selector = since
+      ? {
+        start: ["messages", userId, since],
+        end: ["messages", userId, "\xff"],
+      }
+      : { prefix: ["messages", userId] as Deno.KvKey };
+    const iter = kv.list<StoredMessage>(selector, {
       limit: MAX_MESSAGES_PER_USER,
     });
     for await (const entry of iter) {
       const m = entry.value;
+      // Skip the exact `since` timestamp (we want strictly after)
       if (
         since && new Date(m.timestamp).getTime() <= new Date(since).getTime()
       ) {
@@ -150,6 +158,11 @@ export async function getMessages(
       }
       msgs.push(m);
     }
+    logger.debug("store", "Messages retrieved from KV", {
+      userId,
+      since: since || "(all)",
+      count: msgs.length,
+    });
     return msgs;
   }
 
@@ -205,11 +218,14 @@ export async function getResponses(
   // Read from KV
   if (isKvAvailable() && getKv()) {
     const kv = getKv()!;
-    const prefix = since
-      ? ["responses", channelId, since]
-      : ["responses", channelId];
     const msgs: StoredMessage[] = [];
-    const iter = kv.list<StoredMessage>({ prefix }, { limit: 100 });
+    const selector = since
+      ? {
+        start: ["responses", channelId, since],
+        end: ["responses", channelId, "\xff"],
+      }
+      : { prefix: ["responses", channelId] as Deno.KvKey };
+    const iter = kv.list<StoredMessage>(selector, { limit: 100 });
     for await (const entry of iter) {
       const m = entry.value;
       if (
