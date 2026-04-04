@@ -20,17 +20,21 @@ A skill is a bundle of:
 3. **Tool hints** (optional) - which tools the agent should prefer and how to use them
 4. **Example prompts** (optional) - sample tasks the skill enables
 
-A skill does NOT contain executable code. It's pure configuration/knowledge. This keeps it safe to import from untrusted sources.
+A skill MAY contain executable code (JavaScript/TypeScript). However, running untrusted code in a Chrome extension is risky (prompt injection, data exfiltration, privilege escalation). For now, we only process the markdown/instruction content. Executable code in skills is a future consideration that needs a proper sandbox (possibly WASM-based or via the offscreen document).
+
+**Skills from untrusted sources are NOT inherently safe.** Even pure markdown skills can contain prompt injection that alters agent behavior in undesirable ways. We need validation and review mechanisms (TODO).
 
 ```
 skill-pack/
-  SKILL.md              # Main skill instructions (required)
-  reference/            # Optional reference docs
+  SKILL.md              # Main skill instructions (required) - STANDARD in Claude Code
+  reference/            # Optional reference docs - STANDARD in Claude Code (used by Impeccable)
     topic-a.md
     topic-b.md
-  examples.md           # Optional example prompts
-  manifest.json         # Metadata: name, description, author, version, tags
+  examples.md           # Optional example prompts - PROPOSED (not standard)
+  manifest.json         # Optional metadata - PROPOSED (not standard, could use SKILL.md frontmatter instead)
 ```
+
+Note: The `SKILL.md` file with YAML frontmatter is the standard format used by Claude Code skills. The `reference/` directory is also standard (used by Impeccable's frontend-design and critique skills). `manifest.json` and `examples.md` are proposed extensions — we may not need them if SKILL.md frontmatter covers the metadata needs.
 
 ## How skills work at runtime
 
@@ -261,13 +265,31 @@ This is separate from skills (which are knowledge/instructions) but complementar
 
 ## Security considerations
 
-- Skills are markdown only - no executable code
-- Reference files are markdown only
-- No `<script>` tags in markdown rendering (DOMPurify handles this)
+**Skills are NOT inherently safe.** Even markdown-only skills can:
+- Contain prompt injection that alters agent behavior
+- Instruct the agent to exfiltrate data via tools (fetch_page, message_send)
+- Override safety guidelines in the agent's system prompt
+- Conflict with other skills in harmful ways
+
+Mitigations (TODO - not all implemented in Phase 1):
+- **Preview before install**: Show the full SKILL.md content before installing
+- **Skill review**: Flag skills that reference sensitive tools or contain suspicious patterns
+- **Sandboxed execution**: Any executable code in skills must run in a sandbox (WASM worker, offscreen document, or sandboxed iframe). Not supported in Phase 1.
+- **Skill permissions**: Let users approve which tools a skill can instruct the agent to use
+- **Source trust levels**: Distinguish between curated/verified skills and community/unknown skills
 - Skills can't modify the agent's core CLAUDE.md (they're appended, not replacing)
 - Skills can't access other agents' data
 - URL-based imports should validate the source (HTTPS only, size limits)
-- The agent still decides how to use skills - a malicious skill can't force tool calls
+
+### Executable code in skills
+
+Some skill ecosystems include JavaScript/TypeScript code. We currently cannot run this safely in a Chrome extension context. Options for the future:
+- Run in a WASM sandbox (already have the infrastructure from co-do)
+- Run in an offscreen document with restricted CSP
+- Run in a sandboxed iframe with no extension API access
+- Simply don't run it and only use the markdown instructions
+
+For Phase 1, executable code in skills is ignored. Only SKILL.md and reference markdown files are processed.
 
 ## Open questions
 
