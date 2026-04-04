@@ -289,45 +289,51 @@ function renderAgentTabs(): void {
     nameEl.textContent = agent.name;
     btn.appendChild(nameEl);
 
-    btn.addEventListener('click', () => switchToAgent(agent.id));
+    btn.addEventListener('click', () => {
+      switchToAgent(agent.id);
+      // Default to chat when clicking agent name
+      if (activeView === 'files' || activeView === 'agent-settings') {
+        // Stay on current view
+      } else {
+        activeView = 'chat';
+        updateViewVisibility();
+      }
+    });
 
     agentItem.appendChild(btn);
 
-    // Sub-items (Memory, Agent Settings) — shown when this agent is active
-    if (agent.id === activeAgentId) {
-      const sub = document.createElement('div');
-      sub.className = 'sidebar-agent-sub';
+    // Sub-items always visible for all agents
+    const isActive = agent.id === activeAgentId;
+    const sub = document.createElement('div');
+    sub.className = 'sidebar-agent-sub';
 
-      const memBtn = document.createElement('button');
-      memBtn.className = 'sidebar-item' + (activeView === 'files' ? ' active' : '');
-      memBtn.dataset.view = 'files';
-      memBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="label">Memory</span>';
-      memBtn.addEventListener('click', () => {
-        activeView = 'files';
-        updateHash();
-        sidebarItems.forEach((b) => b.classList.remove('active'));
-        memBtn.classList.add('active');
-        updateViewVisibility();
-        loadCurrentViewData();
-      });
+    const memBtn = document.createElement('button');
+    memBtn.className = 'sidebar-item' + (isActive && activeView === 'files' ? ' active' : '');
+    memBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="label">Memory</span>';
+    memBtn.addEventListener('click', () => {
+      if (activeAgentId !== agent.id) switchToAgent(agent.id);
+      activeView = 'files';
+      updateHash();
+      updateViewVisibility();
+      loadCurrentViewData();
+      renderAgentTabs(); // refresh active states
+    });
 
-      const settingsBtn = document.createElement('button');
-      settingsBtn.className = 'sidebar-item' + (activeView === 'agent-settings' ? ' active' : '');
-      settingsBtn.dataset.view = 'agent-settings';
-      settingsBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span class="label">Settings</span>';
-      settingsBtn.addEventListener('click', () => {
-        activeView = 'agent-settings';
-        updateHash();
-        sidebarItems.forEach((b) => b.classList.remove('active'));
-        settingsBtn.classList.add('active');
-        updateViewVisibility();
-        loadCurrentViewData();
-      });
+    const settingsBtn = document.createElement('button');
+    settingsBtn.className = 'sidebar-item' + (isActive && activeView === 'agent-settings' ? ' active' : '');
+    settingsBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span class="label">Settings</span>';
+    settingsBtn.addEventListener('click', () => {
+      if (activeAgentId !== agent.id) switchToAgent(agent.id);
+      activeView = 'agent-settings';
+      updateHash();
+      updateViewVisibility();
+      loadCurrentViewData();
+      renderAgentTabs(); // refresh active states
+    });
 
-      sub.appendChild(memBtn);
-      sub.appendChild(settingsBtn);
-      agentItem.appendChild(sub);
-    }
+    sub.appendChild(memBtn);
+    sub.appendChild(settingsBtn);
+    agentItem.appendChild(sub);
 
     sidebarAgentList.appendChild(agentItem);
   }
