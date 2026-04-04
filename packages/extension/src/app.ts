@@ -473,6 +473,7 @@ function showGlobalSettings(updateURL = true): void {
   loadSettings();
   loadPermissions();
   loadBrowserPermissions();
+  loadArchivedAgents();
 }
 
 // Global settings buttons (old top-bar one kept for compatibility, plus new sidebar one)
@@ -3151,19 +3152,6 @@ async function loadAgentSettings(): Promise<void> {
       </div>
 
       <div class="agent-settings-section">
-        <div style="display:flex;align-items:center;gap:var(--sp-2);cursor:pointer;margin-bottom:var(--sp-3);" id="btn-toggle-archived-agents">
-          <h3 style="margin:0;">Archived Agents</h3>
-          <span id="archived-agents-chevron" style="font-size:var(--text-xs);color:var(--text-muted);">&#9654;</span>
-        </div>
-        <div id="archived-agents-section" style="display:none;">
-          <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">
-            Agents that were archived (removed but with data preserved). You can restore them or permanently delete their data.
-          </p>
-          <div id="archived-agents-list"></div>
-        </div>
-      </div>
-
-      <div class="agent-settings-section">
         <h3>Danger Zone</h3>
         <div class="danger-zone">
           <p>Permanently delete this agent and all its data.</p>
@@ -3235,13 +3223,17 @@ async function loadAgentSettings(): Promise<void> {
           disabled.push(cb.dataset.toolName!);
         }
       });
+      const btn = document.getElementById('btn-save-tools') as HTMLButtonElement;
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
       await sendMsg({
         type: 'updateAgentTools',
         agentId: meta.id,
         disabledTools: disabled.length > 0 ? disabled : undefined,
         enabledTools: undefined,
       });
-      { const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Tool configuration saved.'); }
+      btn.textContent = 'Saved!';
+      setTimeout(() => { btn.textContent = 'Save Tool Configuration'; btn.disabled = false; }, 2000);
     });
 
     // Skills section
@@ -3343,21 +3335,15 @@ async function loadAgentSettings(): Promise<void> {
       if (!visible) renderFeaturedSkills(meta.id);
     });
 
-    // Archived agents toggle
-    document.getElementById('btn-toggle-archived-agents')!.addEventListener('click', () => {
-      const section = document.getElementById('archived-agents-section')!;
-      const chevron = document.getElementById('archived-agents-chevron')!;
-      const visible = section.style.display !== 'none';
-      section.style.display = visible ? 'none' : 'block';
-      chevron.innerHTML = visible ? '&#9654;' : '&#9660;';
-      if (!visible) loadArchivedAgents();
-    });
-
     // Save CLAUDE.md
     document.getElementById('btn-save-claude-md')!.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-save-claude-md') as HTMLButtonElement;
       const content = (document.getElementById('agent-claude-md') as HTMLTextAreaElement).value;
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
       await sendMsg({ type: 'setClaudeMd', agentId: meta.id, content });
-      { const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'CLAUDE.md saved.'); }
+      btn.textContent = 'Saved!';
+      setTimeout(() => { btn.textContent = 'Save CLAUDE.md'; btn.disabled = false; }, 2000);
     });
 
     // Delete agent
