@@ -210,13 +210,18 @@ Deno.serve({ port: PORT }, async (req: Request) => {
         channelId,
       );
 
+      // Encrypt the bot token before storing
+      const { encryptToken } = await import('./crypto.ts');
+      const encryptedToken = await encryptToken(botToken);
+
       const channel: ChannelConfig = {
         id: channelId,
         type: 'telegram',
         agentId: body.agentId || '',
         enabled: true,
         metadata: {
-          botToken,
+          botToken: encryptedToken,  // Encrypted at rest
+          botTokenPlain: botToken,   // Kept in memory only, not persisted
           botUsername,
           webhookSecret,
         },

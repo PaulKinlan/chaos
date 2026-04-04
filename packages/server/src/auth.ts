@@ -48,20 +48,22 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   const nonce = req.headers.get('X-Nonce');
   const signature = req.headers.get('X-Signature');
 
-  // If no signature headers, allow but mark as unverified
+  // Signature is REQUIRED when the session has a public key
   if (!timestamp || !nonce || !signature) {
     if (session.publicKey) {
-      // Client registered with a public key but isn't signing — warn
-      console.warn(`[auth] Request from user ${session.userId} missing signature headers`);
+      // Client registered with a public key but isn't signing — reject
+      console.warn(`[auth] REJECTED: Request from user ${session.userId} missing required signature headers`);
+      return null;
     }
+    // Legacy session without public key — allow unsigned (temporary migration)
     return { session, verified: false };
   }
 
   // Verify the signature
   if (!session.publicKey) {
-    // No public key stored — can't verify
-    console.warn(`[auth] User ${session.userId} sent signature but has no stored public key`);
-    return { session, verified: false };
+    // Signed request but no public key stored — reject
+    console.warn(`[auth] REJECTED: User ${session.userId} sent signature but has no stored public key`);
+    return null;
   }
 
   // Check timestamp freshness (< 5 minutes)

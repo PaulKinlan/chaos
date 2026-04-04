@@ -25,10 +25,22 @@ export interface RelayConfig {
  *   X-Signature: base64-encoded ECDSA-SHA256 signature
  *   Authorization: Bearer {apiKey}
  */
+/**
+ * Validate that the relay URL uses HTTPS (except localhost for dev).
+ */
+function enforceHttps(url: string): void {
+  const parsed = new URL(url);
+  const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1';
+  if (parsed.protocol !== 'https:' && !isLocalhost) {
+    throw new Error(`Relay server must use HTTPS. Got: ${parsed.protocol}//${parsed.hostname}. Only localhost is exempt for development.`);
+  }
+}
+
 async function signedFetch(
   url: string,
   options: RequestInit & { relayConfig: RelayConfig },
 ): Promise<Response> {
+  enforceHttps(url);
   const { relayConfig, ...fetchOptions } = options;
   const parsedUrl = new URL(url);
   const path = parsedUrl.pathname;

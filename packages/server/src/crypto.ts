@@ -154,3 +154,71 @@ function base64ToBuffer(base64: string): ArrayBuffer {
   }
   return bytes.buffer;
 }
+
+// ── Token encryption ──
+// Encrypt sensitive data (bot tokens) at rest using AES-GCM
+// The encryption key is derived from CHAOS_ENCRYPTION_KEY env var or a generated one
+
+let encryptionKey: CryptoKey | null = null;
+
+async function getEncryptionKey(): Promise<CryptoKey> {
+  if (encryptionKey) return encryptionKey;
+
+  const envKey = (typeof Deno !== 'undefined') ? Deno.env.get('CHAOS_ENCRYPTION_KEY') : undefined;
+
+  if (envKey) {
+    // Derive key from env var using PBKDF2
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(envKey),
+      'PBKDF2',
+      false,
+      ['deriveKey'],
+    );
+    encryptionKey = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: new TextEncoder().encode('chaos-relay-salt'), iterations: 100000, hash: 'SHA-256' },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+  } else {
+    // Generate a random key (will be lost on restart — for dev only)
+    encryptionKey = await crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+  }
+
+  return encryptionKey;
+}
+
+/** Encrypt a string (e.g. a bot token). Returns base64-encoded iv:ciphertext. */
+export async function encryptToken(plaintext: string): Promise<string> {
+  const key = await getEncryptionKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(plaintext);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encoded,
+  );
+  const ivB64 = btoa(String.fromCharCode(...iv));
+  const ctB64 = btoa(String.fromCharCode(...new Uint8Array(ciphertext)));
+  return `${ivB64}:${ctB64}`;
+}
+
+/** Decrypt a string previously encrypted with encryptToken. */
+export async function decryptToken(encrypted: string): Promise<string> {
+  const key = await getEncryptionKey();
+  const [ivB64, ctB64] = encrypted.split(':');
+  const iv = base64ToBuffer(ivB64);
+  const ciphertext = base64ToBuffer(ctB64);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: new Uint8Array(iv) },
+    key,
+    ciphertext,
+  );
+  return new TextDecoder().decode(plaintext);
+}

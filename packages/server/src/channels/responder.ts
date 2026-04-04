@@ -53,7 +53,15 @@ async function sendTelegramReplyAsync(
     const channel = session.channels.find((ch) => ch.id === payload.channelId);
     if (!channel || channel.type !== 'telegram') return;
 
-    const botToken = channel.metadata['botToken'] as string | undefined;
+    // Use plaintext token if available (in-memory), otherwise decrypt
+    let botToken = channel.metadata['botTokenPlain'] as string | undefined;
+    if (!botToken) {
+      const encrypted = channel.metadata['botToken'] as string | undefined;
+      if (encrypted) {
+        const { decryptToken } = await import('../crypto.ts');
+        botToken = await decryptToken(encrypted);
+      }
+    }
     const chatId = payload.metadata?.['chatId'] as string | number | undefined;
 
     if (!botToken || !chatId) {
