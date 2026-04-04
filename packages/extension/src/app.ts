@@ -2716,7 +2716,7 @@ function renderMessages(): void {
   if (dirFilter === 'sent') {
     filtered = filtered.filter((m) => m.from === myAgentId);
   } else if (dirFilter === 'received') {
-    filtered = filtered.filter((m) => m.to === myAgentId || m.to === 'broadcast');
+    filtered = filtered.filter((m) => m.from !== myAgentId && (m.to === myAgentId || m.to === 'broadcast'));
   }
 
   if (searchText) {
