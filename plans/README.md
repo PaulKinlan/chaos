@@ -6,5 +6,6 @@ Each plan is a markdown file exploring a feature or direction. Plans are not com
 
 ## Active Plans
 
-- [Jobs Board](jobs-board.md) - Central task interface where users post jobs and agents self-assign work
+- [Skills Import](skills-import.md) - Import skill packs from the web to specialise agents
+- [Jobs Board](jobs-board.md) - Master agent model with central task interface
 - [External Channels](external-channels.md) - Discord, Telegram, email, and other communication channels for agents
