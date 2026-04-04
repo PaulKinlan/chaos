@@ -40,7 +40,7 @@ import {
 } from './storage/chrome-storage.js';
 import { generateText } from 'ai';
 import { createLanguageModel } from './agents/provider-registry.js';
-import { getMessages } from './storage/shared.js';
+import { getMessages, setMessageNotifier } from './storage/shared.js';
 import {
   installSkill,
   removeSkill,
@@ -236,6 +236,33 @@ setTaskExecutor((agentId, taskId) => {
   executeAssignedTask(agentId, taskId).catch(
     (err) => console.error(`[background] executeAssignedTask failed:`, err),
   );
+});
+
+// Wire up inter-agent message notifications
+setMessageNotifier((msg) => {
+  console.log(`[background] Inter-agent message: ${msg.from} → ${msg.to}`);
+
+  // Notify UI
+  if (activeUiPort) {
+    try {
+      activeUiPort.postMessage({
+        type: 'channelMessageReceived',
+        agentId: msg.to === 'broadcast' ? msg.from : msg.to,
+        channelLabel: 'Agent Message',
+        from: msg.from,
+        content: msg.body.slice(0, 200),
+        channelType: 'agent-message',
+        channelId: `msg-${msg.id}`,
+      });
+    } catch { /* */ }
+  }
+
+  // Wake the recipient agent (skip broadcasts — they'd wake everyone)
+  if (msg.to !== 'broadcast') {
+    wakeAgentForMessage(msg.to, msg.from, msg.body).catch(
+      (err) => console.error(`[background] Failed to wake agent ${msg.to}:`, err),
+    );
+  }
 });
 
 // ── Context menus ──
@@ -1264,33 +1291,9 @@ chrome.runtime.onMessage.addListener(
       executeAssignedTask(msg.agentId as string, msg.taskId as string);
       return false;
     }
-    // Handle inter-agent message: notify UI and wake the recipient
+    // interAgentMessage now handled via setMessageNotifier (direct callback)
     if (msgType === 'interAgentMessage') {
-      const to = msg.to as string;
-      const from = msg.from as string;
-      const body = msg.body as string;
-      console.log(`[background] Inter-agent message: ${from} → ${to}`);
-
-      // Notify UI
-      if (activeUiPort) {
-        try {
-          activeUiPort.postMessage({
-            type: 'channelMessageReceived',
-            agentId: to,
-            channelLabel: 'Agent Message',
-            from: from,
-            content: body.slice(0, 200),
-            channelType: 'agent-message',
-            channelId: `msg-${msg.messageId}`,
-          });
-        } catch { /* */ }
-      }
-
-      // Wake the recipient agent to process the message
-      wakeAgentForMessage(to, from, body).catch(
-        (err) => console.error(`[background] Failed to wake agent ${to}:`, err),
-      );
-      return false;
+      return false; // Already handled
     }
     // Forward sub-agent creation to UI so it opens a column
     if (msgType === 'subAgentCreated' && activeUiPort) {

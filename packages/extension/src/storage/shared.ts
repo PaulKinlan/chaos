@@ -19,21 +19,24 @@ const ARTIFACTS_PATH = 'shared/artifacts.jsonl';
 /**
  * Append a message to the shared message log.
  */
+// Callback for notifying the system when a message is sent
+let messageNotifier: ((msg: AgentMessage) => void) | null = null;
+
+export function setMessageNotifier(notifier: (msg: AgentMessage) => void): void {
+  messageNotifier = notifier;
+}
+
 export async function appendMessage(msg: AgentMessage): Promise<void> {
   const line = JSON.stringify(msg) + '\n';
   await opfs.appendFile(MESSAGES_PATH, line);
 
-  // Notify the system about the new message so the recipient can be woken
-  try {
-    chrome.runtime.sendMessage({
-      type: 'interAgentMessage',
-      from: msg.from,
-      to: msg.to,
-      body: msg.body,
-      messageId: msg.id,
-    });
-  } catch {
-    // Best-effort — may fail in tests or if no listener
+  // Notify via direct callback (works within the same service worker)
+  if (messageNotifier) {
+    try {
+      messageNotifier(msg);
+    } catch {
+      // Best-effort
+    }
   }
 }
 
