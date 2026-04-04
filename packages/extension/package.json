@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node scripts/validate-build.mjs",
     "preview": "vite preview",
     "test": "vitest run --exclude src/__tests__/e2e/",
     "test:unit": "vitest run --exclude src/__tests__/e2e/",

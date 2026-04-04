@@ -1,11 +1,12 @@
 /**
  * Tab Read Tool
  *
- * Reads the active tab's content via content script extraction.
- * Uses a three-tier approach:
+ * Reads the active tab's content via content extraction.
+ * Uses a two-tier approach:
  * 1. Send message to already-injected content script (Readability + Turndown)
- * 2. Inject content script via chrome.scripting.executeScript, then message it
- * 3. Fall back to inline innerText extraction as last resort
+ * 2. Fall back to inline innerText extraction via chrome.scripting.executeScript
+ *
+ * For richer extraction (markdown, article parsing), use fetch_page instead.
  */
 
 import { tool } from 'ai';
@@ -47,35 +48,7 @@ export const tabRead = tool({
       // Content script not present — try tier 2
     }
 
-    // Tier 2: Inject content script file, then message it
-    try {
-      const hasScripting = await chrome.permissions.contains({
-        permissions: ['scripting'],
-        origins: ['<all_urls>'],
-      });
-
-      if (hasScripting) {
-        await chrome.scripting.executeScript({
-          target: { tabId: targetTabId },
-          files: ['src/content/extractor.js'],
-        });
-
-        // Brief delay for script to initialise listener
-        await new Promise((r) => setTimeout(r, 200));
-
-        const response = await chrome.tabs.sendMessage(targetTabId, {
-          type: 'extractContent',
-        }) as { title: string; url: string; content: string; excerpt: string } | undefined;
-
-        if (response?.content) {
-          return response;
-        }
-      }
-    } catch {
-      // Injection failed — try tier 3
-    }
-
-    // Tier 3: Inline innerText fallback (works without content script file)
+    // Tier 2: Inline extraction fallback (no external file needed)
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: targetTabId },
