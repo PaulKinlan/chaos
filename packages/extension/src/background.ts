@@ -652,6 +652,104 @@ async function handleChat(
   }
 }
 
+/** Execute an assigned task: update status, stream to UI, mark complete/failed. */
+async function executeAssignedTask(agentId: string, taskId: string): Promise<void> {
+  console.log(`[background] Executing assigned task: agent=${agentId}, task=${taskId}`);
+
+  const { getTaskState: getSharedTaskState, appendTaskEvent: appendEvent } = await import('./storage/shared.js');
+  const sharedTasks = await getSharedTaskState();
+  const assignedTask = sharedTasks.find((t) => t.id === taskId);
+  const prompt = assignedTask?.description || 'You have been assigned a task. Check the shared task board for details.';
+  const taskSubject = assignedTask?.subject || 'Assigned task';
+
+  // Mark task as in_progress
+  await appendEvent({
+    taskId,
+    type: 'status_changed',
+    timestamp: new Date().toISOString(),
+    data: { status: 'in_progress' },
+  });
+
+  // Notify UI
+  const port = activeUiPort;
+  if (port) {
+    try {
+      port.postMessage({
+        type: 'channelMessageReceived',
+        agentId,
+        channelLabel: 'Task',
+        from: taskSubject,
+        content: prompt,
+        channelType: 'task',
+        channelId: taskId,
+      });
+      port.postMessage({ type: 'agenticStart', agentId });
+    } catch { /* port disconnected */ }
+  }
+
+  startKeepalive();
+  try {
+    const result = await runAgenticLoop({
+      agentId,
+      task: `You have been assigned a task.\n\nTask: ${taskSubject}\n\nInstructions:\n${prompt}\n\nWhen done, summarize what you accomplished.`,
+      onProgress: port ? (update: ProgressUpdate) => {
+        try {
+          port.postMessage({
+            type: 'agenticProgress',
+            agentId,
+            progressType: update.type,
+            content: update.content,
+            toolName: update.toolName,
+            toolArgs: update.toolArgs,
+            toolResult: update.toolResult,
+            iteration: update.iteration,
+            totalIterations: update.totalIterations,
+          });
+        } catch { /* */ }
+      } : undefined,
+    });
+
+    await appendEvent({
+      taskId,
+      type: 'status_changed',
+      timestamp: new Date().toISOString(),
+      data: { status: 'completed', result: result?.slice(0, 500) || 'Task completed' },
+    });
+
+    if (port) {
+      try { port.postMessage({ type: 'agenticDone', result, agentId }); } catch { /* */ }
+    }
+
+    // Send result back to the master via inter-agent messaging
+    try {
+      const { appendMessage } = await import('./storage/shared.js');
+      const agents = await listAgents();
+      const master = agents.find(a => a.master);
+      if (master) {
+        await appendMessage({
+          id: crypto.randomUUID(),
+          from: agentId,
+          to: master.id,
+          body: `Task "${taskSubject}" completed.\n\nResult: ${result?.slice(0, 500) || 'Done'}`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch { /* */ }
+
+    console.log(`[background] Task ${taskId} completed by agent ${agentId}`);
+  } catch (err) {
+    await appendEvent({
+      taskId,
+      type: 'status_changed',
+      timestamp: new Date().toISOString(),
+      data: { status: 'failed', result: err instanceof Error ? err.message : String(err) },
+    });
+    console.error(`[background] Task ${taskId} failed:`, err);
+  } finally {
+    stopKeepalive();
+  }
+}
+
 async function handleAgenticChat(
   port: chrome.runtime.Port,
   msg: {
@@ -1098,6 +1196,11 @@ chrome.runtime.onMessage.addListener(
     if (msgType === 'filesystemChanged' || msgType === 'channelLog') {
       return false; // Not ours
     }
+    // Handle assigned task execution (fire-and-forget, no response needed)
+    if (msgType === 'executeAssignedTask') {
+      executeAssignedTask(msg.agentId as string, msg.taskId as string);
+      return false;
+    }
     console.log(`[background] one-shot message: ${msgType}`);
     handleOneShotMessage(msg)
       .then((result) => {
@@ -1473,27 +1576,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const task = tasks.find((t) => t.alarmId === alarm.name);
 
     if (alarm.name.startsWith('agentic:')) {
-      // Master-assigned task trigger: agentic:{agentId}:{taskId}
+      // Legacy alarm-based task trigger (kept for backwards compat)
       const parts = alarm.name.split(':');
       const agentId = parts[1];
       const taskId = parts.slice(2).join(':');
-      console.log(`Master-assigned task alarm: agent=${agentId}, task=${taskId}`);
-
-      // Look up the task to get its prompt
-      const { getTaskState: getSharedTaskState } = await import('./storage/shared.js');
-      const sharedTasks = await getSharedTaskState();
-      const assignedTask = sharedTasks.find((t) => t.id === taskId);
-      const prompt = assignedTask?.description || 'You have been assigned a task. Check the shared task board for details.';
-
-      startKeepalive();
-      try {
-        await runAgenticLoop({
-          agentId,
-          task: prompt,
-        });
-      } finally {
-        stopKeepalive();
-      }
+      await executeAssignedTask(agentId, taskId);
     } else if (task) {
       // Run a full agentic loop with the stored prompt (multi-step autonomous)
       const result = await runAgenticLoop({

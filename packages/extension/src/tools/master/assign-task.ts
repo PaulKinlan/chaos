@@ -42,13 +42,15 @@ export function createAssignTaskTool(_masterAgentId: string) {
           },
         });
 
-        // Trigger the sub-agent's agentic loop via a Chrome alarm
-        // that fires immediately (0.08 min = ~5 seconds, minimum allowed)
-        const alarmName = `agentic:${agentId}:${taskId}`;
+        // Trigger the sub-agent via message passing (immediate, no alarm delay)
         try {
-          await chrome.alarms.create(alarmName, { delayInMinutes: 0.08 });
+          chrome.runtime.sendMessage({
+            type: 'executeAssignedTask',
+            agentId,
+            taskId,
+          });
         } catch {
-          // Alarm API may not be available in tests
+          // Message passing may not be available in tests
         }
 
         return {

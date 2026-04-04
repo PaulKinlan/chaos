@@ -45,7 +45,7 @@ export interface AgentMessage {
 
 // ── Task event sourcing ──
 
-export type TaskEventType = 'created' | 'updated';
+export type TaskEventType = 'created' | 'updated' | 'status_changed';
 
 export interface TaskEvent {
   taskId: string;
