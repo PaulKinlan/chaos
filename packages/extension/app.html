@@ -3027,10 +3027,12 @@
           <div class="section-header">
             <h2>Messages</h2>
           </div>
-          <p style="font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--sp-4); line-height: 1.5;">Inter-agent communication. Messages sent between your agents appear here. Agents can message each other directly or broadcast to all visible agents.</p>
+          <p style="font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--sp-4); line-height: 1.5;">Messages sent and received by this agent.</p>
           <div class="filter-bar" id="messages-filter-bar">
             <select id="messages-filter-agent">
-              <option value="">All agents</option>
+              <option value="">All</option>
+              <option value="sent">Sent</option>
+              <option value="received">Received</option>
             </select>
             <input type="text" id="messages-search" placeholder="Search messages...">
           </div>

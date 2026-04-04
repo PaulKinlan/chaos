@@ -2705,13 +2705,20 @@ function renderMessages(): void {
     .toLowerCase()
     .trim();
 
-  // Populate and read agent filter
-  const filterAgentId = populateAgentFilter('messages-filter-agent');
-
-  // Filter by agent (show all by default)
-  let filtered = filterAgentId
-    ? messages.filter((m) => m.from === filterAgentId || m.to === filterAgentId)
+  // Always filter to the active agent — this is now a per-agent view
+  const myAgentId = activeAgentId || '';
+  let filtered = myAgentId
+    ? messages.filter((m) => m.from === myAgentId || m.to === myAgentId || m.to === 'broadcast')
     : messages;
+
+  // Apply direction filter
+  const dirFilter = (document.getElementById('messages-filter-agent') as HTMLSelectElement)?.value;
+  if (dirFilter === 'sent') {
+    filtered = filtered.filter((m) => m.from === myAgentId);
+  } else if (dirFilter === 'received') {
+    filtered = filtered.filter((m) => m.to === myAgentId || m.to === 'broadcast');
+  }
+
   if (searchText) {
     filtered = filtered.filter((m) => m.body.toLowerCase().includes(searchText));
   }
@@ -2719,7 +2726,7 @@ function renderMessages(): void {
   if (filtered.length === 0) {
     list.innerHTML = '';
     empty.textContent = messages.length === 0
-      ? 'No messages yet. This is the inter-agent communication log. When agents are set to "visible" or "open" visibility, they can send messages to each other. You can also ask an agent to message another agent directly.'
+      ? 'No messages yet. Messages appear when agents communicate with each other.'
       : 'No messages match the current filters.';
     empty.style.display = '';
     return;
@@ -2729,18 +2736,25 @@ function renderMessages(): void {
 
   list.innerHTML = filtered
     .map(
-      (m) => `
+      (m) => {
+        const isSent = m.from === myAgentId;
+        const dirBadge = isSent
+          ? '<span class="badge" style="background:#1f3a1f;color:#7ee787;font-size:10px;">Sent</span>'
+          : '<span class="badge" style="background:#3a1f1f;color:#f0883e;font-size:10px;">Received</span>';
+        const otherAgent = isSent ? m.to : m.from;
+        const otherName = otherAgent === 'broadcast' ? 'broadcast' : agentName(otherAgent);
+        return `
     <div class="msg-item${m.to === 'broadcast' ? ' broadcast' : ''}">
       <div class="msg-item-header">
-        <span class="msg-from">${escapeHtml(agentName(m.from))}</span>
-        <span class="badge ${roleBadgeClass(agentRole(m.from))}" style="font-size:10px;">${escapeHtml(agentRole(m.from))}</span>
-        <span class="msg-arrow">&rarr;</span>
-        <span class="msg-to">${m.to === 'broadcast' ? 'broadcast' : escapeHtml(agentName(m.to))}</span>
+        ${dirBadge}
+        <span style="font-size:var(--text-xs);color:var(--text-secondary);">${isSent ? 'to' : 'from'}</span>
+        <span class="msg-to" style="font-weight:500;">${escapeHtml(otherName)}</span>
         <span class="msg-time">${formatTime(m.timestamp)}</span>
       </div>
       <div class="msg-body">${escapeHtml(m.body)}</div>
     </div>
-  `,
+  `;
+      },
     )
     .join('');
 
