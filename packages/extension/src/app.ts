@@ -1200,7 +1200,7 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
     activeAgentId = agents[0].id;
   }
 
-  // Re-render tabs with correct active state
+  // Re-render sidebar agent list
   renderAgentTabs();
 
   // Update sidebar active state to match activeView
@@ -1208,12 +1208,19 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
     b.classList.toggle('active', b.dataset.view === activeView);
   });
 
-  // Update view visibility — but don't overwrite global settings if that's the active view
-  if (activeAgentId && activeView !== 'global-settings') {
-    updateViewVisibility();
+  // Only update view visibility on first load or when no view is showing.
+  // Do NOT reset on every agent list refresh — it loses user's current state.
+  if (!activeAgentId) {
+    updateViewVisibility(); // Show the no-agent state
+  } else {
+    const anyViewActive = document.querySelector('.view-panel.active') !== null;
+    if (!anyViewActive) {
+      updateViewVisibility();
+    }
+  }
 
-    // Initialize columns if none exist
-    if (columns.length === 0) {
+  // Initialize columns if none exist
+  if (activeAgentId && columns.length === 0) {
       // Try restoring saved column config first
       restoreColumnConfig().then(() => {
         if (columns.length === 0) {
@@ -1232,11 +1239,6 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
         }
       }
     }
-
-    loadCurrentViewData();
-  } else {
-    updateViewVisibility();
-  }
 }
 
 // ── Column management ──
