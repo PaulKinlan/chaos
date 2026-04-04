@@ -3228,6 +3228,9 @@ async function loadSettings(): Promise<void> {
 
     // Populate model selector
     await populateModelSelect(settings.activeProvider || 'anthropic', keys, settings.model);
+
+    // Load channels UI
+    await renderChannelsUI();
   } catch (err) {
     showPanelError('view-global-settings', `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -3492,6 +3495,153 @@ document.getElementById('btn-save-permissions')!.addEventListener('click', async
     await setPermission(toolName, level);
   }
   alert('Tool permissions saved.');
+});
+
+// ══════════════════════════════════════════
+// ── Channels UI (in Global Settings)
+// ══════════════════════════════════════════
+
+import { getRelaySettings, setRelaySettings, clearRelaySettings, type RelaySettings } from './channels/config.js';
+import {
+  registerWithRelay,
+  registerChannel as relayRegisterChannel,
+  listChannels as relayListChannels,
+  removeChannel as relayRemoveChannel,
+  type RelayConfig,
+} from './channels/relay-client.js';
+
+async function renderChannelsUI(): Promise<void> {
+  const settings = await getRelaySettings();
+  const connectDiv = document.getElementById('channels-connect')!;
+  const connectedDiv = document.getElementById('channels-connected')!;
+  const statusSpan = document.getElementById('relay-status')!;
+  const disconnectBtn = document.getElementById('btn-relay-disconnect') as HTMLButtonElement;
+  const urlInput = document.getElementById('relay-server-url') as HTMLInputElement;
+
+  if (settings) {
+    urlInput.value = settings.serverUrl;
+    urlInput.disabled = true;
+    disconnectBtn.style.display = '';
+    statusSpan.textContent = `Connected as ${settings.userId.slice(0, 8)}...`;
+    statusSpan.style.color = 'var(--success, #4caf50)';
+    connectedDiv.style.display = '';
+
+    // Load and render channels
+    try {
+      const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
+      const channels = await relayListChannels(config);
+      renderChannelsList(channels, config, settings.serverUrl);
+    } catch (err) {
+      console.error('Failed to load channels:', err);
+      statusSpan.textContent = 'Connected (failed to load channels)';
+      statusSpan.style.color = 'var(--warning, orange)';
+    }
+  } else {
+    urlInput.disabled = false;
+    disconnectBtn.style.display = 'none';
+    statusSpan.textContent = '';
+    connectedDiv.style.display = 'none';
+  }
+}
+
+function renderChannelsList(channels: Array<{ id: string; type: string; agentId: string; enabled: boolean; metadata: Record<string, unknown> }>, config: RelayConfig, serverUrl: string): void {
+  const listDiv = document.getElementById('channels-list')!;
+  if (channels.length === 0) {
+    listDiv.innerHTML = '<p style="font-size:var(--text-xs);color:var(--text-muted);">No channels configured. Add a webhook channel to get started.</p>';
+    return;
+  }
+
+  listDiv.innerHTML = '';
+  for (const ch of channels) {
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;';
+    const webhookUrl = ch.type === 'webhook'
+      ? `${serverUrl}/webhook/${ch.id}?token=${ch.metadata['webhookSecret'] || ''}`
+      : '';
+    card.innerHTML = `
+      <div>
+        <strong style="font-size:var(--text-sm);">${ch.type}: ${ch.id.slice(0, 8)}...</strong>
+        ${webhookUrl ? `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;word-break:break-all;"><code>${webhookUrl}</code></div>` : ''}
+        <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'}</div>
+      </div>
+      <button class="btn btn-ghost btn-remove-channel" data-channel-id="${ch.id}" style="color:var(--danger, red);font-size:var(--text-xs);">Remove</button>
+    `;
+    listDiv.appendChild(card);
+  }
+
+  // Attach remove handlers
+  listDiv.querySelectorAll('.btn-remove-channel').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const channelId = (btn as HTMLElement).dataset.channelId!;
+      try {
+        await relayRemoveChannel(config, channelId);
+        await renderChannelsUI();
+      } catch (err) {
+        alert(`Failed to remove channel: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+  });
+}
+
+document.getElementById('btn-relay-connect')!.addEventListener('click', async () => {
+  const urlInput = document.getElementById('relay-server-url') as HTMLInputElement;
+  const statusSpan = document.getElementById('relay-status')!;
+  const serverUrl = urlInput.value.trim().replace(/\/$/, '');
+
+  if (!serverUrl) {
+    statusSpan.textContent = 'Enter a server URL';
+    statusSpan.style.color = 'var(--danger, red)';
+    return;
+  }
+
+  statusSpan.textContent = 'Connecting...';
+  statusSpan.style.color = 'var(--text-secondary)';
+
+  try {
+    // Check health first
+    const healthResp = await fetch(`${serverUrl}/health`);
+    if (!healthResp.ok) throw new Error('Server not reachable');
+
+    // Register
+    const { userId, apiKey } = await registerWithRelay(serverUrl);
+
+    const settings: RelaySettings = {
+      serverUrl,
+      apiKey,
+      userId,
+      pollIntervalMinutes: 1,
+      lastPollTimestamp: new Date().toISOString(),
+    };
+    await setRelaySettings(settings);
+
+    // Start polling via message to background
+    chrome.runtime.sendMessage({ type: 'startChannelPolling', intervalMinutes: 1 });
+
+    await renderChannelsUI();
+  } catch (err) {
+    statusSpan.textContent = `Failed: ${err instanceof Error ? err.message : String(err)}`;
+    statusSpan.style.color = 'var(--danger, red)';
+  }
+});
+
+document.getElementById('btn-relay-disconnect')!.addEventListener('click', async () => {
+  await clearRelaySettings();
+  chrome.runtime.sendMessage({ type: 'stopChannelPolling' });
+  await renderChannelsUI();
+});
+
+document.getElementById('btn-add-channel')!.addEventListener('click', async () => {
+  const settings = await getRelaySettings();
+  if (!settings) return;
+
+  const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
+
+  try {
+    await relayRegisterChannel(config, { type: 'webhook', agentId: '', enabled: true, metadata: {} });
+    await renderChannelsUI();
+  } catch (err) {
+    alert(`Failed to add channel: ${err instanceof Error ? err.message : String(err)}`);
+  }
 });
 
 // ══════════════════════════════════════════

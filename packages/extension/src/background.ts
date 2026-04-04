@@ -54,6 +54,14 @@ import {
   ensurePermission,
 } from './permissions.js';
 import { initHooksListeners } from './hooks/listener.js';
+import {
+  isChannelPollAlarm,
+  handlePollAlarm,
+  startChannelPolling,
+  stopChannelPolling,
+  setMessageHandler,
+} from './channels/poller.js';
+import { getRelaySettings } from './channels/config.js';
 
 // ── OPFS directory listing helper ──
 
@@ -1322,6 +1330,17 @@ Return ONLY the refined prompt text, nothing else. No explanations or commentary
       }
     }
 
+    case 'startChannelPolling': {
+      const interval = (msg.intervalMinutes as number) || 1;
+      startChannelPolling(interval);
+      return { ok: true };
+    }
+
+    case 'stopChannelPolling': {
+      stopChannelPolling();
+      return { ok: true };
+    }
+
     default:
       throw new Error(`Unknown one-shot message type: ${msg.type}`);
   }
@@ -1345,6 +1364,12 @@ chrome.commands.onCommand.addListener(async (command) => {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   // Ignore keepalive alarm — it only exists to prevent SW termination
   if (alarm.name === 'chaos-keepalive') return;
+
+  // Channel polling alarm
+  if (isChannelPollAlarm(alarm.name)) {
+    await handlePollAlarm();
+    return;
+  }
 
   console.log(`Alarm fired: ${alarm.name}`);
 
@@ -1408,6 +1433,33 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   } catch (err) {
     console.error(`Alarm handler failed for ${alarm.name}:`, err);
   }
+});
+
+// ── Channel polling setup ──
+// Register the message handler and start polling if configured
+
+setMessageHandler(async (message) => {
+  // Find an agent to handle this channel message
+  // For now, use the default agent or the first available one
+  const agents = await listAgents();
+  if (agents.length === 0) return null;
+
+  // Use the first agent (TODO: use the channel's assigned agentId)
+  const agent = agents[0];
+  const result = await runAgenticLoop({
+    agentId: agent.id,
+    task: `You received a message from an external channel (${message.channelType}).\n\nFrom: ${message.from}\nChannel: ${message.channelId}\nMessage:\n${message.content}\n\nRespond to this message.`,
+  });
+  return result || null;
+});
+
+// Start polling if relay is configured
+getRelaySettings().then((settings) => {
+  if (settings) {
+    startChannelPolling(settings.pollIntervalMinutes);
+  }
+}).catch((err) => {
+  console.error('Failed to initialize channel polling:', err);
 });
 
 // ── Bookmark watcher ──

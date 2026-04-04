@@ -3060,6 +3060,29 @@
               <div id="browser-permissions-area"></div>
             </div>
             <div class="settings-card" style="grid-column: 1 / -1;">
+              <h3>Channels</h3>
+              <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Connect external channels (webhooks, Discord, Telegram) to your agents via a relay server.</p>
+              <div id="channels-section">
+                <div id="channels-connect" style="margin-bottom:12px;">
+                  <div class="settings-field">
+                    <label for="relay-server-url">Relay Server URL</label>
+                    <input type="text" id="relay-server-url" placeholder="http://localhost:8787">
+                  </div>
+                  <div style="display:flex;gap:var(--sp-2);align-items:center;margin-top:8px;">
+                    <button class="btn btn-primary" id="btn-relay-connect">Connect</button>
+                    <button class="btn btn-ghost" id="btn-relay-disconnect" style="display:none;">Disconnect</button>
+                    <span id="relay-status" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
+                  </div>
+                </div>
+                <div id="channels-connected" style="display:none;">
+                  <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:12px;">
+                    <button class="btn btn-ghost" id="btn-add-channel">+ Add Webhook Channel</button>
+                  </div>
+                  <div id="channels-list" style="display:grid;gap:8px;"></div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-card" style="grid-column: 1 / -1;">
               <h3>Tool Permissions</h3>
               <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Control which tools agents can use. "Always" allows without prompting, "Ask" prompts before use, "Never" blocks the tool entirely.</p>
               <div id="tool-permissions-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;"></div>
