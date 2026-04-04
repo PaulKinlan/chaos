@@ -1036,9 +1036,11 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         col.isStreaming = false;
         col.typingEl.classList.remove('visible');
         col.sendBtn.disabled = false;
-        // Finalize last step but keep it open so user can see the result
+        // Finalize last step and keep it open so user can see the result
         finalizeStepSummary(col);
-        // Don't close the last step - it contains the final work
+        if (col.currentStepDetails) {
+          col.currentStepDetails.setAttribute('open', '');
+        }
         if (msg.result && (msg.result as string) !== col.lastAgenticText) {
           const finalEl = document.createElement('div');
           finalEl.className = 'chat-message assistant';
