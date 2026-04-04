@@ -22,7 +22,7 @@ import { getKv, initKv, isKvAvailable } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
 import { sanitizeMessage } from "./sanitize.ts";
 import { logger, requestLog } from "./logger.ts";
-import { addConnection, removeConnection } from "./ws.ts";
+import { addConnection, getConnectionCount, removeConnection } from "./ws.ts";
 import type { ChannelConfig } from "@chaos/shared";
 
 const PORT = parseInt(Deno.env.get("PORT") || "8787");
@@ -36,6 +36,11 @@ async function ensureInitialized(): Promise<void> {
   await initKv();
   await initServerKeyPair();
   startMessageCleanup();
+  logger.info("server", "Initialized", {
+    kv: isKvAvailable(),
+    wsConnections: getConnectionCount(),
+    deploy: !!Deno.env.get("DENO_DEPLOYMENT_ID"),
+  });
 }
 
 // Rate limiter instance
@@ -543,7 +548,9 @@ Deno.serve(serveOptions, async (req: Request) => {
     const messages = await getMessages(session.userId, since);
     logger.info("server", "Messages polled", {
       userId: session.userId,
+      since: since || "(all)",
       count: messages.length,
+      wsConnections: getConnectionCount(session.userId),
     });
     return json({ messages, since: new Date().toISOString() });
   }

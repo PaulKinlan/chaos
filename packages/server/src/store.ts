@@ -3,7 +3,7 @@
 // In-memory Maps kept as a fast cache only
 
 import { logger } from "./logger.ts";
-import { pushToUser } from "./ws.ts";
+import { getConnectionCount, pushToUser } from "./ws.ts";
 import { getKv, isKvAvailable } from "./kv.ts";
 
 export interface StoredMessage {
@@ -117,12 +117,16 @@ export async function addMessage(
     messageCache.set(userId, msgs.slice(-MAX_MESSAGES_PER_USER));
   }
 
+  const wsCount = getConnectionCount(userId);
   logger.info("store", "Message stored", {
     userId,
     messageId: msg.id,
     channelType: msg.channelType,
     channelId: msg.channelId,
     from: msg.from,
+    kvStored: isKvAvailable(),
+    wsConnections: wsCount,
+    delivery: wsCount > 0 ? "ws-push" : "poll-pending",
   });
 
   // Push to any connected WebSocket clients immediately

@@ -40,13 +40,32 @@ export function removeConnection(userId: string, ws: WebSocket): void {
  */
 export function pushToUser(userId: string, message: unknown): void {
   const userSockets = connections.get(userId);
-  if (!userSockets || userSockets.size === 0) return;
+  if (!userSockets || userSockets.size === 0) {
+    logger.warn(
+      "ws",
+      "No WebSocket connections for user — message will wait for poll",
+      {
+        userId,
+        totalTrackedUsers: connections.size,
+      },
+    );
+    return;
+  }
 
   const data = JSON.stringify(message);
+  let sent = 0;
+  let stale = 0;
   for (const ws of userSockets) {
     try {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(data);
+        sent++;
+      } else {
+        stale++;
+        logger.warn("ws", "Stale WebSocket found", {
+          userId,
+          readyState: ws.readyState,
+        });
       }
     } catch (err) {
       logger.error("ws", "Failed to send message", {
@@ -55,9 +74,11 @@ export function pushToUser(userId: string, message: unknown): void {
       });
     }
   }
-  logger.debug("ws", "Pushed message to user", {
+  logger.info("ws", "Pushed message to user", {
     userId,
-    connections: userSockets.size,
+    sent,
+    stale,
+    total: userSockets.size,
   });
 }
 
