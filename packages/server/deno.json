@@ -1,8 +1,8 @@
 {
   "tasks": {
-    "dev": "deno run --watch --allow-net --allow-read --allow-env src/main.ts",
-    "start": "deno run --allow-net --allow-read --allow-env src/main.ts",
-    "test": "deno test --allow-all src/__tests__/"
+    "dev": "deno run --watch --allow-net --allow-read --allow-env --unstable-kv src/main.ts",
+    "start": "deno run --allow-net --allow-read --allow-env --unstable-kv src/main.ts",
+    "test": "deno test --allow-all --unstable-kv src/__tests__/"
   },
   "imports": {
     "@chaos/shared": "../shared/src/types.ts"

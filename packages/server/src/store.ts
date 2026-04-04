@@ -1,6 +1,8 @@
 // In-memory message store for the relay server
 // Phase 2: adds message expiry (24 hours) and periodic cleanup
 
+import { logger } from './logger.ts';
+
 export interface StoredMessage {
   id: string;
   userId: string;
@@ -80,7 +82,7 @@ export function cleanupExpiredMessages(): number {
   }
 
   if (removed > 0) {
-    console.log(`[store] Cleaned up ${removed} expired messages`);
+    logger.debug('store', 'Cleaned up expired messages', { removed });
   }
 
   return removed;
@@ -93,6 +95,7 @@ export function addMessage(userId: string, msg: StoredMessage): void {
     messageStore.set(userId, msgs);
   }
   msgs.push(msg);
+  logger.debug('store', 'Message stored', { userId, messageId: msg.id, channelType: msg.channelType, channelId: msg.channelId });
   // Keep only the last MAX_MESSAGES_PER_USER
   if (msgs.length > MAX_MESSAGES_PER_USER) {
     messageStore.set(userId, msgs.slice(-MAX_MESSAGES_PER_USER));
@@ -117,6 +120,7 @@ export function addResponse(channelId: string, msg: StoredMessage): void {
     responseStore.set(channelId, msgs);
   }
   msgs.push(msg);
+  logger.debug('store', 'Response stored', { channelId, messageId: msg.id });
 }
 
 export function getResponses(channelId: string, since?: string): StoredMessage[] {

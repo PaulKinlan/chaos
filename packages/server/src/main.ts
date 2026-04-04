@@ -7,18 +7,24 @@ import { handleWebhook } from './channels/webhook.ts';
 import { handleReply, type ReplyPayload } from './channels/responder.ts';
 import { registerTelegramBot, handleTelegramWebhook } from './channels/telegram.ts';
 import { initServerKeyPair, getServerPublicKey } from './crypto.ts';
+import { initKv } from './kv.ts';
 import { RateLimiter, RATE_LIMITS } from './rate-limit.ts';
 import { sanitizeMessage } from './sanitize.ts';
+import { logger, requestLog } from './logger.ts';
 import type { ChannelConfig } from '@chaos/shared';
 
 const PORT = parseInt(Deno.env.get('PORT') || '8787');
 const VERSION = '0.1.0';
 
-// Initialize server keypair for response signing
-await initServerKeyPair();
-
-// Start message expiry cleanup (every 10 minutes)
-startMessageCleanup();
+// Lazy initialization — runs once on first request, not during module warmup
+let initialized = false;
+async function ensureInitialized(): Promise<void> {
+  if (initialized) return;
+  initialized = true;
+  await initKv();
+  await initServerKeyPair();
+  startMessageCleanup();
+}
 
 // Rate limiter instance
 const rateLimiter = new RateLimiter();
@@ -48,9 +54,19 @@ function getClientIP(req: Request): string {
     || 'unknown';
 }
 
-Deno.serve({ port: PORT }, async (req: Request) => {
+// On Deno Deploy, port is managed by the platform; locally use PORT env
+const serveOptions = Deno.env.get('DENO_DEPLOYMENT_ID') ? {} : { port: PORT };
+
+Deno.serve(serveOptions, async (req: Request) => {
+  // Lazy init on first request (avoids blocking Deno Deploy warmup)
+  await ensureInitialized();
+
   const url = new URL(req.url);
   const method = req.method;
+  const reqData = requestLog(req, 'server', 'request');
+
+  // Log every incoming request
+  logger.info('server', 'Incoming request', reqData);
 
   // Handle CORS preflight
   if (method === 'OPTIONS') {
@@ -69,6 +85,7 @@ Deno.serve({ port: PORT }, async (req: Request) => {
     // Rate limit: 5/hour per IP
     const ip = getClientIP(req);
     if (!rateLimiter.check(`register:${ip}`, RATE_LIMITS.register.limit, RATE_LIMITS.register.windowMs)) {
+      logger.warn('server', 'Rate limit hit for registration', { ip });
       return error('Too many registration attempts. Try again later.', 429);
     }
 
@@ -82,8 +99,10 @@ Deno.serve({ port: PORT }, async (req: Request) => {
       // No body or invalid JSON — that's fine, publicKey is optional for backwards compat
     }
 
-    const session = createSession(publicKey);
+    const session = await createSession(publicKey);
     const serverPublicKey = getServerPublicKey();
+
+    logger.info('server', 'New session registered', { userId: session.userId, hasPublicKey: !!publicKey });
 
     return json({
       userId: session.userId,
@@ -99,12 +118,14 @@ Deno.serve({ port: PORT }, async (req: Request) => {
 
     // Rate limit: 60/min per channel
     if (!rateLimiter.check(`webhook:${channelId}`, RATE_LIMITS.webhook.limit, RATE_LIMITS.webhook.windowMs)) {
+      logger.warn('server', 'Rate limit hit for webhook', { channelId });
       return error('Too many webhook requests. Try again later.', 429);
     }
 
     const resp = await handleWebhook(channelId, req);
     // Add CORS headers to webhook responses too
     const body = await resp.text();
+    logger.info('server', 'Webhook response', { channelId, status: resp.status });
     return new Response(body, {
       status: resp.status,
       headers: { ...Object.fromEntries(resp.headers.entries()), ...corsHeaders },
@@ -117,6 +138,7 @@ Deno.serve({ port: PORT }, async (req: Request) => {
     const channelId = responsesMatch[1];
     const since = url.searchParams.get('since') || undefined;
     const responses = getResponses(channelId, since);
+    logger.info('server', 'Responses polled', { channelId, count: responses.length });
     return json({ responses, since: new Date().toISOString() });
   }
 
@@ -127,11 +149,13 @@ Deno.serve({ port: PORT }, async (req: Request) => {
 
     // Rate limit: 60/min per channel (same as webhooks)
     if (!rateLimiter.check(`webhook:${channelId}`, RATE_LIMITS.webhook.limit, RATE_LIMITS.webhook.windowMs)) {
+      logger.warn('server', 'Rate limit hit for Telegram webhook', { channelId });
       return error('Too many webhook requests. Try again later.', 429);
     }
 
     const resp = await handleTelegramWebhook(channelId, req);
     const body = await resp.text();
+    logger.info('server', 'Telegram webhook response', { channelId, status: resp.status });
     return new Response(body, {
       status: resp.status,
       headers: { ...Object.fromEntries(resp.headers.entries()), ...corsHeaders },
@@ -142,6 +166,7 @@ Deno.serve({ port: PORT }, async (req: Request) => {
 
   const authResult = await validateAuth(req);
   if (!authResult) {
+    logger.warn('server', 'Unauthorized request', reqData);
     return error('Unauthorized. Include Authorization: Bearer <apiKey>', 401);
   }
 
@@ -151,11 +176,13 @@ Deno.serve({ port: PORT }, async (req: Request) => {
   if (url.pathname === '/messages' && method === 'GET') {
     // Rate limit: 120/min per user
     if (!rateLimiter.check(`messages:${session.userId}`, RATE_LIMITS.messages.limit, RATE_LIMITS.messages.windowMs)) {
+      logger.warn('server', 'Rate limit hit for messages poll', { userId: session.userId });
       return error('Too many poll requests. Try again later.', 429);
     }
 
     const since = url.searchParams.get('since') || undefined;
     const messages = getMessages(session.userId, since);
+    logger.info('server', 'Messages polled', { userId: session.userId, count: messages.length });
     return json({ messages, since: new Date().toISOString() });
   }
 
@@ -163,23 +190,27 @@ Deno.serve({ port: PORT }, async (req: Request) => {
   if (url.pathname === '/reply' && method === 'POST') {
     // Rate limit: 30/min per user
     if (!rateLimiter.check(`reply:${session.userId}`, RATE_LIMITS.reply.limit, RATE_LIMITS.reply.windowMs)) {
+      logger.warn('server', 'Rate limit hit for reply', { userId: session.userId });
       return error('Too many reply requests. Try again later.', 429);
     }
 
     try {
       const payload: ReplyPayload = await req.json();
       if (!payload.channelId || !payload.content) {
+        logger.warn('server', 'Reply missing required fields', { userId: session.userId });
         return error('Missing channelId or content');
       }
 
       // Sanitize reply content
       const sanitized = sanitizeMessage(payload.content);
       if (!sanitized.valid) {
+        logger.warn('server', 'Reply content failed sanitization', { userId: session.userId });
         return error(sanitized.error || 'Invalid message content');
       }
       payload.content = sanitized.content;
 
       const result = handleReply(session.userId, payload);
+      logger.info('server', 'Reply sent', { userId: session.userId, channelId: payload.channelId, channelType: payload.channelType });
       return json(result);
     } catch {
       return error('Invalid JSON body');
@@ -190,6 +221,7 @@ Deno.serve({ port: PORT }, async (req: Request) => {
   if (url.pathname === '/channels/telegram/register' && method === 'POST') {
     // Rate limit: 10/hour per user (same as channels)
     if (!rateLimiter.check(`channels:${session.userId}`, RATE_LIMITS.channels.limit, RATE_LIMITS.channels.windowMs)) {
+      logger.warn('server', 'Rate limit hit for Telegram channel registration', { userId: session.userId });
       return error('Too many channel registration requests. Try again later.', 429);
     }
 
@@ -227,11 +259,13 @@ Deno.serve({ port: PORT }, async (req: Request) => {
         },
       };
 
-      addChannel(session.userId, channel);
+      await addChannel(session.userId, channel);
 
+      logger.info('server', 'Telegram bot channel registered', { userId: session.userId, channelId, botUsername });
       return json({ channelId, botUsername }, 201);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      logger.error('server', 'Telegram registration failed', { userId: session.userId, error: message });
       return error(`Telegram registration failed: ${message}`);
     }
   }
@@ -240,6 +274,7 @@ Deno.serve({ port: PORT }, async (req: Request) => {
   if (url.pathname === '/channels' && method === 'POST') {
     // Rate limit: 10/hour per user
     if (!rateLimiter.check(`channels:${session.userId}`, RATE_LIMITS.channels.limit, RATE_LIMITS.channels.windowMs)) {
+      logger.warn('server', 'Rate limit hit for channel registration', { userId: session.userId });
       return error('Too many channel registration requests. Try again later.', 429);
     }
 
@@ -258,13 +293,14 @@ Deno.serve({ port: PORT }, async (req: Request) => {
         channel.metadata['webhookSecret'] = crypto.randomUUID();
       }
 
-      addChannel(session.userId, channel);
+      await addChannel(session.userId, channel);
 
       // Build the webhook URL for the user
       const webhookUrl = channel.type === 'webhook'
         ? `${url.origin}/webhook/${channel.id}?token=${channel.metadata['webhookSecret']}`
         : undefined;
 
+      logger.info('server', 'Channel registered', { userId: session.userId, channelId: channel.id, type: channel.type });
       return json({ channel, webhookUrl }, 201);
     } catch {
       return error('Invalid JSON body');
@@ -273,7 +309,8 @@ Deno.serve({ port: PORT }, async (req: Request) => {
 
   // List channels
   if (url.pathname === '/channels' && method === 'GET') {
-    const channels = getChannels(session.userId);
+    const channels = await getChannels(session.userId);
+    logger.info('server', 'Channels listed', { userId: session.userId, count: channels.length });
     return json({ channels });
   }
 
@@ -281,14 +318,17 @@ Deno.serve({ port: PORT }, async (req: Request) => {
   const channelDeleteMatch = url.pathname.match(/^\/channels\/([^/]+)$/);
   if (channelDeleteMatch && method === 'DELETE') {
     const channelId = channelDeleteMatch[1];
-    const removed = removeChannel(session.userId, channelId);
+    const removed = await removeChannel(session.userId, channelId);
     if (!removed) {
+      logger.warn('server', 'Channel not found for deletion', { userId: session.userId, channelId });
       return error('Channel not found', 404);
     }
+    logger.info('server', 'Channel deleted', { userId: session.userId, channelId });
     return json({ ok: true });
   }
 
+  logger.warn('server', 'Route not found', reqData);
   return error('Not found', 404);
 });
 
-console.log(`CHAOS relay server running on port ${PORT}`);
+logger.info('server', 'CHAOS relay server started', { port: PORT, version: VERSION });

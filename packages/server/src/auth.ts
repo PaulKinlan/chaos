@@ -1,8 +1,20 @@
 // Authentication and request signature verification
 // Phase 2: API key auth + ECDSA P-256 request signing
+// Phase 3: Deno KV persistence with in-memory cache
 
 import type { ChannelConfig } from '@chaos/shared';
 import { verifyRequestSignature, isTimestampFresh, NonceTracker, hashBody } from './crypto.ts';
+import { logger } from './logger.ts';
+import {
+  isKvAvailable,
+  kvSetSession,
+  kvGetSession,
+  kvSetUserIndex,
+  kvGetUserIndex,
+  kvSetChannelIndex,
+  kvGetChannelOwner,
+  kvDeleteChannelIndex,
+} from './kv.ts';
 
 export interface UserSession {
   userId: string;
@@ -17,14 +29,31 @@ export interface AuthResult {
   verified: boolean;  // true if signature was valid
 }
 
+// In-memory caches — act as primary store when KV is unavailable,
+// and as a hot cache when KV is available
 // apiKey -> session
-const sessions: Map<string, UserSession> = new Map();
+const sessionCache: Map<string, UserSession> = new Map();
 
 // userId -> apiKey (reverse lookup)
-const userIndex: Map<string, string> = new Map();
+const userIndexCache: Map<string, string> = new Map();
+
+// channelId -> userId (channel owner lookup)
+const channelIndexCache: Map<string, string> = new Map();
 
 // Nonce tracker for replay protection
 const nonceTracker = new NonceTracker();
+
+/**
+ * Invalidate the in-memory cache for a session and persist to KV.
+ */
+async function persistSession(session: UserSession): Promise<void> {
+  sessionCache.set(session.apiKey, session);
+  userIndexCache.set(session.userId, session.apiKey);
+  if (isKvAvailable()) {
+    await kvSetSession(session.apiKey, session);
+    await kvSetUserIndex(session.userId, session.apiKey);
+  }
+}
 
 /**
  * Validate auth and optionally verify request signature.
@@ -40,7 +69,20 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   if (!match) return null;
 
   const apiKey = match[1];
-  const session = sessions.get(apiKey);
+
+  // Try in-memory cache first, then KV
+  let session = sessionCache.get(apiKey) ?? null;
+  if (!session && isKvAvailable()) {
+    session = await kvGetSession(apiKey);
+    if (session) {
+      // Populate cache
+      sessionCache.set(apiKey, session);
+      userIndexCache.set(session.userId, apiKey);
+      for (const ch of session.channels) {
+        channelIndexCache.set(ch.id, session.userId);
+      }
+    }
+  }
   if (!session) return null;
 
   // Check for signature headers
@@ -52,7 +94,7 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   if (!timestamp || !nonce || !signature) {
     if (session.publicKey) {
       // Client registered with a public key but isn't signing — reject
-      console.warn(`[auth] REJECTED: Request from user ${session.userId} missing required signature headers`);
+      logger.warn('auth', 'Request missing required signature headers', { userId: session.userId });
       return null;
     }
     // Legacy session without public key — allow unsigned (temporary migration)
@@ -62,19 +104,19 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   // Verify the signature
   if (!session.publicKey) {
     // Signed request but no public key stored — reject
-    console.warn(`[auth] REJECTED: User ${session.userId} sent signature but has no stored public key`);
+    logger.warn('auth', 'Signed request but no stored public key', { userId: session.userId });
     return null;
   }
 
   // Check timestamp freshness (< 5 minutes)
   if (!isTimestampFresh(timestamp)) {
-    console.warn(`[auth] Stale timestamp from user ${session.userId}: ${timestamp}`);
+    logger.warn('auth', 'Stale timestamp', { userId: session.userId, timestamp });
     return null; // reject stale requests
   }
 
   // Check nonce hasn't been used
   if (!nonceTracker.check(nonce)) {
-    console.warn(`[auth] Replay detected from user ${session.userId}: nonce ${nonce}`);
+    logger.warn('auth', 'Replay detected', { userId: session.userId, nonce });
     return null; // reject replayed requests
   }
 
@@ -85,11 +127,6 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   // Read body for hash — we need to clone since body can only be read once
   let bodyText = '';
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    // The body has likely already been consumed or will be consumed by the handler.
-    // We need the body hash that the client computed. For verification, we recompute
-    // from the body the client sent. The caller must pass the body text.
-    // For now, we use the body hash from the request header if available,
-    // or hash an empty string for GET requests.
     try {
       bodyText = await req.clone().text();
     } catch {
@@ -109,17 +146,19 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   );
 
   if (!verified) {
-    console.warn(`[auth] Invalid signature from user ${session.userId}`);
+    logger.warn('auth', 'Invalid signature', { userId: session.userId });
     return null; // reject invalid signatures
   }
 
+  logger.debug('auth', 'Auth successful', { userId: session.userId, verified: true });
   return { session, verified: true };
 }
 
 /**
  * Create a new session, optionally storing a public key.
+ * Now async — writes to KV for persistence.
  */
-export function createSession(publicKey?: JsonWebKey): { userId: string; apiKey: string } {
+export async function createSession(publicKey?: JsonWebKey): Promise<{ userId: string; apiKey: string }> {
   const userId = crypto.randomUUID();
   const apiKey = crypto.randomUUID();
 
@@ -131,50 +170,85 @@ export function createSession(publicKey?: JsonWebKey): { userId: string; apiKey:
     channels: [],
   };
 
-  sessions.set(apiKey, session);
-  userIndex.set(userId, apiKey);
+  await persistSession(session);
 
+  logger.info('auth', 'Session created', { userId, hasPublicKey: !!publicKey });
   return { userId, apiKey };
 }
 
-export function getSessionByUserId(userId: string): UserSession | null {
-  const apiKey = userIndex.get(userId);
-  if (!apiKey) return null;
-  return sessions.get(apiKey) || null;
-}
-
-export function getSessionByChannelId(channelId: string): UserSession | null {
-  for (const session of sessions.values()) {
-    if (session.channels.some((ch) => ch.id === channelId)) {
-      return session;
+export async function getSessionByUserId(userId: string): Promise<UserSession | null> {
+  // Try cache first
+  let apiKey = userIndexCache.get(userId) ?? null;
+  if (!apiKey && isKvAvailable()) {
+    apiKey = await kvGetUserIndex(userId);
+    if (apiKey) {
+      userIndexCache.set(userId, apiKey);
     }
   }
-  return null;
+  if (!apiKey) return null;
+
+  let session = sessionCache.get(apiKey) ?? null;
+  if (!session && isKvAvailable()) {
+    session = await kvGetSession(apiKey);
+    if (session) {
+      sessionCache.set(apiKey, session);
+      for (const ch of session.channels) {
+        channelIndexCache.set(ch.id, session.userId);
+      }
+    }
+  }
+  return session;
 }
 
-export function addChannel(userId: string, channel: ChannelConfig): void {
-  const apiKey = userIndex.get(userId);
-  if (!apiKey) return;
-  const session = sessions.get(apiKey);
+export async function getSessionByChannelId(channelId: string): Promise<UserSession | null> {
+  // Try channel index cache first
+  let userId = channelIndexCache.get(channelId) ?? null;
+  if (!userId && isKvAvailable()) {
+    userId = await kvGetChannelOwner(channelId);
+    if (userId) {
+      channelIndexCache.set(channelId, userId);
+    }
+  }
+  if (!userId) return null;
+
+  return getSessionByUserId(userId);
+}
+
+export async function addChannel(userId: string, channel: ChannelConfig): Promise<void> {
+  const session = await getSessionByUserId(userId);
   if (!session) return;
   session.channels.push(channel);
+
+  // Update channel index
+  channelIndexCache.set(channel.id, userId);
+  if (isKvAvailable()) {
+    await kvSetChannelIndex(channel.id, userId);
+  }
+
+  // Persist updated session
+  await persistSession(session);
 }
 
-export function removeChannel(userId: string, channelId: string): boolean {
-  const apiKey = userIndex.get(userId);
-  if (!apiKey) return false;
-  const session = sessions.get(apiKey);
+export async function removeChannel(userId: string, channelId: string): Promise<boolean> {
+  const session = await getSessionByUserId(userId);
   if (!session) return false;
   const idx = session.channels.findIndex((ch) => ch.id === channelId);
   if (idx === -1) return false;
   session.channels.splice(idx, 1);
+
+  // Remove channel index
+  channelIndexCache.delete(channelId);
+  if (isKvAvailable()) {
+    await kvDeleteChannelIndex(channelId);
+  }
+
+  // Persist updated session
+  await persistSession(session);
   return true;
 }
 
-export function getChannels(userId: string): ChannelConfig[] {
-  const apiKey = userIndex.get(userId);
-  if (!apiKey) return [];
-  const session = sessions.get(apiKey);
+export async function getChannels(userId: string): Promise<ChannelConfig[]> {
+  const session = await getSessionByUserId(userId);
   if (!session) return [];
   return session.channels;
 }

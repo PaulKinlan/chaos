@@ -3,6 +3,7 @@
 
 import { addMessage, type StoredMessage } from '../store.ts';
 import { getSessionByChannelId } from '../auth.ts';
+import { logger } from '../logger.ts';
 
 // ── Telegram API types ──
 
@@ -92,14 +93,18 @@ export async function registerTelegramBot(
   serverBaseUrl: string,
   channelId: string,
 ): Promise<{ botUsername: string; webhookSecret: string }> {
+  logger.info('telegram', 'Registering Telegram bot', { userId, channelId });
+
   // 1. Validate the bot token via getMe
   const getMeResp = await telegramApiCall(botToken, 'getMe');
   if (!getMeResp.ok) {
+    logger.error('telegram', 'Telegram API unreachable', { userId, channelId, status: getMeResp.status });
     throw new Error(`Telegram API unreachable: ${getMeResp.status}`);
   }
 
   const getMeData: TelegramGetMeResponse = await getMeResp.json();
   if (!getMeData.ok || !getMeData.result) {
+    logger.error('telegram', 'Invalid bot token', { userId, channelId, description: getMeData.description });
     throw new Error(`Invalid bot token: ${getMeData.description || 'getMe failed'}`);
   }
 
@@ -116,14 +121,17 @@ export async function registerTelegramBot(
   });
 
   if (!setWebhookResp.ok) {
+    logger.error('telegram', 'Failed to set Telegram webhook', { userId, channelId, status: setWebhookResp.status });
     throw new Error(`Failed to set webhook: ${setWebhookResp.status}`);
   }
 
   const setWebhookData: TelegramSetWebhookResponse = await setWebhookResp.json();
   if (!setWebhookData.ok) {
+    logger.error('telegram', 'Telegram webhook setup failed', { userId, channelId, description: setWebhookData.description });
     throw new Error(`Webhook setup failed: ${setWebhookData.description || 'setWebhook failed'}`);
   }
 
+  logger.info('telegram', 'Telegram bot registered', { userId, channelId, botUsername });
   return { botUsername, webhookSecret };
 }
 
@@ -133,15 +141,19 @@ export async function handleTelegramWebhook(
   channelId: string,
   req: Request,
 ): Promise<Response> {
+  logger.info('telegram', 'Incoming Telegram update', { channelId });
+
   // Look up the channel owner
-  const session = getSessionByChannelId(channelId);
+  const session = await getSessionByChannelId(channelId);
   if (!session) {
+    logger.error('telegram', 'Unknown channel for Telegram webhook', { channelId });
     return jsonResponse({ error: 'Unknown channel' }, 404);
   }
 
   // Find the channel config
   const channel = session.channels.find((ch) => ch.id === channelId);
   if (!channel || channel.type !== 'telegram') {
+    logger.error('telegram', 'Channel is not a Telegram type', { channelId });
     return jsonResponse({ error: 'Channel is not a Telegram channel' }, 400);
   }
 
@@ -150,6 +162,7 @@ export async function handleTelegramWebhook(
   const secret = url.searchParams.get('secret');
   const expectedSecret = channel.metadata?.['webhookSecret'] as string | undefined;
   if (expectedSecret && secret !== expectedSecret) {
+    logger.error('telegram', 'Invalid Telegram webhook secret', { channelId });
     return jsonResponse({ error: 'Invalid secret' }, 401);
   }
 
@@ -158,6 +171,7 @@ export async function handleTelegramWebhook(
   try {
     update = await req.json();
   } catch {
+    logger.error('telegram', 'Invalid JSON body in Telegram webhook', { channelId });
     return jsonResponse({ error: 'Invalid JSON body' }, 400);
   }
 
@@ -205,6 +219,8 @@ export async function handleTelegramWebhook(
 
   addMessage(session.userId, message);
 
+  logger.info('telegram', 'Telegram message stored', { channelId, messageId: message.id, userId: session.userId, from });
+
   return jsonResponse({ ok: true, messageId: message.id });
 }
 
@@ -223,8 +239,10 @@ export async function sendTelegramReply(
 
   if (!resp.ok) {
     const body = await resp.text();
+    logger.error('telegram', 'Telegram sendMessage failed', { chatId, status: resp.status, body });
     throw new Error(`Telegram sendMessage failed: ${resp.status} ${body}`);
   }
+  logger.info('telegram', 'Telegram reply sent', { chatId });
 }
 
 // ── Delete webhook (cleanup) ──

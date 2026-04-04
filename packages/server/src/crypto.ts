@@ -7,20 +7,55 @@ const VERIFY_ALGORITHM = { name: 'ECDSA', hash: 'SHA-256' } as const;
 // Default max age for timestamps: 5 minutes
 const DEFAULT_MAX_AGE_MS = 5 * 60 * 1000;
 
-// Server keypair — generated on startup, kept in memory
+import { isKvAvailable, kvGetServerKeyPair, kvSetServerKeyPair } from './kv.ts';
+import { logger } from './logger.ts';
+
+// Server keypair — persisted in KV, cached in memory
 let serverKeyPair: { privateKey: CryptoKey; publicKey: CryptoKey } | null = null;
 let serverPublicKeyJwk: JsonWebKey | null = null;
 
 /**
- * Generate the server keypair on startup. Call once at boot.
+ * Initialize the server keypair on startup. Call once at boot (after initKv).
+ * Loads from KV if available, otherwise generates a new one.
  */
 export async function initServerKeyPair(): Promise<void> {
+  // Try to load from KV first
+  if (isKvAvailable()) {
+    const stored = await kvGetServerKeyPair();
+    if (stored) {
+      logger.info('crypto', 'Loaded server keypair from KV');
+      serverKeyPair = {
+        privateKey: await crypto.subtle.importKey(
+          'jwk', stored.privateKey, ALGORITHM, true, ['sign'],
+        ),
+        publicKey: await crypto.subtle.importKey(
+          'jwk', stored.publicKey, ALGORITHM, true, ['verify'],
+        ),
+      };
+      serverPublicKeyJwk = stored.publicKey;
+      return;
+    }
+  }
+
+  // Generate a new keypair
   serverKeyPair = await crypto.subtle.generateKey(
     ALGORITHM,
     true, // extractable for JWK export
     ['sign', 'verify'],
   );
   serverPublicKeyJwk = await crypto.subtle.exportKey('jwk', serverKeyPair.publicKey);
+
+  // Persist to KV
+  if (isKvAvailable()) {
+    const privateKeyJwk = await crypto.subtle.exportKey('jwk', serverKeyPair.privateKey);
+    await kvSetServerKeyPair({
+      privateKey: privateKeyJwk,
+      publicKey: serverPublicKeyJwk!,
+    });
+    logger.info('crypto', 'Generated and persisted new server keypair to KV');
+  } else {
+    logger.warn('crypto', 'Generated server keypair (in-memory only, no KV)');
+  }
 }
 
 /**

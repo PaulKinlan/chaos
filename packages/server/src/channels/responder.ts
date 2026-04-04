@@ -4,6 +4,7 @@
 import { addResponse, type StoredMessage } from '../store.ts';
 import { getSessionByUserId } from '../auth.ts';
 import { sendTelegramReply } from './telegram.ts';
+import { logger } from '../logger.ts';
 
 export interface ReplyPayload {
   channelType: string;
@@ -34,6 +35,8 @@ export function handleReply(
   // Store the response for polling
   addResponse(payload.channelId, response);
 
+  logger.info('responder', 'Outgoing reply stored', { userId, channelId: payload.channelId, channelType: payload.channelType, responseId: response.id });
+
   // For Telegram channels, also send the reply immediately via Telegram API
   if (payload.channelType === 'telegram') {
     sendTelegramReplyAsync(userId, payload);
@@ -47,7 +50,7 @@ async function sendTelegramReplyAsync(
   payload: ReplyPayload,
 ): Promise<void> {
   try {
-    const session = getSessionByUserId(userId);
+    const session = await getSessionByUserId(userId);
     if (!session) return;
 
     const channel = session.channels.find((ch) => ch.id === payload.channelId);
@@ -65,12 +68,12 @@ async function sendTelegramReplyAsync(
     const chatId = payload.metadata?.['chatId'] as string | number | undefined;
 
     if (!botToken || !chatId) {
-      console.error('Telegram reply missing botToken or chatId');
+      logger.error('responder', 'Telegram reply missing botToken or chatId', { userId, channelId: payload.channelId });
       return;
     }
 
     await sendTelegramReply(botToken, chatId, payload.content);
   } catch (err) {
-    console.error('Failed to send Telegram reply:', err);
+    logger.error('responder', 'Failed to send Telegram reply', { userId, channelId: payload.channelId, error: String(err) });
   }
 }

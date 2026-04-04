@@ -3,14 +3,18 @@
 
 import { addMessage, type StoredMessage } from '../store.ts';
 import { getSessionByChannelId } from '../auth.ts';
+import { logger } from '../logger.ts';
 
 export async function handleWebhook(
   channelId: string,
   req: Request,
 ): Promise<Response> {
+  logger.info('webhook', 'Incoming webhook', { channelId });
+
   // Look up the channel owner
-  const session = getSessionByChannelId(channelId);
+  const session = await getSessionByChannelId(channelId);
   if (!session) {
+    logger.error('webhook', 'Unknown channel', { channelId });
     return new Response(JSON.stringify({ error: 'Unknown channel' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' },
@@ -20,6 +24,7 @@ export async function handleWebhook(
   // Find the channel config to verify it's a webhook type
   const channel = session.channels.find((ch) => ch.id === channelId);
   if (!channel || channel.type !== 'webhook') {
+    logger.error('webhook', 'Channel is not a webhook type', { channelId });
     return new Response(JSON.stringify({ error: 'Channel is not a webhook' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
@@ -31,6 +36,7 @@ export async function handleWebhook(
   const token = url.searchParams.get('token');
   const expectedToken = channel.metadata?.['webhookSecret'] as string | undefined;
   if (expectedToken && token !== expectedToken) {
+    logger.error('webhook', 'Invalid webhook token', { channelId });
     return new Response(JSON.stringify({ error: 'Invalid token' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
@@ -59,7 +65,8 @@ export async function handleWebhook(
       content = await req.text();
       metadata = { raw: content };
     }
-  } catch {
+  } catch (err) {
+    logger.error('webhook', 'Failed to parse webhook body', { channelId, error: String(err) });
     content = await req.text().catch(() => '(empty body)');
   }
 
@@ -76,6 +83,8 @@ export async function handleWebhook(
   };
 
   addMessage(session.userId, message);
+
+  logger.info('webhook', 'Webhook message stored', { channelId, messageId: message.id, userId: session.userId, from: message.from });
 
   return new Response(JSON.stringify({ ok: true, messageId: message.id }), {
     status: 200,
