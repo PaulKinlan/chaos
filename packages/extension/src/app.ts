@@ -3771,6 +3771,34 @@ import {
   type RelayConfig,
 } from './channels/relay-client.js';
 
+const MAX_CHANNEL_LOG_LINES = 200;
+
+function channelLog(message: string): void {
+  const el = document.getElementById('channel-log-output');
+  if (!el) return;
+  const timestamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const line = `[${timestamp}] ${message}\n`;
+  el.textContent = (el.textContent || '') + line;
+  // Trim to max lines
+  const lines = el.textContent!.split('\n');
+  if (lines.length > MAX_CHANNEL_LOG_LINES + 1) {
+    el.textContent = lines.slice(lines.length - MAX_CHANNEL_LOG_LINES - 1).join('\n');
+  }
+  el.scrollTop = el.scrollHeight;
+}
+
+document.getElementById('btn-clear-channel-log')!.addEventListener('click', () => {
+  const el = document.getElementById('channel-log-output');
+  if (el) el.textContent = '';
+});
+
+// Listen for log messages broadcast from the background poller
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'channelLog' && typeof message.message === 'string') {
+    channelLog(message.message);
+  }
+});
+
 function updateRelayUrlLabel(): void {
   const urlInput = document.getElementById('relay-server-url') as HTMLInputElement;
   const defaultLabel = document.getElementById('relay-url-default-label')!;
@@ -3802,15 +3830,49 @@ async function renderChannelsUI(): Promise<void> {
     statusSpan.style.color = 'var(--success, #4caf50)';
     connectedDiv.style.display = '';
 
-    // Load and render channels
+    // Load and render channels — auto-re-register if server lost our session
     try {
+      channelLog('Loading channels...');
       const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
       const channels = await relayListChannels(config);
+      channelLog(`Loaded ${channels.length} channel(s)`);
       renderChannelsList(channels, config, settings.serverUrl);
     } catch (err) {
-      console.error('Failed to load channels:', err);
-      statusSpan.textContent = 'Connected (failed to load channels)';
-      statusSpan.style.color = 'var(--warning, orange)';
+      const errMsg = err instanceof Error ? err.message : String(err);
+
+      // If auth failed (401), the server likely restarted and lost our session — auto-re-register
+      if (errMsg.includes('401') || errMsg.includes('Unauthorized')) {
+        channelLog('Session expired or server restarted. Re-registering...');
+        try {
+          const { userId, apiKey } = await registerWithRelay(settings.serverUrl);
+          channelLog(`Re-registered. New user ID: ${userId.slice(0, 8)}...`);
+          const newSettings: RelaySettings = {
+            ...settings,
+            userId,
+            apiKey,
+          };
+          await setRelaySettings(newSettings);
+          chrome.runtime.sendMessage({ type: 'startChannelPolling', intervalMinutes: settings.pollIntervalMinutes || 1 });
+
+          // Retry loading channels with new credentials
+          const config2: RelayConfig = { serverUrl: settings.serverUrl, apiKey };
+          const channels = await relayListChannels(config2);
+          channelLog(`Loaded ${channels.length} channel(s) after re-registration`);
+          statusSpan.textContent = `Connected as ${userId.slice(0, 8)}... (re-registered)`;
+          statusSpan.style.color = 'var(--success, #4caf50)';
+          renderChannelsList(channels, config2, settings.serverUrl);
+        } catch (reregErr) {
+          const reregMsg = reregErr instanceof Error ? reregErr.message : String(reregErr);
+          channelLog(`Re-registration failed: ${reregMsg}`);
+          statusSpan.textContent = `Disconnected (server unreachable)`;
+          statusSpan.style.color = 'var(--danger, red)';
+        }
+      } else {
+        console.error('Failed to load channels:', err);
+        channelLog(`Failed to load channels: ${errMsg}`);
+        statusSpan.textContent = 'Connected (failed to load channels)';
+        statusSpan.style.color = 'var(--warning, orange)';
+      }
     }
   } else {
     urlInput.value = urlInput.value || DEFAULT_RELAY_URL;
@@ -3859,10 +3921,14 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
     btn.addEventListener('click', async () => {
       const channelId = (btn as HTMLElement).dataset.channelId!;
       try {
+        channelLog(`Removing channel ${channelId.slice(0, 8)}...`);
         await relayRemoveChannel(config, channelId);
+        channelLog('Channel removed');
         await renderChannelsUI();
       } catch (err) {
-        alert(`Failed to remove channel: ${err instanceof Error ? err.message : String(err)}`);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        channelLog(`Failed to remove channel: ${errMsg}`);
+        alert(`Failed to remove channel: ${errMsg}`);
       }
     });
   });
@@ -3881,14 +3947,17 @@ document.getElementById('btn-relay-connect')!.addEventListener('click', async ()
 
   statusSpan.textContent = 'Connecting...';
   statusSpan.style.color = 'var(--text-secondary)';
+  channelLog(`Connecting to relay server at ${serverUrl}...`);
 
   try {
     // Check health first
     const healthResp = await fetch(`${serverUrl}/health`);
     if (!healthResp.ok) throw new Error('Server not reachable');
+    channelLog('Server health check passed');
 
     // Register
     const { userId, apiKey } = await registerWithRelay(serverUrl);
+    channelLog(`Registration successful. User ID: ${userId.slice(0, 8)}...`);
 
     const settings: RelaySettings = {
       serverUrl,
@@ -3901,17 +3970,22 @@ document.getElementById('btn-relay-connect')!.addEventListener('click', async ()
 
     // Start polling via message to background
     chrome.runtime.sendMessage({ type: 'startChannelPolling', intervalMinutes: 1 });
+    channelLog('Polling started (interval: 1 minute)');
 
     await renderChannelsUI();
   } catch (err) {
-    statusSpan.textContent = `Failed: ${err instanceof Error ? err.message : String(err)}`;
+    const errMsg = err instanceof Error ? err.message : String(err);
+    channelLog(`Registration failed: ${errMsg}`);
+    statusSpan.textContent = `Failed: ${errMsg}`;
     statusSpan.style.color = 'var(--danger, red)';
   }
 });
 
 document.getElementById('btn-relay-disconnect')!.addEventListener('click', async () => {
+  channelLog('Disconnecting from relay server...');
   await clearRelaySettings();
   chrome.runtime.sendMessage({ type: 'stopChannelPolling' });
+  channelLog('Disconnected');
   await renderChannelsUI();
 });
 
@@ -3941,11 +4015,15 @@ document.getElementById('btn-add-webhook')!.addEventListener('click', async () =
   const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
 
   try {
-    await relayRegisterChannel(config, { type: 'webhook', agentId: '', enabled: true, metadata: {} });
+    channelLog('Adding webhook channel...');
+    const result = await relayRegisterChannel(config, { type: 'webhook', agentId: '', enabled: true, metadata: {} });
+    channelLog(`Channel added: ${result.channel.id.slice(0, 8)}...`);
     document.getElementById('channel-type-picker')!.style.display = 'none';
     await renderChannelsUI();
   } catch (err) {
-    alert(`Failed to add channel: ${err instanceof Error ? err.message : String(err)}`);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    channelLog(`Failed to add webhook channel: ${errMsg}`);
+    alert(`Failed to add channel: ${errMsg}`);
   }
 });
 
@@ -3976,11 +4054,13 @@ document.getElementById('btn-telegram-validate')!.addEventListener('click', asyn
 
   statusSpan.textContent = 'Validating...';
   statusSpan.style.color = 'var(--text-secondary)';
+  channelLog('Registering Telegram bot...');
 
   const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
 
   try {
     const result = await registerTelegramChannel(config, botToken);
+    channelLog(`Telegram bot connected: @${result.botUsername}`);
     statusSpan.textContent = `Connected as @${result.botUsername}`;
     statusSpan.style.color = 'var(--success, #4caf50)';
     tokenInput.value = '';
@@ -3991,7 +4071,9 @@ document.getElementById('btn-telegram-validate')!.addEventListener('click', asyn
       renderChannelsUI();
     }, 1500);
   } catch (err) {
-    statusSpan.textContent = `Failed: ${err instanceof Error ? err.message : String(err)}`;
+    const errMsg = err instanceof Error ? err.message : String(err);
+    channelLog(`Telegram registration failed: ${errMsg}`);
+    statusSpan.textContent = `Failed: ${errMsg}`;
     statusSpan.style.color = 'var(--danger, red)';
   }
 });

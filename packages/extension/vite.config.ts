@@ -4,7 +4,7 @@ import manifest from './manifest.json';
 
 export default defineConfig({
   define: {
-    '__CHAOS_DEFAULT_RELAY_URL__': JSON.stringify(process.env.VITE_RELAY_URL || 'http://localhost:8787'),
+    '__CHAOS_DEFAULT_RELAY_URL__': JSON.stringify(process.env.VITE_RELAY_URL || 'https://chaos--main.paulkinlan-ea.deno.net'),
   },
   plugins: [
     crx({ manifest }),
