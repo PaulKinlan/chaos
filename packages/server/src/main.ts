@@ -748,6 +748,7 @@ Deno.serve(serveOptions, async (req: Request) => {
       const channel: ChannelConfig = {
         id: channelId,
         type: "telegram",
+        direction: "bidirectional",
         agentId: body.agentId || "",
         enabled: true,
         metadata: {
@@ -799,9 +800,20 @@ Deno.serve(serveOptions, async (req: Request) => {
 
     try {
       const body = await req.json();
+      const channelType = body.type || "webhook";
+      // Determine direction based on channel type
+      const directionMap: Record<string, string> = {
+        webhook: "inbound",
+        telegram: "bidirectional",
+        discord: "bidirectional",
+        email: "bidirectional",
+        slack: "bidirectional",
+      };
       const channel: ChannelConfig = {
         id: body.id || crypto.randomUUID(),
-        type: body.type || "webhook",
+        type: channelType,
+        direction: (body.direction || directionMap[channelType] ||
+          "inbound") as ChannelConfig["direction"],
         agentId: body.agentId || "",
         enabled: body.enabled !== false,
         metadata: body.metadata || {},

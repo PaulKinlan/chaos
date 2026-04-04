@@ -215,7 +215,10 @@ export async function handleTelegramWebhook(
   let from = "unknown";
   let senderId: number | undefined;
   let chatId: number | undefined;
-  const metadata: Record<string, unknown> = { updateId: update.update_id };
+  const metadata: Record<string, unknown> = {
+    updateId: update.update_id,
+    channelDirection: channel.direction || "bidirectional",
+  };
 
   if (telegramMsg) {
     content = telegramMsg.text || "";

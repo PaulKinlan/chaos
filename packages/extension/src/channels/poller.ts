@@ -83,14 +83,20 @@ async function processMessage(message: ChannelMessage): Promise<void> {
   try {
     const responseContent = await messageHandler(message);
     if (responseContent) {
-      const reply: ChannelResponse = {
-        channelType: message.channelType,
-        channelId: message.channelId,
-        replyTo: message.id,
-        content: responseContent,
-        metadata: message.metadata,
-      };
-      await sendReply(config, reply);
+      // Only send reply for bidirectional channels
+      const direction = message.metadata?.['channelDirection'] as string || 'bidirectional';
+      if (direction === 'inbound') {
+        broadcastChannelLog(`Processed inbound-only message ${message.id.slice(0, 8)} (no reply sent)`);
+      } else {
+        const reply: ChannelResponse = {
+          channelType: message.channelType,
+          channelId: message.channelId,
+          replyTo: message.id,
+          content: responseContent,
+          metadata: message.metadata,
+        };
+        await sendReply(config, reply);
+      }
     }
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);

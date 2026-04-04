@@ -4064,7 +4064,7 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
         <button class="btn btn-ghost btn-remove-channel" data-channel-id="${ch.id}" style="color:var(--danger, red);font-size:var(--text-xs);">Remove</button>
       </div>
       ${detailHtml}
-      <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'}</div>
+      <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'} | ${(ch as Record<string, unknown>).direction === 'bidirectional' ? 'Two-way' : 'Inbound only'}</div>
     `;
     listDiv.appendChild(card);
   }

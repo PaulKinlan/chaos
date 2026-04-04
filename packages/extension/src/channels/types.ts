@@ -19,9 +19,12 @@ export interface ChannelResponse {
   metadata?: Record<string, unknown>;
 }
 
+export type ChannelDirection = 'inbound' | 'bidirectional';
+
 export interface ChannelConfig {
   id: string;
   type: 'discord' | 'telegram' | 'email' | 'webhook' | 'slack';
+  direction: ChannelDirection;
   agentId: string;
   enabled: boolean;
   metadata: Record<string, unknown>;
