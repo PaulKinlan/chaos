@@ -3901,16 +3901,21 @@ async function renderChannelsUI(): Promise<void> {
     urlInput.value = settings.serverUrl;
     urlInput.disabled = true;
     disconnectBtn.style.display = '';
-    statusSpan.textContent = `Connected as ${settings.userId.slice(0, 8)}...`;
-    statusSpan.style.color = 'var(--success, #4caf50)';
+    statusSpan.textContent = 'Verifying connection...';
+    statusSpan.style.color = 'var(--text-secondary)';
     connectedDiv.style.display = '';
+
+    // Ensure the background service worker is polling and WS is connected
+    chrome.runtime.sendMessage({ type: 'startChannelPolling', intervalMinutes: settings.pollIntervalMinutes || 1 });
 
     // Load and render channels — auto-re-register if server lost our session
     try {
-      channelLog('Loading channels...');
+      channelLog('Verifying connection and loading channels...');
       const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
       const channels = await relayListChannels(config);
       channelLog(`Loaded ${channels.length} channel(s)`);
+      statusSpan.textContent = `Connected as ${settings.userId.slice(0, 8)}...`;
+      statusSpan.style.color = 'var(--success, #4caf50)';
       renderChannelsList(channels, config, settings.serverUrl);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
