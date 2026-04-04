@@ -291,14 +291,25 @@ function registerClipboardListener(): void {
 }
 
 // ── FileSystem Observer listener ──
+// FileSystemObserver needs to run in a page context (not service worker)
+// because it requires a FileSystemHandle from showDirectoryPicker().
+// The app page starts observations and notifies via chrome.runtime.sendMessage.
 
 function registerFileSystemListener(): void {
-  // FileSystemObserver is available in Chrome 129+
-  // This is a placeholder — the actual observation requires a FileSystemHandle
-  // which must be obtained via the File System Access API (user gesture required).
-  // For now, we register the hook type and log that it needs setup.
-  // The observation will be started when the user configures a path via the UI.
-  console.log('[hooks] FileSystem observer hook type registered (requires user-granted file handle)');
+  // Listen for filesystem change events forwarded from the app page
+  chrome.runtime.onMessage.addListener(async (msg) => {
+    if (msg.type !== 'filesystemChanged') return;
+    const hooks = await getEnabledHooks();
+    const matching = hooks.filter((h) => h.trigger.type === 'filesystem-changed');
+    for (const hook of matching) {
+      const trigger = hook.trigger as Extract<HookTrigger, { type: 'filesystem-changed' }>;
+      // If hook has a specific path filter, check it
+      if (trigger.path && !msg.path?.includes(trigger.path)) continue;
+      const context = `File system change detected: ${msg.changeType || 'modified'} — ${msg.path || 'unknown path'}`;
+      executeHook(hook, context);
+    }
+  });
+  console.log('[hooks] FileSystem observer hook listener registered');
 }
 
 // ── Initialization ──

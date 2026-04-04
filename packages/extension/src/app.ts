@@ -4774,7 +4774,46 @@ function updateTriggerFilters(): void {
           <input type="text" id="hook-filter-label" placeholder="e.g. Summarize this page">
         </div>`;
       break;
-    // tab-created, tab-closed, browser-startup have no filters
+    case 'filesystem-changed':
+      html = `
+        <div class="settings-field">
+          <label>Directory to Watch</label>
+          <div style="display:flex;gap:var(--sp-2);align-items:center;">
+            <input type="text" id="hook-filter-fs-path" placeholder="Click 'Pick Directory' to choose" readonly style="flex:1;">
+            <button class="btn btn-ghost btn-xs" id="btn-pick-fs-directory">Pick Directory</button>
+          </div>
+          <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">Uses the File System Access API to watch a local directory for changes.</p>
+        </div>`;
+      // Wire up directory picker after HTML is set
+      setTimeout(() => {
+        document.getElementById('btn-pick-fs-directory')?.addEventListener('click', async () => {
+          try {
+            const handle = await (window as any).showDirectoryPicker({ mode: 'read' });
+            const pathInput = document.getElementById('hook-filter-fs-path') as HTMLInputElement;
+            if (pathInput && handle) {
+              pathInput.value = handle.name;
+              pathInput.dataset.handleName = handle.name;
+              // Store the handle for later use by the observer
+              // We'll need to persist this via IndexedDB since handles can't go to chrome.storage
+              try {
+                const root = await navigator.storage.getDirectory();
+                const handlesDir = await root.getDirectoryHandle('fs-watch-handles', { create: true });
+                // Store a reference — the actual observation starts when the hook is created
+                (window as any).__chaosLastPickedDirHandle = handle;
+                console.log('[hooks] Directory handle picked:', handle.name);
+              } catch (e) {
+                console.warn('[hooks] Could not store directory handle:', e);
+              }
+            }
+          } catch (err) {
+            if ((err as Error).name !== 'AbortError') {
+              console.error('[hooks] Directory picker failed:', err);
+            }
+          }
+        });
+      }, 0);
+      break;
+    // tab-created, tab-closed, browser-startup, clipboard-changed have no filters
   }
 
   hooksTriggerFilters.innerHTML = html;
@@ -4920,7 +4959,14 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
       break;
     case 'filesystem-changed': {
       const path = (document.getElementById('hook-filter-fs-path') as HTMLInputElement)?.value.trim() || undefined;
+      if (!path) return; // Must have picked a directory
       trigger = { type: 'filesystem-changed', path };
+      // Store the directory handle in IndexedDB for persistence
+      const dirHandle = (window as any).__chaosLastPickedDirHandle as FileSystemDirectoryHandle | undefined;
+      if (dirHandle) {
+        storeFsWatchHandle(path, dirHandle);
+        startFsObservation(path, dirHandle);
+      }
       break;
     }
     default:
@@ -4956,6 +5002,99 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
 });
 
 // ══════════════════════════════════════════
+// ── FileSystem Watch Handles (IndexedDB) ──
+
+const FS_WATCH_DB = 'chaos-fs-watch';
+const FS_WATCH_STORE = 'handles';
+
+function openFsWatchDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FS_WATCH_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(FS_WATCH_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function storeFsWatchHandle(name: string, handle: FileSystemDirectoryHandle): Promise<void> {
+  const db = await openFsWatchDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FS_WATCH_STORE, 'readwrite');
+    tx.objectStore(FS_WATCH_STORE).put(handle, name);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function loadFsWatchHandles(): Promise<Map<string, FileSystemDirectoryHandle>> {
+  const handles = new Map<string, FileSystemDirectoryHandle>();
+  try {
+    const db = await openFsWatchDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(FS_WATCH_STORE, 'readonly');
+      const store = tx.objectStore(FS_WATCH_STORE);
+      const req = store.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (cursor) {
+          handles.set(cursor.key as string, cursor.value);
+          cursor.continue();
+        } else {
+          db.close();
+          resolve(handles);
+        }
+      };
+      req.onerror = () => { db.close(); resolve(handles); };
+    });
+  } catch {
+    return handles;
+  }
+}
+
+function startFsObservation(name: string, handle: FileSystemDirectoryHandle): void {
+  if (typeof (globalThis as any).FileSystemObserver === 'undefined') {
+    console.warn('[fs-watch] FileSystemObserver not available in this browser');
+    return;
+  }
+  try {
+    const observer = new (globalThis as any).FileSystemObserver(
+      (records: Array<{ type: string; changedHandle?: { name: string } }>) => {
+        for (const record of records) {
+          const path = record.changedHandle?.name || name;
+          console.log(`[fs-watch] Change detected: ${record.type} in ${path}`);
+          chrome.runtime.sendMessage({
+            type: 'filesystemChanged',
+            changeType: record.type,
+            path,
+            directory: name,
+          });
+        }
+      },
+    );
+    observer.observe(handle, { recursive: true });
+    console.log(`[fs-watch] Observing directory: ${name}`);
+  } catch (err) {
+    console.error('[fs-watch] Failed to start observation:', err);
+  }
+}
+
+// On startup, restore file system observations from IndexedDB
+loadFsWatchHandles().then(async (handles) => {
+  for (const [name, handle] of handles) {
+    // Verify permission is still granted
+    try {
+      const perm = await (handle as any).queryPermission({ mode: 'read' });
+      if (perm === 'granted') {
+        startFsObservation(name, handle);
+      } else {
+        console.log(`[fs-watch] Permission not granted for ${name}, skipping`);
+      }
+    } catch {
+      console.log(`[fs-watch] Could not check permission for ${name}`);
+    }
+  }
+}).catch((err) => console.warn('[fs-watch] Failed to restore handles:', err));
+
 // ── Refine Prompt
 // ══════════════════════════════════════════
 
