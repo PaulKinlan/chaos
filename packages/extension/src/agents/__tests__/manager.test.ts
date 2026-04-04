@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createAgent, listAgents, getAgent, deleteAgent, updateAgentMeta } from '../manager.js';
+import { createAgent, listAgents, getAgent, deleteAgent, updateAgentMeta, archiveAgent, listArchivedAgents, restoreAgent } from '../manager.js';
 
 // ── Chrome API mocks ──
 
@@ -68,6 +68,32 @@ vi.mock('../../storage/opfs.js', () => ({
     }),
     exists: vi.fn(async (path: string) => {
       return path in mockFiles || mockDirs.has(path);
+    }),
+    listDir: vi.fn(async (path: string) => {
+      // Return directory names that are direct children of the given path
+      const entries = new Set<string>();
+      for (const dir of mockDirs) {
+        if (dir.startsWith(path + '/')) {
+          const rest = dir.slice(path.length + 1);
+          const first = rest.split('/')[0];
+          if (first) entries.add(first);
+        }
+      }
+      for (const file of Object.keys(mockFiles)) {
+        if (file.startsWith(path + '/')) {
+          const rest = file.slice(path.length + 1);
+          const first = rest.split('/')[0];
+          if (first) entries.add(first);
+        }
+      }
+      return Array.from(entries).sort();
+    }),
+    appendFile: vi.fn(async (path: string, content: string) => {
+      mockFiles[path] = (mockFiles[path] ?? '') + content;
+    }),
+    readLines: vi.fn(async (path: string) => {
+      if (!(path in mockFiles)) throw new Error(`File not found: ${path}`);
+      return mockFiles[path].split('\n').filter((l: string) => l.length > 0);
     }),
   },
   OPFS: vi.fn(),
@@ -246,6 +272,108 @@ describe('Agent Manager', () => {
 
       const agents = await listAgents();
       expect(agents[0].id).toBe(agent.id);
+    });
+  });
+
+  describe('archiveAgent', () => {
+    it('removes agent from active list', async () => {
+      const agent = await createAgent('ArchiveBot', 'neutral');
+      await archiveAgent(agent.id);
+
+      const agents = await listAgents();
+      expect(agents).toHaveLength(0);
+    });
+
+    it('preserves OPFS data', async () => {
+      const agent = await createAgent('ArchiveBot', 'neutral');
+      await archiveAgent(agent.id);
+
+      // CLAUDE.md should still exist
+      expect(mockFiles[`agents/${agent.id}/CLAUDE.md`]).toBeDefined();
+    });
+
+    it('writes archive-meta.json', async () => {
+      const agent = await createAgent('ArchiveBot', 'neutral');
+      await archiveAgent(agent.id);
+
+      const metaRaw = mockFiles[`agents/${agent.id}/archive-meta.json`];
+      expect(metaRaw).toBeDefined();
+      const meta = JSON.parse(metaRaw);
+      expect(meta.name).toBe('ArchiveBot');
+      expect(meta.archivedAt).toBeDefined();
+    });
+
+    it('throws for non-existent agent', async () => {
+      await expect(archiveAgent('nonexistent')).rejects.toThrow('Agent not found');
+    });
+  });
+
+  describe('listArchivedAgents', () => {
+    it('returns empty when no archived agents', async () => {
+      const archived = await listArchivedAgents();
+      expect(archived).toEqual([]);
+    });
+
+    it('returns archived agents', async () => {
+      const agent = await createAgent('ArchiveBot', 'researcher');
+      await archiveAgent(agent.id);
+
+      const archived = await listArchivedAgents();
+      expect(archived).toHaveLength(1);
+      expect(archived[0].name).toBe('ArchiveBot');
+      expect(archived[0].role).toBe('researcher');
+      expect(archived[0].archivedAt).toBeDefined();
+    });
+
+    it('does not include active agents', async () => {
+      const active = await createAgent('ActiveBot', 'neutral');
+      const toArchive = await createAgent('ArchiveBot', 'neutral');
+      await archiveAgent(toArchive.id);
+
+      const archived = await listArchivedAgents();
+      expect(archived).toHaveLength(1);
+      expect(archived[0].id).toBe(toArchive.id);
+
+      // Active agent is still in the active list
+      const agents = await listAgents();
+      expect(agents).toHaveLength(1);
+      expect(agents[0].id).toBe(active.id);
+    });
+  });
+
+  describe('restoreAgent', () => {
+    it('restores an archived agent to the active list', async () => {
+      const agent = await createAgent('RestoreBot', 'coder');
+      await archiveAgent(agent.id);
+
+      // Verify it's gone from active
+      let agents = await listAgents();
+      expect(agents).toHaveLength(0);
+
+      // Restore
+      const restored = await restoreAgent(agent.id);
+      expect(restored).not.toBeNull();
+      expect(restored!.name).toBe('RestoreBot');
+      expect(restored!.role).toBe('coder');
+
+      // Verify it's back in active list
+      agents = await listAgents();
+      expect(agents).toHaveLength(1);
+      expect(agents[0].id).toBe(agent.id);
+    });
+
+    it('returns null for non-existent archived agent', async () => {
+      const result = await restoreAgent('nonexistent');
+      expect(result).toBeNull();
+    });
+
+    it('removes archive-meta.json after restore', async () => {
+      const { opfs: mockOpfs } = await import('../../storage/opfs.js');
+      const agent = await createAgent('RestoreBot', 'neutral');
+      await archiveAgent(agent.id);
+      await restoreAgent(agent.id);
+
+      expect(mockOpfs.delete).toHaveBeenCalledWith(`agents/${agent.id}/archive-meta.json`);
     });
   });
 });

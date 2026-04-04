@@ -169,10 +169,24 @@ Master:
 - Only available to the master agent
 - Master's CLAUDE.md updated to explain its orchestration role
 
-### Phase 3: Automatic sub-agent management
+### Phase 3: Automatic sub-agent management ✅ IMPLEMENTED
 - Master creates and tears down sub-agents as needed
 - Task handoff protocol: task created → sub-agent picks up → artifact published → master notified
 - Sub-agents can be temporary (created for a task, archived when done)
+
+**What was implemented:**
+
+- **Task completion triggers**: `task_update` tool now calls `getNewlyUnblockedTasks()` when a task completes, and triggers unblocked downstream agents via Chrome alarms
+- **`getNewlyUnblockedTasks()`** in `src/storage/shared.ts`: finds tasks whose `blockedBy` dependencies are now all completed
+- **Agent archival**: `archiveAgent()`, `listArchivedAgents()`, `restoreAgent()` in `src/agents/manager.ts`
+  - Archive writes metadata to OPFS `archive-meta.json`, removes from active list, keeps OPFS data
+  - List scans OPFS for agent dirs not in active list with `archive-meta.json`
+  - Restore reads `archive-meta.json`, re-adds to active list, cleans up metadata file
+- **`delete_agent` tool updated**: uses `archiveAgent()` when `preserveMemory=true` (default) instead of manual Chrome storage manipulation
+- **Master template updated**: added "Delegation Strategy" section with step-by-step multi-stage task instructions, mentions `blockedBy` for DAG ordering and auto-triggering
+- **UI: Archived Agents section**: collapsible section in agent settings showing archived agents with name, role, archived date, Restore and Delete Permanently buttons
+- **Background handlers**: `listArchivedAgents`, `archiveAgent`, `restoreAgent`, `deleteArchivedAgent` one-shot message handlers
+- **Tests**: 5 tests for `getNewlyUnblockedTasks` (no dependents, single dependency, multiple deps partial/full, already completed); 10 tests for archive/restore (archive removes from list, preserves OPFS, writes metadata; list returns archived; restore re-adds)
 
 ### Phase 4: Polish
 - Sub-agent activity visible from master's chat (inline status updates)

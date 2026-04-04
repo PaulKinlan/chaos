@@ -2932,6 +2932,17 @@ async function loadAgentSettings(): Promise<void> {
           Skills add specialised knowledge and instructions to this agent's system prompt.
         </p>
         <div id="agent-skills-list"></div>
+
+        <div style="margin-top:var(--sp-4);border-top:1px solid var(--border-default);padding-top:var(--sp-4);">
+          <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3);cursor:pointer;" id="btn-toggle-skill-browser">
+            <h4 style="margin:0;">Browse Skills</h4>
+            <span id="skill-browser-chevron" style="font-size:var(--text-xs);color:var(--text-muted);">&#9654;</span>
+          </div>
+          <div id="skill-browser-section" style="display:none;">
+            <div id="featured-skills-list"></div>
+          </div>
+        </div>
+
         <div class="skills-add-section" style="margin-top:var(--sp-4);">
           <h4>Add Skill</h4>
           <div class="agent-settings-field">
@@ -2939,6 +2950,16 @@ async function loadAgentSettings(): Promise<void> {
             <div style="display:flex;gap:var(--sp-2);align-items:center;">
               <input type="text" id="skill-url-input" placeholder="https://github.com/user/repo or direct SKILL.md URL" style="flex:1;">
               <button class="btn btn-primary btn-sm" id="btn-import-skill-url">Import</button>
+            </div>
+            <div id="skill-import-status" style="display:none;margin-top:var(--sp-2);"></div>
+          </div>
+          <div id="skill-preview-section" style="display:none;margin-top:var(--sp-3);background:var(--bg-base);border:1px solid var(--border-default);border-radius:8px;padding:var(--sp-3);">
+            <h5 style="margin:0 0 var(--sp-2) 0;">Skill Preview</h5>
+            <div id="skill-preview-meta" style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-2);"></div>
+            <pre id="skill-preview-content" style="font-size:var(--text-xs);max-height:200px;overflow-y:auto;background:var(--bg-surface);padding:var(--sp-2);border-radius:4px;white-space:pre-wrap;word-break:break-word;"></pre>
+            <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-2);">
+              <button class="btn btn-primary btn-sm" id="btn-confirm-skill-install">Install</button>
+              <button class="btn btn-sm" id="btn-cancel-skill-preview">Cancel</button>
             </div>
           </div>
           <div class="agent-settings-field">
@@ -2964,6 +2985,19 @@ async function loadAgentSettings(): Promise<void> {
         <textarea class="claude-md-editor" id="agent-claude-md">${escapeHtml(claudeMd)}</textarea>
         <div style="margin-top:var(--sp-3);">
           <button class="btn btn-primary btn-sm" id="btn-save-claude-md">Save CLAUDE.md</button>
+        </div>
+      </div>
+
+      <div class="agent-settings-section">
+        <div style="display:flex;align-items:center;gap:var(--sp-2);cursor:pointer;margin-bottom:var(--sp-3);" id="btn-toggle-archived-agents">
+          <h3 style="margin:0;">Archived Agents</h3>
+          <span id="archived-agents-chevron" style="font-size:var(--text-xs);color:var(--text-muted);">&#9654;</span>
+        </div>
+        <div id="archived-agents-section" style="display:none;">
+          <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">
+            Agents that were archived (removed but with data preserved). You can restore them or permanently delete their data.
+          </p>
+          <div id="archived-agents-list"></div>
         </div>
       </div>
 
@@ -3075,21 +3109,85 @@ async function loadAgentSettings(): Promise<void> {
       }
     });
 
-    // Import skill from URL
+    // Import skill from URL (with preview)
+    let pendingSkillUrl = '';
+
     document.getElementById('btn-import-skill-url')!.addEventListener('click', async () => {
       const url = (document.getElementById('skill-url-input') as HTMLInputElement).value.trim();
       if (!url) {
         const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Please enter a URL.');
         return;
       }
+      const statusEl = document.getElementById('skill-import-status')!;
+      statusEl.style.display = 'block';
+      statusEl.innerHTML = '<span style="color:var(--text-muted);font-size:var(--text-xs);">Fetching skill...</span>';
       try {
-        await sendMsg({ type: 'installSkill', agentId: meta.id, name: url, description: `Imported from ${url}`, content: await fetchSkillContent(url), source: url });
-        (document.getElementById('skill-url-input') as HTMLInputElement).value = '';
-        await loadSkillsList(meta.id);
-        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Skill imported from URL.');
+        const result = await sendMsg<{
+          meta: { name: string; description: string; author?: string; version?: string };
+          preview: string;
+          fileCount: number;
+          files: string[];
+        }>({ type: 'fetchSkillPreviewOneShot', url });
+        if ('error' in result) throw new Error((result as unknown as { error: string }).error);
+        pendingSkillUrl = url;
+        statusEl.style.display = 'none';
+        // Show preview
+        const previewSection = document.getElementById('skill-preview-section')!;
+        const metaEl = document.getElementById('skill-preview-meta')!;
+        const contentEl = document.getElementById('skill-preview-content')!;
+        metaEl.innerHTML = `<strong>${escapeHtml(result.meta.name)}</strong>` +
+          (result.meta.author ? ` by ${escapeHtml(result.meta.author)}` : '') +
+          (result.meta.version ? ` (v${escapeHtml(result.meta.version)})` : '') +
+          `<br>${escapeHtml(result.meta.description)}` +
+          `<br>${result.fileCount} file(s): ${result.files.map(escapeHtml).join(', ')}`;
+        contentEl.textContent = result.preview;
+        previewSection.style.display = 'block';
       } catch (err) {
-        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Failed to import skill: ${err instanceof Error ? err.message : String(err)}`);
+        statusEl.innerHTML = `<span style="color:var(--text-danger);font-size:var(--text-xs);">Failed: ${escapeHtml(err instanceof Error ? err.message : String(err))}</span>`;
       }
+    });
+
+    document.getElementById('btn-confirm-skill-install')!.addEventListener('click', async () => {
+      if (!pendingSkillUrl) return;
+      const statusEl = document.getElementById('skill-import-status')!;
+      statusEl.style.display = 'block';
+      statusEl.innerHTML = '<span style="color:var(--text-muted);font-size:var(--text-xs);">Installing...</span>';
+      try {
+        await sendMsg({ type: 'importSkillFromUrlOneShot', agentId: meta.id, url: pendingSkillUrl });
+        document.getElementById('skill-preview-section')!.style.display = 'none';
+        (document.getElementById('skill-url-input') as HTMLInputElement).value = '';
+        statusEl.style.display = 'none';
+        pendingSkillUrl = '';
+        await loadSkillsList(meta.id);
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Skill installed from URL.');
+      } catch (err) {
+        statusEl.innerHTML = `<span style="color:var(--text-danger);font-size:var(--text-xs);">Install failed: ${escapeHtml(err instanceof Error ? err.message : String(err))}</span>`;
+      }
+    });
+
+    document.getElementById('btn-cancel-skill-preview')!.addEventListener('click', () => {
+      document.getElementById('skill-preview-section')!.style.display = 'none';
+      pendingSkillUrl = '';
+    });
+
+    // Skills browser toggle
+    document.getElementById('btn-toggle-skill-browser')!.addEventListener('click', () => {
+      const section = document.getElementById('skill-browser-section')!;
+      const chevron = document.getElementById('skill-browser-chevron')!;
+      const visible = section.style.display !== 'none';
+      section.style.display = visible ? 'none' : 'block';
+      chevron.innerHTML = visible ? '&#9654;' : '&#9660;';
+      if (!visible) renderFeaturedSkills(meta.id);
+    });
+
+    // Archived agents toggle
+    document.getElementById('btn-toggle-archived-agents')!.addEventListener('click', () => {
+      const section = document.getElementById('archived-agents-section')!;
+      const chevron = document.getElementById('archived-agents-chevron')!;
+      const visible = section.style.display !== 'none';
+      section.style.display = visible ? 'none' : 'block';
+      chevron.innerHTML = visible ? '&#9654;' : '&#9660;';
+      if (!visible) loadArchivedAgents();
     });
 
     // Save CLAUDE.md
@@ -3202,6 +3300,150 @@ async function fetchSkillContent(url: string): Promise<string> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
   return response.text();
+}
+
+// ── Featured Skills ──
+
+const FEATURED_SKILLS = [
+  {
+    name: 'Frontend Design (Impeccable)',
+    author: 'pbakaus',
+    url: 'https://github.com/pbakaus/impeccable',
+    description: 'Design vocabulary and audit commands for frontend work',
+  },
+  {
+    name: 'Claude Code Best Practices',
+    author: 'anthropics',
+    url: 'https://github.com/anthropics/claude-code-best-practices',
+    description: 'Best practices for working with Claude Code',
+  },
+  {
+    name: 'Cursor Rules Collection',
+    author: 'PatrickJS',
+    url: 'https://github.com/PatrickJS/awesome-cursorrules',
+    description: 'Curated list of cursor rules and AI coding skills',
+  },
+  {
+    name: 'AI Prompts Collection',
+    author: 'f',
+    url: 'https://github.com/f/awesome-chatgpt-prompts',
+    description: 'Collection of useful prompt patterns and techniques',
+  },
+];
+
+function renderFeaturedSkills(agentId: string): void {
+  const container = document.getElementById('featured-skills-list');
+  if (!container) return;
+
+  let html = '<div class="skills-list">';
+  for (const skill of FEATURED_SKILLS) {
+    html += `<div class="skill-card">`;
+    html += `<div class="skill-card-header">`;
+    html += `<span class="skill-card-name">${escapeHtml(skill.name)}</span>`;
+    html += `<button class="btn btn-primary btn-xs featured-skill-install" data-url="${escapeHtml(skill.url)}" style="margin-left:auto;">Install</button>`;
+    html += `</div>`;
+    html += `<p class="skill-card-desc">${escapeHtml(skill.description)}</p>`;
+    html += `<div class="skill-card-meta">`;
+    html += `<span>Author: ${escapeHtml(skill.author)}</span>`;
+    html += `<span><a href="${escapeHtml(skill.url)}" target="_blank" style="color:var(--text-link);">GitHub</a></span>`;
+    html += `</div>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Attach install handlers
+  container.querySelectorAll<HTMLButtonElement>('.featured-skill-install').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const url = btn.dataset.url!;
+      btn.textContent = 'Installing...';
+      btn.disabled = true;
+      try {
+        await sendMsg({ type: 'importSkillFromUrlOneShot', agentId, url });
+        btn.textContent = 'Installed';
+        await loadSkillsList(agentId);
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Skill installed from ${url}`);
+      } catch (err) {
+        btn.textContent = 'Failed';
+        btn.disabled = false;
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+  });
+}
+
+// ── Archived Agents ──
+
+async function loadArchivedAgents(): Promise<void> {
+  const container = document.getElementById('archived-agents-list');
+  if (!container) return;
+
+  try {
+    const result = await sendMsg<{ agents: Array<{ id: string; name: string; role: string; archivedAt?: string }> }>({ type: 'listArchivedAgents' });
+    const agents = result.agents || [];
+
+    if (agents.length === 0) {
+      container.innerHTML = '<p style="font-size:var(--text-xs);color:var(--text-muted);">No archived agents.</p>';
+      return;
+    }
+
+    let html = '<div class="skills-list">';
+    for (const agent of agents) {
+      const archived = agent.archivedAt ? new Date(agent.archivedAt).toLocaleDateString() : 'Unknown';
+      html += `<div class="skill-card" data-agent-id="${escapeHtml(agent.id)}">`;
+      html += `<div class="skill-card-header">`;
+      html += `<span class="skill-card-name">${escapeHtml(agent.name)}</span>`;
+      html += `<span class="badge badge-neutral" style="margin-left:var(--sp-2);">${escapeHtml(agent.role)}</span>`;
+      html += `<div style="margin-left:auto;display:flex;gap:var(--sp-1);">`;
+      html += `<button class="btn btn-primary btn-xs archived-agent-restore" data-agent-id="${escapeHtml(agent.id)}">Restore</button>`;
+      html += `<button class="btn btn-danger btn-xs archived-agent-delete" data-agent-id="${escapeHtml(agent.id)}">Delete</button>`;
+      html += `</div>`;
+      html += `</div>`;
+      html += `<div class="skill-card-meta">`;
+      html += `<span>Archived: ${archived}</span>`;
+      html += `</div>`;
+      html += `</div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Restore handlers
+    container.querySelectorAll<HTMLButtonElement>('.archived-agent-restore').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const agentId = btn.dataset.agentId!;
+        try {
+          await sendMsg({ type: 'restoreAgent', agentId });
+          await loadArchivedAgents();
+          sendPortMessage({ type: 'listAgents' });
+          const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Agent restored.');
+        } catch (err) {
+          const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Failed to restore: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
+    });
+
+    // Delete permanently handlers
+    container.querySelectorAll<HTMLButtonElement>('.archived-agent-delete').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const agentId = btn.dataset.agentId!;
+        showConfirm(
+          'Delete Permanently',
+          'This will permanently delete all data for this archived agent. This cannot be undone.',
+          async () => {
+            try {
+              await sendMsg({ type: 'deleteArchivedAgent', agentId });
+              await loadArchivedAgents();
+              const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Archived agent permanently deleted.');
+            } catch (err) {
+              const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Failed to delete: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          },
+        );
+      });
+    });
+  } catch {
+    container.innerHTML = '<p style="font-size:var(--text-xs);color:var(--text-muted);">Failed to load archived agents.</p>';
+  }
 }
 
 // ══════════════════════════════════════════

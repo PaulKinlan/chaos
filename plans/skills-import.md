@@ -160,7 +160,7 @@ This is more advanced but very powerful.
 **Tests** (`src/agents/__tests__/skills.test.ts`):
 - 13 tests covering: frontmatter parsing, install/list/remove lifecycle, overwrite, reference files, prompt section building
 
-### Phase 2: URL-based import
+### Phase 2: URL-based import ✅ IMPLEMENTED
 
 **Skill fetcher** (`src/agents/skill-fetcher.ts`):
 ```typescript
@@ -189,6 +189,20 @@ Master: "I need a code review skill for the reviewer agent"
 → find_agent({ role: 'reviewer' })
 → install_skill({ agentId: reviewer.id, source: '...' })
 ```
+
+**What was implemented:**
+
+- `src/agents/skill-fetcher.ts` with `fetchSkillFromGitHub()`, `fetchSkillFromDirectUrl()`, `fetchSkillFromUrl()` (auto-detect)
+- GitHub API support: parses owner/repo/branch/path from URLs, uses `/repos/contents` API, discovers SKILL.md and reference/ directories recursively
+- Falls back to `raw.githubusercontent.com` for simple repos
+- Falls back to direct URL fetch for non-GitHub URLs
+- `src/tools/skills/fetch-skill.ts` updated to use the skill-fetcher module
+- Background handler `handleImportSkillFromUrl` updated to use skill-fetcher (fetches reference files too)
+- New background handler `handleFetchSkillPreview` for preview-before-install flow
+- New one-shot handlers: `fetchSkillPreviewOneShot`, `importSkillFromUrlOneShot`
+- UI: Import from URL now shows a preview (name, author, version, description, file list, content preview) before installing
+- UI: "Browse Skills" section with curated featured skills (4 entries), one-click install
+- Tests: 13 tests for skill-fetcher (GitHub API, reference files, branch/path parsing, direct URL, fallback, error cases)
 
 ### Phase 3: Skill registry / marketplace
 

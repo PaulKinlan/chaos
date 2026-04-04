@@ -107,7 +107,11 @@ Each agent is a directory in OPFS:
 
 ### Master agent
 
-The first agent created is automatically marked as the master agent. It uses a dedicated master template (`src/agents/templates/master.ts`) with orchestration instructions. The master agent gets access to 5 additional tools for sub-agent management: `create_agent`, `delete_agent`, `assign_task`, `get_agent_status`, `find_agent`. These tools are only available to agents marked as master in the tool registry.
+The first agent created is automatically marked as the master agent. It uses a dedicated master template (`src/agents/templates/master.ts`) with orchestration instructions including a delegation strategy for multi-stage tasks with DAG dependencies. The master agent gets access to 5 additional tools for sub-agent management: `create_agent`, `delete_agent`, `assign_task`, `get_agent_status`, `find_agent`. These tools are only available to agents marked as master in the tool registry.
+
+**Task completion triggers**: When a task is marked as completed via `task_update`, `getNewlyUnblockedTasks()` checks if any downstream tasks (with `blockedBy` dependencies) are now fully unblocked. If so, their assigned agents are triggered via Chrome alarms.
+
+**Agent archival**: The `delete_agent` tool supports archival (`preserveMemory=true`, the default). Archived agents are removed from the active list but their OPFS data is preserved with an `archive-meta.json` file. Functions: `archiveAgent()`, `listArchivedAgents()`, `restoreAgent()` in `src/agents/manager.ts`. The UI has an "Archived Agents" section in agent settings for restoring or permanently deleting archived agents.
 
 ### Agent lifecycle
 
@@ -220,9 +224,18 @@ Agents can be extended with **skills** — bundles of markdown instructions and 
 - `install_skill` — install from pasted SKILL.md content with optional reference files
 - `remove_skill` — remove a skill by ID
 - `list_skills` — list installed skills
-- `fetch_skill` — fetch and install from a URL (GitHub repo or direct SKILL.md)
+- `fetch_skill` — fetch and install from a URL (GitHub repo or direct SKILL.md), uses GitHub API for directory traversal and reference file discovery
 
-**UI:** Agent Settings includes a Skills section for listing, installing (paste or URL), and removing skills.
+**Skill fetcher** (`src/agents/skill-fetcher.ts`):
+- `fetchSkillFromGitHub()` — parses GitHub URLs, uses Contents API to discover SKILL.md and reference/ directories
+- `fetchSkillFromDirectUrl()` — fetches raw markdown files from any URL
+- `fetchSkillFromUrl()` — auto-detects URL type and dispatches to the right fetcher
+
+**UI:** Agent Settings includes a Skills section with:
+- List of installed skills with remove buttons
+- "Browse Skills" toggle showing curated featured skills with one-click install
+- URL import with preview-before-install (shows name, author, description, file list, content preview)
+- Manual paste-in with name, description, and SKILL.md textarea
 
 ## Tool lookup service
 

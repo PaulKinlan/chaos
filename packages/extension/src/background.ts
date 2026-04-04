@@ -38,6 +38,8 @@ import {
   listSkills,
   parseFrontmatter,
 } from './agents/skills.js';
+import { fetchSkillFromUrl } from './agents/skill-fetcher.js';
+import { archiveAgent, listArchivedAgents, restoreAgent } from './agents/manager.js';
 import { getTaskState } from './storage/shared.js';
 import { listArtifacts } from './storage/shared.js';
 import { opfs } from './storage/opfs.js';
@@ -507,6 +509,10 @@ chrome.runtime.onConnect.addListener((port) => {
 
         case 'importSkillFromUrl':
           await handleImportSkillFromUrl(port, msg);
+          break;
+
+        case 'fetchSkillPreview':
+          await handleFetchSkillPreview(port, msg);
           break;
 
         default:
@@ -979,60 +985,49 @@ async function handleImportSkillFromUrl(
   msg: { agentId: string; url: string },
 ): Promise<void> {
   try {
-    // Try GitHub first
-    const repoMatch = msg.url.match(
-      /^https?:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/([^/]+)(?:\/(.+))?)?/,
-    );
-    let content: string | null = null;
-    let source = msg.url;
-
-    if (repoMatch) {
-      const [, owner, repo, branch = 'main', subpath = ''] = repoMatch;
-      const basePath = subpath ? `${subpath}/` : '';
-      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${basePath}SKILL.md`;
-      const response = await fetch(rawUrl);
-      if (response.ok) {
-        content = await response.text();
-        source = msg.url;
-      }
-    }
-
-    if (!content) {
-      const response = await fetch(msg.url);
-      if (response.ok) {
-        content = await response.text();
-      }
-    }
-
-    if (!content) {
-      port.postMessage({ type: 'error', error: `Could not fetch skill from ${msg.url}` });
-      return;
-    }
-
-    const { meta: fmMeta } = parseFrontmatter(content);
-    const urlName = msg.url
-      .replace(/^https?:\/\//, '')
-      .replace(/github\.com\//, '')
-      .split('/')
-      .slice(0, 2)
-      .join('/');
-
-    const files = new Map<string, string>();
-    files.set('SKILL.md', content);
+    // Use the skill-fetcher which supports GitHub API, reference files, etc.
+    const fetched = await fetchSkillFromUrl(msg.url);
 
     const skillId = await installSkill(
       msg.agentId,
       {
-        name: fmMeta.name || urlName,
-        description: fmMeta.description || `Imported from ${source}`,
-        author: fmMeta.author,
-        version: fmMeta.version,
-        source,
+        name: fetched.meta.name,
+        description: fetched.meta.description,
+        author: fetched.meta.author,
+        version: fetched.meta.version,
+        source: msg.url,
       },
-      files,
+      fetched.files,
     );
 
-    port.postMessage({ type: 'skillInstalled', agentId: msg.agentId, skillId });
+    port.postMessage({
+      type: 'skillImported',
+      agentId: msg.agentId,
+      skillId,
+      meta: fetched.meta,
+      fileCount: fetched.files.size,
+    });
+  } catch (err) {
+    port.postMessage({ type: 'error', error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function handleFetchSkillPreview(
+  port: chrome.runtime.Port,
+  msg: { url: string },
+): Promise<void> {
+  try {
+    const fetched = await fetchSkillFromUrl(msg.url);
+    const skillContent = fetched.files.get('SKILL.md') || '';
+    const preview = skillContent.length > 2000 ? skillContent.slice(0, 2000) + '\n...' : skillContent;
+
+    port.postMessage({
+      type: 'skillPreview',
+      meta: fetched.meta,
+      preview,
+      fileCount: fetched.files.size,
+      files: Array.from(fetched.files.keys()),
+    });
   } catch (err) {
     port.postMessage({ type: 'error', error: err instanceof Error ? err.message : String(err) });
   }
@@ -1339,6 +1334,70 @@ Return ONLY the refined prompt text, nothing else. No explanations or commentary
     case 'stopChannelPolling': {
       stopChannelPolling();
       return { ok: true };
+    }
+
+    case 'listArchivedAgents': {
+      const archived = await listArchivedAgents();
+      return { agents: archived };
+    }
+
+    case 'archiveAgent': {
+      await archiveAgent(msg.agentId as string);
+      return { archived: true };
+    }
+
+    case 'restoreAgent': {
+      const restored = await restoreAgent(msg.agentId as string);
+      if (restored) {
+        return { restored: true, agent: restored };
+      }
+      return { error: 'Agent not found in archive' };
+    }
+
+    case 'deleteArchivedAgent': {
+      // Permanently delete an archived agent's OPFS data
+      try {
+        await opfs.delete(`agents/${msg.agentId as string}`);
+        return { deleted: true };
+      } catch {
+        return { error: 'Failed to delete archived agent data' };
+      }
+    }
+
+    case 'fetchSkillPreviewOneShot': {
+      try {
+        const fetched = await fetchSkillFromUrl(msg.url as string);
+        const skillContent = fetched.files.get('SKILL.md') || '';
+        const preview = skillContent.length > 2000 ? skillContent.slice(0, 2000) + '\n...' : skillContent;
+        return {
+          meta: fetched.meta,
+          preview,
+          fileCount: fetched.files.size,
+          files: Array.from(fetched.files.keys()),
+        };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    case 'importSkillFromUrlOneShot': {
+      try {
+        const fetched = await fetchSkillFromUrl(msg.url as string);
+        const skillId = await installSkill(
+          msg.agentId as string,
+          {
+            name: fetched.meta.name,
+            description: fetched.meta.description,
+            author: fetched.meta.author,
+            version: fetched.meta.version,
+            source: msg.url as string,
+          },
+          fetched.files,
+        );
+        return { skillId, meta: fetched.meta, fileCount: fetched.files.size };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
     }
 
     default:

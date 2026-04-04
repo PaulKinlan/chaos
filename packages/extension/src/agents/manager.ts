@@ -153,3 +153,112 @@ export async function updateAgentMeta(
   agents[index] = { ...agents[index], ...safeUpdates };
   await setAgentList(agents);
 }
+
+/**
+ * Archive an agent: removes from active agent list but keeps OPFS data.
+ * Stores archive metadata (name, role, archived date) in OPFS so it
+ * can be discovered later.
+ */
+export async function archiveAgent(id: string): Promise<void> {
+  const agents = await getAgentList();
+  const agent = agents.find((a) => a.id === id);
+  if (!agent) {
+    throw new Error(`Agent not found: ${id}`);
+  }
+
+  // Write archive metadata to the agent's OPFS directory
+  const archiveMeta = {
+    ...agent,
+    archivedAt: new Date().toISOString(),
+  };
+  await opfs.writeFile(
+    `${AGENTS_ROOT}/${id}/archive-meta.json`,
+    JSON.stringify(archiveMeta, null, 2),
+  );
+
+  // Remove bookmark folder
+  if (agent.bookmarkFolderId) {
+    try {
+      await chrome.bookmarks.removeTree(agent.bookmarkFolderId);
+    } catch {
+      // Bookmark folder may already be gone
+    }
+  }
+
+  // Remove from active list
+  const updated = agents.filter((a) => a.id !== id);
+  await setAgentList(updated);
+}
+
+/**
+ * List archived agents by scanning OPFS for agent directories
+ * that have archive-meta.json but are not in the active agent list.
+ */
+export async function listArchivedAgents(): Promise<(AgentMeta & { archivedAt?: string })[]> {
+  const activeAgents = await getAgentList();
+  const activeIds = new Set(activeAgents.map((a) => a.id));
+
+  const archived: (AgentMeta & { archivedAt?: string })[] = [];
+
+  try {
+    const entries = await opfs.listDir(AGENTS_ROOT);
+    for (const name of entries) {
+      if (activeIds.has(name)) continue; // Skip active agents
+
+      try {
+        const raw = await opfs.readFile(`${AGENTS_ROOT}/${name}/archive-meta.json`);
+        const meta = JSON.parse(raw) as AgentMeta & { archivedAt?: string };
+        archived.push(meta);
+      } catch {
+        // No archive-meta.json or invalid JSON, skip
+      }
+    }
+  } catch {
+    // OPFS listing failed, return empty
+  }
+
+  return archived;
+}
+
+/**
+ * Restore an archived agent back to the active agent list.
+ * Reads the archive-meta.json from OPFS and re-adds the agent.
+ */
+export async function restoreAgent(id: string): Promise<AgentMeta | null> {
+  try {
+    const raw = await opfs.readFile(`${AGENTS_ROOT}/${id}/archive-meta.json`);
+    const archiveMeta = JSON.parse(raw) as AgentMeta & { archivedAt?: string };
+
+    // Remove the archivedAt field and rebuild clean AgentMeta
+    const { archivedAt: _archived, ...meta } = archiveMeta;
+
+    // Clear the bookmark folder ID since it was removed on archive
+    meta.bookmarkFolderId = undefined;
+
+    // Try to create a new bookmark folder
+    try {
+      const folder = await chrome.bookmarks.create({ title: `CHAOS: ${meta.name}` });
+      meta.bookmarkFolderId = folder.id;
+    } catch {
+      // Bookmark API may not be available
+    }
+
+    // Add back to active list
+    const agents = await getAgentList();
+    // Make sure it's not already in the list
+    const filtered = agents.filter((a) => a.id !== id);
+    filtered.push(meta);
+    await setAgentList(filtered);
+
+    // Clean up archive metadata file
+    try {
+      await opfs.delete(`${AGENTS_ROOT}/${id}/archive-meta.json`);
+    } catch {
+      // Non-fatal
+    }
+
+    return meta;
+  } catch {
+    return null;
+  }
+}

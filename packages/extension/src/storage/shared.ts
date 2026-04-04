@@ -137,6 +137,27 @@ export async function getUnblockedTasks(): Promise<Task[]> {
   });
 }
 
+/**
+ * When a task completes, find tasks that were blocked by it and are now
+ * fully unblocked (all their blockedBy tasks are completed).
+ * Returns the newly unblocked tasks.
+ */
+export async function getNewlyUnblockedTasks(completedTaskId: string): Promise<Task[]> {
+  const tasks = await getTaskState();
+  const completedIds = new Set(
+    tasks.filter((t) => t.status === 'completed').map((t) => t.id),
+  );
+
+  return tasks.filter((task) => {
+    // Only consider pending or in_progress tasks
+    if (task.status === 'completed' || task.status === 'failed') return false;
+    // Must have a blockedBy list that includes the just-completed task
+    if (!task.blockedBy || !task.blockedBy.includes(completedTaskId)) return false;
+    // All blockers must now be completed
+    return task.blockedBy.every((depId) => completedIds.has(depId));
+  });
+}
+
 // ── Artifacts ──
 
 /**

@@ -5,6 +5,7 @@ import {
   appendTaskEvent,
   getTaskState,
   getUnblockedTasks,
+  getNewlyUnblockedTasks,
   publishArtifact,
   listArtifacts,
 } from '../shared.js';
@@ -377,6 +378,146 @@ describe('getUnblockedTasks', () => {
     });
     unblocked = await getUnblockedTasks();
     expect(unblocked.map((t) => t.id)).toEqual(['D']);
+  });
+});
+
+// ── Newly unblocked task tests ──
+
+describe('getNewlyUnblockedTasks', () => {
+  it('returns empty when completed task has no dependents', async () => {
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'created',
+      timestamp: '2026-04-01T10:00:00Z',
+      data: { subject: 'Standalone', status: 'pending' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'updated',
+      timestamp: '2026-04-01T12:00:00Z',
+      data: { status: 'completed' },
+    });
+
+    const unblocked = await getNewlyUnblockedTasks('task-1');
+    expect(unblocked).toEqual([]);
+  });
+
+  it('returns tasks that are now unblocked after dependency completes', async () => {
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'created',
+      timestamp: '2026-04-01T10:00:00Z',
+      data: { subject: 'First', status: 'pending' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-2',
+      type: 'created',
+      timestamp: '2026-04-01T10:01:00Z',
+      data: { subject: 'Second', status: 'pending', blockedBy: ['task-1'], owner: 'agent-b' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'updated',
+      timestamp: '2026-04-01T12:00:00Z',
+      data: { status: 'completed' },
+    });
+
+    const unblocked = await getNewlyUnblockedTasks('task-1');
+    expect(unblocked).toHaveLength(1);
+    expect(unblocked[0].id).toBe('task-2');
+  });
+
+  it('does not return tasks still blocked by other dependencies', async () => {
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'created',
+      timestamp: '2026-04-01T10:00:00Z',
+      data: { subject: 'First', status: 'pending' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-2',
+      type: 'created',
+      timestamp: '2026-04-01T10:01:00Z',
+      data: { subject: 'Second', status: 'pending' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-3',
+      type: 'created',
+      timestamp: '2026-04-01T10:02:00Z',
+      data: { subject: 'Third', status: 'pending', blockedBy: ['task-1', 'task-2'] },
+    });
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'updated',
+      timestamp: '2026-04-01T12:00:00Z',
+      data: { status: 'completed' },
+    });
+
+    // task-3 is still blocked by task-2
+    const unblocked = await getNewlyUnblockedTasks('task-1');
+    expect(unblocked).toEqual([]);
+  });
+
+  it('returns task when both dependencies are complete', async () => {
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'created',
+      timestamp: '2026-04-01T10:00:00Z',
+      data: { subject: 'First', status: 'pending' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-2',
+      type: 'created',
+      timestamp: '2026-04-01T10:01:00Z',
+      data: { subject: 'Second', status: 'pending' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-3',
+      type: 'created',
+      timestamp: '2026-04-01T10:02:00Z',
+      data: { subject: 'Third', status: 'pending', blockedBy: ['task-1', 'task-2'] },
+    });
+    // Complete both
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'updated',
+      timestamp: '2026-04-01T12:00:00Z',
+      data: { status: 'completed' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-2',
+      type: 'updated',
+      timestamp: '2026-04-01T12:01:00Z',
+      data: { status: 'completed' },
+    });
+
+    const unblocked = await getNewlyUnblockedTasks('task-2');
+    expect(unblocked).toHaveLength(1);
+    expect(unblocked[0].id).toBe('task-3');
+  });
+
+  it('does not return already-completed tasks', async () => {
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'created',
+      timestamp: '2026-04-01T10:00:00Z',
+      data: { subject: 'First', status: 'pending' },
+    });
+    await appendTaskEvent({
+      taskId: 'task-2',
+      type: 'created',
+      timestamp: '2026-04-01T10:01:00Z',
+      data: { subject: 'Second', status: 'completed', blockedBy: ['task-1'] },
+    });
+    await appendTaskEvent({
+      taskId: 'task-1',
+      type: 'updated',
+      timestamp: '2026-04-01T12:00:00Z',
+      data: { status: 'completed' },
+    });
+
+    const unblocked = await getNewlyUnblockedTasks('task-1');
+    expect(unblocked).toEqual([]);
   });
 });
 

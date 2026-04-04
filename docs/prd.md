@@ -98,7 +98,9 @@ Each agent gets an isolated directory in OPFS:
 - Send and receive messages to/from other agents
 - Publish and consume shared artifacts
 - Coordinate on shared tasks with dependency tracking
-- Install skills (SKILL.md instruction bundles) from paste, URL, or GitHub to gain specialised knowledge
+- Install skills (SKILL.md instruction bundles) from paste, URL, or GitHub to gain specialised knowledge. Browse featured skills and preview before installing.
+- Automatic task handoff: when a task completes, downstream tasks blocked by it are automatically triggered
+- Agent archival: sub-agents can be archived (removed from active list, data preserved) and restored later
 
 ## Agent privacy and visibility
 
