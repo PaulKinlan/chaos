@@ -79,6 +79,12 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   // ── Public endpoints (no auth) ──
 
+  // Favicon
+  if (url.pathname === '/favicon.ico') {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#238636"/><text x="16" y="22" text-anchor="middle" font-size="18" font-family="sans-serif" fill="white">C</text></svg>';
+    return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' } });
+  }
+
   // Health check / status page
   if (url.pathname === '/health' && method === 'GET') {
     const { isKvAvailable } = await import('./kv.ts');
@@ -163,7 +169,7 @@ Deno.serve(serveOptions, async (req: Request) => {
 
     const { isKvAvailable, getKv } = await import('./kv.ts');
     const { getConnectionCount } = await import('./ws.ts');
-    const { getAllRecentMessages } = await import('./store.ts');
+    const { getAllRecentMessages, getRecentEventsFromKv } = await import('./store.ts');
 
     interface AdminChannel {
       id: string;
@@ -203,8 +209,9 @@ Deno.serve(serveOptions, async (req: Request) => {
       }
     }
 
-    // Get recent messages for debugging
-    const recentMessages = getAllRecentMessages(30).map(m => ({
+    // Get recent messages — use KV events (durable) as primary, in-memory as supplement
+    const kvEvents = await getRecentEventsFromKv(30);
+    const memEvents = getAllRecentMessages(30).map(m => ({
       id: m.id,
       userId: m.userId.slice(0, 8),
       channelType: m.channelType,
@@ -214,6 +221,12 @@ Deno.serve(serveOptions, async (req: Request) => {
       content: m.content.slice(0, 100) + (m.content.length > 100 ? '...' : ''),
       timestamp: m.timestamp,
     }));
+    // Merge and deduplicate by id, prefer KV events
+    const seenIds = new Set(kvEvents.map(e => e.id));
+    const recentMessages = [
+      ...kvEvents,
+      ...memEvents.filter(m => !seenIds.has(m.id)),
+    ].sort((a, b) => new Date(b.timestamp as string).getTime() - new Date(a.timestamp as string).getTime()).slice(0, 30);
 
     return json({
       status: 'ok',

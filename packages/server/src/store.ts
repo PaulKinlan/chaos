@@ -104,6 +104,9 @@ export function addMessage(userId: string, msg: StoredMessage): void {
 
   // Push to any connected WebSocket clients immediately
   pushToUser(userId, { type: 'message', message: msg });
+
+  // Log to KV for durable admin visibility
+  logMessageEvent(msg);
 }
 
 export function getMessages(userId: string, since?: string): StoredMessage[] {
@@ -125,6 +128,7 @@ export function addResponse(channelId: string, msg: StoredMessage): void {
   }
   msgs.push(msg);
   logger.debug('store', 'Response stored', { channelId, messageId: msg.id });
+  logMessageEvent(msg);
 }
 
 export function getResponses(channelId: string, since?: string): StoredMessage[] {
@@ -136,6 +140,46 @@ export function getResponses(channelId: string, since?: string): StoredMessage[]
 
 export function clearResponses(channelId: string): void {
   responseStore.delete(channelId);
+}
+
+/** Log a message event to KV for durable admin visibility (survives isolate restart). */
+export async function logMessageEvent(msg: StoredMessage): Promise<void> {
+  try {
+    const { getKv, isKvAvailable } = await import('./kv.ts');
+    if (!isKvAvailable() || !getKv()) return;
+    const kv = getKv()!;
+    // Store with timestamp key for ordering, expire after 24 hours
+    const key = ['events', msg.timestamp, msg.id];
+    await kv.set(key, {
+      id: msg.id,
+      userId: msg.userId,
+      channelType: msg.channelType,
+      channelId: msg.channelId,
+      from: msg.from,
+      direction: msg.from === 'agent' ? 'out' : 'in',
+      content: msg.content.slice(0, 200),
+      timestamp: msg.timestamp,
+    }, { expireIn: 24 * 60 * 60 * 1000 });
+  } catch {
+    // Best-effort, don't block message flow
+  }
+}
+
+/** Get recent events from KV (durable across restarts). */
+export async function getRecentEventsFromKv(limit = 50): Promise<Array<Record<string, unknown>>> {
+  try {
+    const { getKv, isKvAvailable } = await import('./kv.ts');
+    if (!isKvAvailable() || !getKv()) return [];
+    const kv = getKv()!;
+    const events: Array<Record<string, unknown>> = [];
+    const iter = kv.list({ prefix: ['events'] }, { limit, reverse: true });
+    for await (const entry of iter) {
+      events.push(entry.value as Record<string, unknown>);
+    }
+    return events;
+  } catch {
+    return [];
+  }
 }
 
 /** Get all recent messages across all users (for admin debugging). */
