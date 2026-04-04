@@ -174,6 +174,155 @@ Could reuse emaila.gent's Resend-based approach:
 - Rate limiting per channel
 - Channel-specific hooks (e.g. "when someone @mentions me in Discord")
 
+## Authentication & Channel Ownership
+
+This is critical. The relay server sits between the user's Chrome extension and external channels. We need to know:
+1. Who is this user? (identity)
+2. Do they own this channel/bot? (ownership verification)
+3. Is this extension instance authorized to send/receive? (session auth)
+
+### Identity: chrome.identity OAuth
+
+Chrome extensions have `chrome.identity.getAuthToken()` which provides Google OAuth. This is the most natural fit:
+
+**How it works:**
+1. Extension calls `chrome.identity.getAuthToken({ interactive: true })` → user signs in with Google
+2. Extension gets an OAuth access token tied to the user's Google account
+3. Extension sends this token to the relay server on first connection
+4. Server verifies the token with Google's tokeninfo endpoint
+5. Server creates/finds a user account linked to that Google ID
+6. Server returns a session token for subsequent requests
+
+**What we need to set up:**
+- A Google Cloud project with OAuth consent screen
+- OAuth client ID for Chrome extension (`chrome-extension://` redirect)
+- Add `identity` to manifest.json permissions
+- Configure allowed scopes (just `email` and `profile` is enough for identity)
+
+**Pros:**
+- Built into Chrome, zero-friction for users
+- Google account is universally available
+- No custom auth UI needed
+- Token verification is well-documented
+
+**Cons:**
+- Ties identity to Google (some users may object)
+- Requires Google Cloud project setup and maintenance
+- OAuth consent screen review for publishing
+
+### Channel ownership verification
+
+Once we know WHO the user is, we need to verify they own the channels they want to connect.
+
+**Discord bot:**
+```
+1. User creates a Discord bot at discord.com/developers
+2. User enters bot token in CHAOS settings
+3. CHAOS relay server validates the bot token (GET /api/users/@me)
+4. If valid, server stores: user_id → discord_bot_token (encrypted)
+5. Server starts receiving Discord events for this bot
+```
+
+The user proves ownership by providing the bot token, which only the bot creator has.
+
+**Telegram bot:**
+```
+1. User creates bot via @BotFather, gets a token
+2. User enters token in CHAOS settings
+3. Server validates via Telegram API (getMe)
+4. Server sets webhook to point to relay
+5. Stores: user_id → telegram_bot_token (encrypted)
+```
+
+Same pattern — bot token proves ownership.
+
+**Email:**
+```
+1. Server assigns a unique inbound email address (e.g. user-xyz@chaos-relay.example)
+2. User verifies by receiving a confirmation email
+3. Or: user configures their own email forwarding to the relay
+```
+
+**Generic webhook:**
+```
+1. Server generates a unique webhook URL for the user
+2. User configures their service to POST to that URL
+3. Webhook URL includes a secret token that proves it's for this user
+```
+
+### Session auth (extension ↔ server)
+
+After initial OAuth, the extension needs ongoing auth for polling:
+
+**Option A: JWT session tokens**
+```
+1. Extension authenticates via Google OAuth
+2. Server issues a JWT (expires in 30 days, refreshable)
+3. Extension stores JWT in chrome.storage.local
+4. All subsequent requests include: Authorization: Bearer <JWT>
+5. Server validates JWT on each request
+```
+
+**Option B: API keys**
+```
+1. After OAuth, server generates an API key for the user
+2. Extension stores it in chrome.storage.local
+3. All requests include: X-API-Key: <key>
+4. Simpler than JWT but no expiry (must be manually revoked)
+```
+
+**Recommendation:** JWT with refresh. More secure, auto-expires, standard.
+
+### Multi-device support
+
+A user might have CHAOS installed on multiple machines. Each extension instance needs its own session but shares the same user account and channels.
+
+```
+User (Google account) → Server account
+  ├── Extension instance 1 (home laptop) → Session token A
+  ├── Extension instance 2 (work desktop) → Session token B
+  └── Channels (shared across instances)
+       ├── Discord bot
+       ├── Telegram bot
+       └── Email
+```
+
+Messages from channels are available to ALL extension instances. Each instance polls independently.
+
+### Pairing flow (inspired by OpenClaw / Claude Code channels)
+
+For channels where someone else initiates contact (e.g., a Discord user DMs the bot), we need pairing:
+
+```
+1. Unknown Discord user sends a message to the bot
+2. Server stores the message as "pending pairing"
+3. Extension shows: "New contact from Discord user @alice. Approve?"
+4. User approves → messages from @alice are now routed to the agent
+5. User can set per-contact policies (allow DMs, allow groups, block)
+```
+
+This is the same pattern used by the Telegram/Discord channel plugins in Claude Code.
+
+### Security concerns
+
+- **Bot tokens**: Stored encrypted on the server, never sent back to the extension after initial submission
+- **OAuth tokens**: Short-lived, verified server-side, not stored long-term
+- **Message content**: Passes through the relay server. For sensitive use cases, the server should be self-hosted. Document this clearly.
+- **Channel isolation**: One user's channels can't be accessed by another user
+- **Rate limiting**: Per-user rate limits on the relay to prevent abuse
+
+### Setup flow (user experience)
+
+```
+1. Click "Channels" in CHAOS settings
+2. "Sign in to enable channels" → chrome.identity OAuth popup
+3. After sign in: "Connected as paul@example.com"
+4. "Add Channel" → pick Discord/Telegram/Email/Webhook
+5. For Discord: "Enter your Discord bot token" → paste → "Verified ✓"
+6. "Which agent should handle Discord messages?" → pick agent
+7. Done. Messages start flowing.
+```
+
 ## Open Questions
 
 1. **Auth model**: How does the relay authenticate with the extension? Shared secret is simple but needs rotation. OAuth would be more robust but complex.
