@@ -26,7 +26,15 @@ export function createDeleteAgentTool(masterAgentId: string) {
 
       try {
         // Verify agent exists
-        await getAgent(agentId);
+        const { meta } = await getAgent(agentId);
+
+        // Only allow deleting agents that this master created
+        if (!meta.createdBy || meta.createdBy !== masterAgentId) {
+          return {
+            ok: false,
+            error: `Cannot delete "${meta.name}" — it was not created by you. Only agents you created can be deleted. User-created agents are protected.`,
+          };
+        }
 
         if (preserveMemory) {
           // Archive: remove from active list, keep OPFS data
