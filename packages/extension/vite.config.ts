@@ -3,6 +3,9 @@ import { crx } from '@crxjs/vite-plugin';
 import manifest from './manifest.json';
 
 export default defineConfig({
+  define: {
+    '__CHAOS_DEFAULT_RELAY_URL__': JSON.stringify(process.env.VITE_RELAY_URL || 'http://localhost:8787'),
+  },
   plugins: [
     crx({ manifest }),
   ],

@@ -5,6 +5,7 @@ import { validateAuth, createSession, addChannel, removeChannel, getChannels } f
 import { getMessages, getResponses } from './store.ts';
 import { handleWebhook } from './channels/webhook.ts';
 import { handleReply, type ReplyPayload } from './channels/responder.ts';
+import { registerTelegramBot, handleTelegramWebhook } from './channels/telegram.ts';
 import type { ChannelConfig } from '@chaos/shared';
 
 const PORT = parseInt(Deno.env.get('PORT') || '8787');
@@ -72,6 +73,18 @@ Deno.serve({ port: PORT }, async (req: Request) => {
     return json({ responses, since: new Date().toISOString() });
   }
 
+  // Telegram webhook ingestion (auth via URL secret, not Bearer)
+  const telegramMatch = url.pathname.match(/^\/telegram\/([^/]+)$/);
+  if (telegramMatch && method === 'POST') {
+    const channelId = telegramMatch[1];
+    const resp = await handleTelegramWebhook(channelId, req);
+    const body = await resp.text();
+    return new Response(body, {
+      status: resp.status,
+      headers: { ...Object.fromEntries(resp.headers.entries()), ...corsHeaders },
+    });
+  }
+
   // ── Authenticated endpoints ──
 
   const session = validateAuth(req);
@@ -97,6 +110,46 @@ Deno.serve({ port: PORT }, async (req: Request) => {
       return json(result);
     } catch {
       return error('Invalid JSON body');
+    }
+  }
+
+  // Register a Telegram bot channel
+  if (url.pathname === '/channels/telegram/register' && method === 'POST') {
+    try {
+      const body = await req.json();
+      const botToken = body.botToken;
+      if (!botToken || typeof botToken !== 'string') {
+        return error('Missing or invalid botToken');
+      }
+
+      const channelId = crypto.randomUUID();
+      const serverBaseUrl = url.origin;
+
+      const { botUsername, webhookSecret } = await registerTelegramBot(
+        session.userId,
+        botToken,
+        serverBaseUrl,
+        channelId,
+      );
+
+      const channel: ChannelConfig = {
+        id: channelId,
+        type: 'telegram',
+        agentId: body.agentId || '',
+        enabled: true,
+        metadata: {
+          botToken,
+          botUsername,
+          webhookSecret,
+        },
+      };
+
+      addChannel(session.userId, channel);
+
+      return json({ channelId, botUsername }, 201);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return error(`Telegram registration failed: ${message}`);
     }
   }
 

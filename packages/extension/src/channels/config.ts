@@ -1,6 +1,10 @@
 // Channel relay configuration storage
 // Uses chrome.storage.local to persist relay settings
 
+export const DEFAULT_RELAY_URL = (typeof __CHAOS_DEFAULT_RELAY_URL__ !== 'undefined')
+  ? __CHAOS_DEFAULT_RELAY_URL__
+  : 'http://localhost:8787';
+
 export interface RelaySettings {
   serverUrl: string;
   apiKey: string;

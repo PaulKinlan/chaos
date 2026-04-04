@@ -2,6 +2,8 @@
 // When the extension sends a reply, route it to the appropriate channel
 
 import { addResponse, type StoredMessage } from '../store.ts';
+import { getSessionByUserId } from '../auth.ts';
+import { sendTelegramReply } from './telegram.ts';
 
 export interface ReplyPayload {
   channelType: string;
@@ -29,9 +31,38 @@ export function handleReply(
     },
   };
 
-  // For webhook channels, store the response for the external service to poll
-  // For future channels (Discord, Telegram), this is where we'd call their API
+  // Store the response for polling
   addResponse(payload.channelId, response);
 
+  // For Telegram channels, also send the reply immediately via Telegram API
+  if (payload.channelType === 'telegram') {
+    sendTelegramReplyAsync(userId, payload);
+  }
+
   return { ok: true, responseId: response.id };
+}
+
+async function sendTelegramReplyAsync(
+  userId: string,
+  payload: ReplyPayload,
+): Promise<void> {
+  try {
+    const session = getSessionByUserId(userId);
+    if (!session) return;
+
+    const channel = session.channels.find((ch) => ch.id === payload.channelId);
+    if (!channel || channel.type !== 'telegram') return;
+
+    const botToken = channel.metadata['botToken'] as string | undefined;
+    const chatId = payload.metadata?.['chatId'] as string | number | undefined;
+
+    if (!botToken || !chatId) {
+      console.error('Telegram reply missing botToken or chatId');
+      return;
+    }
+
+    await sendTelegramReply(botToken, chatId, payload.content);
+  } catch (err) {
+    console.error('Failed to send Telegram reply:', err);
+  }
 }

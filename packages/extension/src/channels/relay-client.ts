@@ -78,6 +78,22 @@ export async function registerChannel(
   return resp.json();
 }
 
+export async function registerTelegramChannel(
+  config: RelayConfig,
+  botToken: string,
+  agentId?: string,
+): Promise<{ channelId: string; botUsername: string }> {
+  const resp = await relayFetch(config, '/channels/telegram/register', {
+    method: 'POST',
+    body: JSON.stringify({ botToken, agentId: agentId || '' }),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({ error: resp.statusText }));
+    throw new Error(body.error || `Telegram registration failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
 export async function listChannels(
   config: RelayConfig,
 ): Promise<ChannelConfig[]> {

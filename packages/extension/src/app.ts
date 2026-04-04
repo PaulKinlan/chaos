@@ -3501,18 +3501,34 @@ document.getElementById('btn-save-permissions')!.addEventListener('click', async
 // ── Channels UI (in Global Settings)
 // ══════════════════════════════════════════
 
-import { getRelaySettings, setRelaySettings, clearRelaySettings, type RelaySettings } from './channels/config.js';
+import { getRelaySettings, setRelaySettings, clearRelaySettings, DEFAULT_RELAY_URL, type RelaySettings } from './channels/config.js';
 import {
   registerWithRelay,
   registerChannel as relayRegisterChannel,
+  registerTelegramChannel,
   listChannels as relayListChannels,
   removeChannel as relayRemoveChannel,
   type RelayConfig,
 } from './channels/relay-client.js';
 
+function updateRelayUrlLabel(): void {
+  const urlInput = document.getElementById('relay-server-url') as HTMLInputElement;
+  const defaultLabel = document.getElementById('relay-url-default-label')!;
+  const resetBtn = document.getElementById('btn-relay-url-reset')!;
+  const currentValue = urlInput.value.trim().replace(/\/$/, '');
+  const defaultValue = DEFAULT_RELAY_URL.replace(/\/$/, '');
+
+  if (currentValue === defaultValue || currentValue === '') {
+    defaultLabel.textContent = '(default)';
+    resetBtn.style.display = 'none';
+  } else {
+    defaultLabel.textContent = '';
+    resetBtn.style.display = '';
+  }
+}
+
 async function renderChannelsUI(): Promise<void> {
   const settings = await getRelaySettings();
-  const connectDiv = document.getElementById('channels-connect')!;
   const connectedDiv = document.getElementById('channels-connected')!;
   const statusSpan = document.getElementById('relay-status')!;
   const disconnectBtn = document.getElementById('btn-relay-disconnect') as HTMLButtonElement;
@@ -3537,17 +3553,19 @@ async function renderChannelsUI(): Promise<void> {
       statusSpan.style.color = 'var(--warning, orange)';
     }
   } else {
+    urlInput.value = urlInput.value || DEFAULT_RELAY_URL;
     urlInput.disabled = false;
     disconnectBtn.style.display = 'none';
     statusSpan.textContent = '';
     connectedDiv.style.display = 'none';
   }
+  updateRelayUrlLabel();
 }
 
 function renderChannelsList(channels: Array<{ id: string; type: string; agentId: string; enabled: boolean; metadata: Record<string, unknown> }>, config: RelayConfig, serverUrl: string): void {
   const listDiv = document.getElementById('channels-list')!;
   if (channels.length === 0) {
-    listDiv.innerHTML = '<p style="font-size:var(--text-xs);color:var(--text-muted);">No channels configured. Add a webhook channel to get started.</p>';
+    listDiv.innerHTML = '<p style="font-size:var(--text-xs);color:var(--text-muted);">No channels configured. Add a channel to get started.</p>';
     return;
   }
 
@@ -3555,13 +3573,20 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
   for (const ch of channels) {
     const card = document.createElement('div');
     card.style.cssText = 'padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;';
-    const webhookUrl = ch.type === 'webhook'
-      ? `${serverUrl}/webhook/${ch.id}?token=${ch.metadata['webhookSecret'] || ''}`
-      : '';
+
+    let detailHtml = '';
+    if (ch.type === 'webhook') {
+      const webhookUrl = `${serverUrl}/webhook/${ch.id}?token=${ch.metadata['webhookSecret'] || ''}`;
+      detailHtml = `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;word-break:break-all;"><code>${webhookUrl}</code></div>`;
+    } else if (ch.type === 'telegram') {
+      const botUsername = ch.metadata['botUsername'] as string || 'unknown';
+      detailHtml = `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">Bot: @${botUsername}</div>`;
+    }
+
     card.innerHTML = `
       <div>
         <strong style="font-size:var(--text-sm);">${ch.type}: ${ch.id.slice(0, 8)}...</strong>
-        ${webhookUrl ? `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;word-break:break-all;"><code>${webhookUrl}</code></div>` : ''}
+        ${detailHtml}
         <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'}</div>
       </div>
       <button class="btn btn-ghost btn-remove-channel" data-channel-id="${ch.id}" style="color:var(--danger, red);font-size:var(--text-xs);">Remove</button>
@@ -3630,7 +3655,26 @@ document.getElementById('btn-relay-disconnect')!.addEventListener('click', async
   await renderChannelsUI();
 });
 
-document.getElementById('btn-add-channel')!.addEventListener('click', async () => {
+// Relay URL default/reset handling
+document.getElementById('relay-server-url')!.addEventListener('input', () => {
+  updateRelayUrlLabel();
+});
+
+document.getElementById('btn-relay-url-reset')!.addEventListener('click', () => {
+  const urlInput = document.getElementById('relay-server-url') as HTMLInputElement;
+  urlInput.value = DEFAULT_RELAY_URL;
+  updateRelayUrlLabel();
+});
+
+// Channel type picker
+document.getElementById('btn-add-channel')!.addEventListener('click', () => {
+  const picker = document.getElementById('channel-type-picker')!;
+  picker.style.display = picker.style.display === 'none' ? '' : 'none';
+  // Hide telegram setup if open
+  document.getElementById('telegram-setup')!.style.display = 'none';
+});
+
+document.getElementById('btn-add-webhook')!.addEventListener('click', async () => {
   const settings = await getRelaySettings();
   if (!settings) return;
 
@@ -3638,9 +3682,57 @@ document.getElementById('btn-add-channel')!.addEventListener('click', async () =
 
   try {
     await relayRegisterChannel(config, { type: 'webhook', agentId: '', enabled: true, metadata: {} });
+    document.getElementById('channel-type-picker')!.style.display = 'none';
     await renderChannelsUI();
   } catch (err) {
     alert(`Failed to add channel: ${err instanceof Error ? err.message : String(err)}`);
+  }
+});
+
+document.getElementById('btn-add-telegram')!.addEventListener('click', () => {
+  document.getElementById('channel-type-picker')!.style.display = 'none';
+  document.getElementById('telegram-setup')!.style.display = '';
+  (document.getElementById('telegram-bot-token') as HTMLInputElement).value = '';
+  document.getElementById('telegram-status')!.textContent = '';
+});
+
+document.getElementById('btn-telegram-cancel')!.addEventListener('click', () => {
+  document.getElementById('telegram-setup')!.style.display = 'none';
+});
+
+document.getElementById('btn-telegram-validate')!.addEventListener('click', async () => {
+  const settings = await getRelaySettings();
+  if (!settings) return;
+
+  const tokenInput = document.getElementById('telegram-bot-token') as HTMLInputElement;
+  const statusSpan = document.getElementById('telegram-status')!;
+  const botToken = tokenInput.value.trim();
+
+  if (!botToken) {
+    statusSpan.textContent = 'Enter a bot token';
+    statusSpan.style.color = 'var(--danger, red)';
+    return;
+  }
+
+  statusSpan.textContent = 'Validating...';
+  statusSpan.style.color = 'var(--text-secondary)';
+
+  const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
+
+  try {
+    const result = await registerTelegramChannel(config, botToken);
+    statusSpan.textContent = `Connected as @${result.botUsername}`;
+    statusSpan.style.color = 'var(--success, #4caf50)';
+    tokenInput.value = '';
+
+    // Hide the setup form after a short delay and refresh
+    setTimeout(() => {
+      document.getElementById('telegram-setup')!.style.display = 'none';
+      renderChannelsUI();
+    }, 1500);
+  } catch (err) {
+    statusSpan.textContent = `Failed: ${err instanceof Error ? err.message : String(err)}`;
+    statusSpan.style.color = 'var(--danger, red)';
   }
 });
 
