@@ -1,0 +1,37 @@
+{
+  "name": "@chaos/extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --exclude src/__tests__/e2e/",
+    "test:unit": "vitest run --exclude src/__tests__/e2e/",
+    "test:e2e": "npx vitest run src/__tests__/e2e/",
+    "test:watch": "vitest --exclude src/__tests__/e2e/"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.66",
+    "@ai-sdk/google": "^3.0.56",
+    "@ai-sdk/openai": "^3.0.50",
+    "@mozilla/readability": "^0.5.0",
+    "ai": "^6.0.144",
+    "dompurify": "^3.2.0",
+    "idb": "^8.0.2",
+    "marked": "^15.0.0",
+    "turndown": "^7.2.0"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.30",
+    "@types/chrome": "^0.0.300",
+    "@types/dompurify": "^3.2.0",
+    "@types/node": "^25.5.0",
+    "@types/turndown": "^5.0.5",
+    "puppeteer": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.2.0",
+    "vitest": "^3.1.0"
+  }
+}

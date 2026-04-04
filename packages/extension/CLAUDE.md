@@ -1,32 +1,11 @@
 # CHAOS Development Guidelines
 
-## Monorepo Structure
-
-This is an npm workspaces monorepo. The extension code lives in `packages/extension/`.
-
-```
-chaos/
-  packages/
-    extension/   — Chrome extension (src/, manifest.json, vite.config.ts)
-    shared/      — Shared utilities
-    server/      — Server components
-    web/         — Web frontend
-  docs/          — Documentation
-  plans/         — Implementation plans
-```
-
 ## Before pushing changes
 
-From root or `packages/extension/`:
 1. Run `npx tsc --noEmit` - TypeScript must compile clean
 2. Run `npx vite build` - build must succeed
 3. Run `npx vitest run` - all tests must pass
 4. Grep for patterns you just fixed across the entire codebase (e.g. if you fix `__dirname`, check all files)
-
-Or from root using workspace commands:
-- `npm run build` — builds the extension
-- `npm test` — runs extension tests
-- `npm run dev` — starts extension dev server
 
 ## After making changes (MANDATORY)
 
