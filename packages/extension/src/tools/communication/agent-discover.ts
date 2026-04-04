@@ -18,12 +18,18 @@ export function createAgentDiscoverTool(agentId: string) {
       const agents = await getAgentList();
 
       return agents
-        .filter((a) => a.id !== agentId && a.visibility !== 'private')
+        .filter((a) => {
+          if (a.id === agentId) return false; // exclude self
+          // Treat missing/undefined visibility as 'visible' (backwards compat)
+          const vis = a.visibility || 'visible';
+          return vis !== 'private';
+        })
         .map((a) => ({
           id: a.id,
           name: a.name,
           role: a.role,
-          visibility: a.visibility,
+          visibility: a.visibility || 'visible',
+          master: a.master ?? false,
         }));
     },
   });

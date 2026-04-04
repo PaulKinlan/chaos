@@ -420,7 +420,7 @@ without calling any more tools.`);
   try {
     const agents = await getAgentList();
     const self = agents.find((a) => a.id === agentId);
-    if (self && self.visibility !== 'private') {
+    if (self && (self.visibility || 'visible') !== 'private') {
       const pendingMessages = await readPendingMessages(agentId);
       if (pendingMessages.length > 0) {
         parts.push('\n## Pending Messages from Other Agents\n');
