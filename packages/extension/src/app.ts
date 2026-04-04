@@ -265,54 +265,86 @@ function showPanelError(panelId: string, message: string): void {
 const agentTabsScroll = document.getElementById('agent-tabs-scroll')!;
 
 function renderAgentTabs(): void {
-  agentTabsScroll.innerHTML = '';
+  // Render agents in sidebar instead of top tab bar
+  const sidebarAgentList = document.getElementById('sidebar-agent-list');
+  if (!sidebarAgentList) return;
+  sidebarAgentList.innerHTML = '';
 
   for (const agent of agents) {
-    const tab = document.createElement('button');
-    tab.className = 'agent-tab' + (agent.id === activeAgentId ? ' active' : '') + (agent.master ? ' master' : '');
-    tab.dataset.agentId = agent.id;
+    // Agent item (clickable to select)
+    const agentItem = document.createElement('div');
 
-    // Master agent gets a star icon
+    const btn = document.createElement('button');
+    btn.className = 'sidebar-agent-item' + (agent.id === activeAgentId ? ' active' : '');
+    btn.dataset.agentId = agent.id;
+
+    // Icon: star for master, user for others
     if (agent.master) {
-      const starIcon = document.createElement('span');
-      starIcon.className = 'master-icon';
-      starIcon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
-      tab.appendChild(starIcon);
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+    } else {
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+    }
+    const nameEl = document.createElement('span');
+    nameEl.className = 'agent-name';
+    nameEl.textContent = agent.name;
+    btn.appendChild(nameEl);
+
+    btn.addEventListener('click', () => switchToAgent(agent.id));
+
+    agentItem.appendChild(btn);
+
+    // Sub-items (Memory, Agent Settings) — shown when this agent is active
+    if (agent.id === activeAgentId) {
+      const sub = document.createElement('div');
+      sub.className = 'sidebar-agent-sub';
+
+      const memBtn = document.createElement('button');
+      memBtn.className = 'sidebar-item' + (activeView === 'files' ? ' active' : '');
+      memBtn.dataset.view = 'files';
+      memBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="label">Memory</span>';
+      memBtn.addEventListener('click', () => {
+        activeView = 'files';
+        updateHash();
+        sidebarItems.forEach((b) => b.classList.remove('active'));
+        memBtn.classList.add('active');
+        updateViewVisibility();
+        loadCurrentViewData();
+      });
+
+      const settingsBtn = document.createElement('button');
+      settingsBtn.className = 'sidebar-item' + (activeView === 'agent-settings' ? ' active' : '');
+      settingsBtn.dataset.view = 'agent-settings';
+      settingsBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span class="label">Settings</span>';
+      settingsBtn.addEventListener('click', () => {
+        activeView = 'agent-settings';
+        updateHash();
+        sidebarItems.forEach((b) => b.classList.remove('active'));
+        settingsBtn.classList.add('active');
+        updateViewVisibility();
+        loadCurrentViewData();
+      });
+
+      sub.appendChild(memBtn);
+      sub.appendChild(settingsBtn);
+      agentItem.appendChild(sub);
     }
 
-    const nameSpan = document.createElement('span');
-    nameSpan.textContent = agent.name;
-
-    const roleBadge = document.createElement('span');
-    roleBadge.className = `role-badge ${roleBadgeClass(agent.role)}`;
-    roleBadge.textContent = agent.master ? 'master' : agent.role;
-
-    tab.appendChild(nameSpan);
-    tab.appendChild(roleBadge);
-
-    tab.addEventListener('click', () => {
-      switchToAgent(agent.id);
-    });
-
-    tab.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      showAgentContextMenu(e, agent.id);
-    });
-
-    agentTabsScroll.appendChild(tab);
+    sidebarAgentList.appendChild(agentItem);
   }
+
+  // Also update the old tab bar for any code that still references it
+  agentTabsScroll.innerHTML = '';
 }
 
 function switchToAgent(agentId: string): void {
   if (activeAgentId === agentId) return;
 
   activeAgentId = agentId;
+  if (activeView === 'global-settings') activeView = 'chat'; // switch away from settings
   updateHash();
 
-  // Update tab highlights
-  agentTabsScroll.querySelectorAll('.agent-tab').forEach((tab) => {
-    tab.classList.toggle('active', (tab as HTMLElement).dataset.agentId === agentId);
-  });
+  // Re-render sidebar agent list to show sub-items for active agent
+  renderAgentTabs();
 
   // Show sidebar (in case we were on no-agent state)
   updateViewVisibility();
@@ -420,9 +452,18 @@ function showGlobalSettings(updateURL = true): void {
   loadBrowserPermissions();
 }
 
-// Global settings button
+// Global settings buttons (old top-bar one kept for compatibility, plus new sidebar one)
 document.getElementById('btn-global-settings')!.addEventListener('click', () => {
   showGlobalSettings();
+});
+document.getElementById('btn-global-settings-sidebar')?.addEventListener('click', () => {
+  showGlobalSettings();
+});
+
+// Sidebar add-agent button
+document.getElementById('btn-add-agent-sidebar')?.addEventListener('click', () => {
+  // Trigger the same create agent modal as the top bar + button
+  document.getElementById('btn-add-agent')?.click();
 });
 
 function loadCurrentViewData(): void {

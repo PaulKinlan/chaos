@@ -215,7 +215,7 @@
     /* ── App Shell: CSS Grid ── */
     .app-shell {
       display: grid;
-      grid-template-rows: var(--agent-tabs-height) 1fr;
+      grid-template-rows: 1fr;
       grid-template-columns: auto 1fr;
       height: 100vh;
       overflow: hidden;
@@ -484,6 +484,54 @@
       font-weight: 600;
     }
     .sidebar.collapsed .sidebar-section-label {
+      display: none;
+    }
+    .sidebar-bottom {
+      margin-top: auto;
+      padding-top: var(--sp-2);
+      border-top: 1px solid var(--border-subtle);
+    }
+    .sidebar-agent-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-1) var(--sp-3);
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: var(--text-xs);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      text-align: left;
+      font-family: var(--font-sans);
+      transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+    }
+    .sidebar-agent-item:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+    .sidebar-agent-item.active {
+      color: var(--text-primary);
+      background: var(--accent-subtle);
+    }
+    .sidebar-agent-item .agent-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .sidebar-agent-sub {
+      padding-left: var(--sp-6);
+    }
+    .sidebar-agent-sub .sidebar-item {
+      font-size: var(--text-xs);
+      padding: var(--sp-1) var(--sp-2);
+    }
+    .sidebar.collapsed .sidebar-agent-item .agent-name {
+      display: none;
+    }
+    .sidebar.collapsed .sidebar-agent-sub {
       display: none;
     }
 
@@ -2853,17 +2901,12 @@
 <body>
   <div class="app-shell">
     <!-- ══════ Agent Tabs (top bar) ══════ -->
-    <div class="agent-tabs-bar">
-      <div class="agent-tabs-scroll" id="agent-tabs-scroll">
-        <!-- Agent tabs rendered dynamically -->
-      </div>
-      <button class="agent-tab-add" id="btn-add-agent" title="Create new agent">
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
+    <!-- Agent tabs bar hidden - agents now listed in sidebar -->
+    <div class="agent-tabs-bar" style="display:none;">
+      <div class="agent-tabs-scroll" id="agent-tabs-scroll"></div>
+      <button class="agent-tab-add" id="btn-add-agent" title="Create new agent" style="display:none;">+</button>
       <div class="agent-tabs-right">
-        <button class="btn-global-settings" id="btn-global-settings" title="Global settings">
-          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </button>
+        <button class="btn-global-settings" id="btn-global-settings" title="Global settings" style="display:none;">settings</button>
       </div>
     </div>
 
@@ -2895,19 +2938,25 @@
           <span class="label">Hooks</span>
         </button>
         <div class="sidebar-divider"></div>
-        <div class="sidebar-section-label">Agent</div>
-        <button class="sidebar-item" data-view="files" title="Memory">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          <span class="label">Memory</span>
+        <div class="sidebar-section-label" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Agents</span>
+          <button id="btn-add-agent-sidebar" title="Create new agent" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0;line-height:1;">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+        <div id="sidebar-agent-list">
+          <!-- Agent list rendered dynamically -->
+        </div>
+      </div>
+      <div class="sidebar-bottom">
+        <button class="sidebar-item" id="btn-global-settings-sidebar" title="Settings">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span class="label">Settings</span>
         </button>
-        <button class="sidebar-item" data-view="agent-settings" title="Agent Settings">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          <span class="label">Agent</span>
+        <button class="sidebar-toggle" id="sidebar-toggle" title="Collapse sidebar">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
         </button>
       </div>
-      <button class="sidebar-toggle" id="sidebar-toggle" title="Collapse sidebar">
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
-      </button>
     </nav>
 
     <!-- ══════ Main Content Area ══════ -->
