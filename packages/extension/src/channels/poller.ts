@@ -177,7 +177,9 @@ export async function handlePollAlarm(): Promise<void> {
         const { userId, apiKey } = await registerWithRelay(settings.serverUrl);
         const newSettings = { ...settings, userId, apiKey };
         await setRelaySettings(newSettings);
-        broadcastChannelLog(`Re-registered as ${userId.slice(0, 8)}... Next poll will use new credentials.`);
+        broadcastChannelLog(`Re-registered as ${userId.slice(0, 8)}... Reconnecting WebSocket...`);
+        // Reconnect WebSocket with new credentials
+        connectWebSocket(newSettings);
       } catch (reregErr) {
         const reregMsg = reregErr instanceof Error ? reregErr.message : String(reregErr);
         broadcastChannelLog(`Re-registration failed: ${reregMsg}`);

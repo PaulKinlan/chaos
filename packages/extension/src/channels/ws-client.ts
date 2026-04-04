@@ -115,6 +115,11 @@ export function connectWebSocket(settings: RelaySettings): void {
   socket.addEventListener('close', (event) => {
     log(`Connection closed (code=${event.code}, reason=${event.reason || 'none'})`);
     socket = null;
+    // Don't reconnect with stale credentials — let the poll alarm handle re-registration
+    if (event.code === 1008 || event.reason?.includes('401') || event.reason?.includes('auth')) {
+      log('Auth failure — waiting for poll alarm to re-register');
+      return;
+    }
     // Only reconnect if we haven't been explicitly disconnected
     if (currentSettings) {
       scheduleReconnect();
