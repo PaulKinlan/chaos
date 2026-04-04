@@ -63,13 +63,20 @@ function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
 
 // ── GitHub API helpers ──
 
+function log(msg: string, data?: Record<string, unknown>): void {
+  const parts = data ? Object.entries(data).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ') : '';
+  console.log(`[skill-fetcher] ${msg}${parts ? ' ' + parts : ''}`);
+}
+
 async function githubApiGet(url: string): Promise<Response> {
-  return fetch(url, {
+  log('GitHub API request', { url });
+  const resp = await fetch(url, {
     headers: {
       Accept: 'application/vnd.github.v3+json',
-      // No auth needed for public repos
     },
   });
+  log('GitHub API response', { url, status: resp.status });
+  return resp;
 }
 
 /**
@@ -148,13 +155,18 @@ async function fetchDirFiles(
  */
 export async function fetchSkillFromGitHub(repoUrl: string): Promise<FetchedSkill | null> {
   const parsed = parseGitHubUrl(repoUrl);
-  if (!parsed) return null;
+  if (!parsed) {
+    log('Failed to parse GitHub URL', { url: repoUrl });
+    return null;
+  }
 
   const { owner, repo, branch, path } = parsed;
+  log('Fetching skill from GitHub', { owner, repo, branch, path });
   const files = new Map<string, string>();
 
   // List the target directory
   const items = await listGitHubDir(owner, repo, path, branch);
+  log('Root directory listing', { items: items.length, names: items.map(i => i.name) });
 
   // Find SKILL.md
   const skillFile = items.find(
@@ -162,23 +174,27 @@ export async function fetchSkillFromGitHub(repoUrl: string): Promise<FetchedSkil
   );
 
   if (!skillFile?.download_url) {
+    log('No SKILL.md at root, searching subdirectories...');
     // SKILL.md not found at this level. Try looking in common subdirectories.
     // Some repos have skills in skills/ or .agents/skills/ directories.
     const skillDirs = items.filter(
       (item) => item.type === 'dir' && (item.name === 'skills' || item.name === '.agents'),
     );
+    log('Candidate skill dirs', { dirs: skillDirs.map(d => d.name) });
 
     for (const dir of skillDirs) {
       const subItems = await listGitHubDir(owner, repo, dir.path, branch);
-      // If skills/ contains SKILL.md directly
+      log(`Listing ${dir.name}/`, { items: subItems.length, names: subItems.map(i => i.name) });
+
+      // If this dir contains SKILL.md directly
       const subSkill = subItems.find(
         (item) => item.type === 'file' && item.name === 'SKILL.md',
       );
       if (subSkill?.download_url) {
+        log('Found SKILL.md in', { dir: dir.name });
         const content = await fetchGitHubFile(subSkill.download_url);
         files.set('SKILL.md', content);
 
-        // Check for reference/ in the same directory
         const refDir = subItems.find(
           (item) => item.type === 'dir' && item.name === 'reference',
         );
@@ -191,28 +207,45 @@ export async function fetchSkillFromGitHub(repoUrl: string): Promise<FetchedSkil
         break;
       }
 
-      // If skills/ contains subdirectories with SKILL.md in each
-      // (e.g. skills/frontend-design/SKILL.md), use the first one found
-      for (const subDir of subItems.filter((i) => i.type === 'dir')) {
+      // If this dir contains a "skills" subdir (e.g. .agents/skills/), go deeper
+      const skillsSubDir = subItems.find(
+        (item) => item.type === 'dir' && item.name === 'skills',
+      );
+      const dirsToSearch = skillsSubDir
+        ? await listGitHubDir(owner, repo, skillsSubDir.path, branch)
+        : subItems.filter((i) => i.type === 'dir');
+
+      log('Searching skill subdirectories', { count: dirsToSearch.length, names: dirsToSearch.map(d => d.name) });
+
+      // Collect ALL skills from subdirectories into one combined SKILL.md
+      const skillParts: string[] = [];
+      for (const subDir of dirsToSearch) {
+        if (subDir.type !== 'dir') continue;
         const deepItems = await listGitHubDir(owner, repo, subDir.path, branch);
         const deepSkill = deepItems.find(
           (item) => item.type === 'file' && item.name === 'SKILL.md',
         );
         if (deepSkill?.download_url) {
+          log(`Found SKILL.md in ${subDir.name}/`);
           const content = await fetchGitHubFile(deepSkill.download_url);
-          files.set('SKILL.md', content);
+          skillParts.push(`## ${subDir.name}\n\n${content}`);
 
           const refDir = deepItems.find(
             (item) => item.type === 'dir' && item.name === 'reference',
           );
           if (refDir) {
-            const refFiles = await fetchDirFiles(owner, repo, refDir.path, branch, 'reference');
+            const refFiles = await fetchDirFiles(owner, repo, refDir.path, branch, `reference/${subDir.name}`);
             for (const [refPath, refContent] of refFiles) {
               files.set(refPath, refContent);
             }
           }
-          break;
         }
+      }
+
+      if (skillParts.length > 0) {
+        log(`Combined ${skillParts.length} skills from ${dir.name}`);
+        files.set('SKILL.md', skillParts.join('\n\n---\n\n'));
+        break;
       }
 
       if (files.has('SKILL.md')) break;
@@ -222,15 +255,19 @@ export async function fetchSkillFromGitHub(repoUrl: string): Promise<FetchedSkil
       // Last resort: try raw.githubusercontent.com directly (fallback for simple repos)
       const basePath = path ? `${path}/` : '';
       const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${basePath}SKILL.md`;
+      log('Trying raw fallback', { url: rawUrl });
       const response = await fetch(rawUrl);
       if (response.ok) {
         files.set('SKILL.md', await response.text());
+        log('Raw fallback succeeded');
       } else {
+        log('Raw fallback failed', { status: response.status });
         return null;
       }
     }
   } else {
     // Found SKILL.md at the target path
+    log('Found SKILL.md at root level');
     const content = await fetchGitHubFile(skillFile.download_url);
     files.set('SKILL.md', content);
 
@@ -270,8 +307,12 @@ export async function fetchSkillFromGitHub(repoUrl: string): Promise<FetchedSkil
  * Fetch a skill from a direct URL (raw SKILL.md or any markdown file).
  */
 export async function fetchSkillFromDirectUrl(url: string): Promise<FetchedSkill | null> {
+  log('Fetching skill from direct URL', { url });
   const response = await fetch(url);
-  if (!response.ok) return null;
+  if (!response.ok) {
+    log('Direct URL fetch failed', { url, status: response.status });
+    return null;
+  }
 
   const contentType = response.headers.get('content-type') || '';
   const content = await response.text();
@@ -315,16 +356,26 @@ export async function fetchSkillFromDirectUrl(url: string): Promise<FetchedSkill
  * Tries GitHub API first, falls back to direct URL fetch.
  */
 export async function fetchSkillFromUrl(url: string): Promise<FetchedSkill> {
+  log('fetchSkillFromUrl', { url });
+
   // Try GitHub first
   if (url.includes('github.com')) {
     const result = await fetchSkillFromGitHub(url);
-    if (result) return result;
+    if (result) {
+      log('GitHub fetch succeeded', { files: result.files.size, name: result.meta.name });
+      return result;
+    }
+    log('GitHub fetch returned null');
   }
 
   // Try direct URL
   const result = await fetchSkillFromDirectUrl(url);
-  if (result) return result;
+  if (result) {
+    log('Direct URL fetch succeeded', { name: result.meta.name });
+    return result;
+  }
 
+  log('All fetch methods failed', { url });
   throw new Error(
     `Could not fetch a skill from ${url}. Expected a GitHub repository with a SKILL.md file or a direct URL to a markdown file.`,
   );
