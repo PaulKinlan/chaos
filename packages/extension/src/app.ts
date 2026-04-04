@@ -2988,7 +2988,12 @@ async function loadAgentSettings(): Promise<void> {
       meta: AgentMeta;
     }>({ type: 'getAgentDetail', agentId: activeAgentId });
 
-    const meta = result.meta;
+    const meta = result?.meta;
+    if (!meta) {
+      container.innerHTML = '<div class="empty-state"><p>Could not load agent settings. The agent may have been removed.</p></div>';
+      console.error('[app] getAgentDetail returned null meta for agent', activeAgentId, result);
+      return;
+    }
     const claudeMd = result.claudeMd || '';
 
     container.innerHTML = `

@@ -1119,7 +1119,15 @@ async function handleOneShotMessage(
 
     case 'getAgentDetail': {
       const agentId = msg.agentId as string;
-      const { meta, claudeMd } = await getAgent(agentId);
+      let meta, claudeMd;
+      try {
+        const result = await getAgent(agentId);
+        meta = result.meta;
+        claudeMd = result.claudeMd;
+      } catch (err) {
+        console.error('[background] getAgentDetail failed:', agentId, err);
+        return { meta: null, claudeMd: '', journal: [], bookmarks: [] };
+      }
 
       // Read recent journal entries (last 10 lines from activity-log.jsonl)
       let journal: string[] = [];
