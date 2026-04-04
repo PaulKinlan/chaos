@@ -32,6 +32,12 @@ import {
   removeHook,
 } from './storage/chrome-storage.js';
 import { getMessages } from './storage/shared.js';
+import {
+  installSkill,
+  removeSkill,
+  listSkills,
+  parseFrontmatter,
+} from './agents/skills.js';
 import { getTaskState } from './storage/shared.js';
 import { listArtifacts } from './storage/shared.js';
 import { opfs } from './storage/opfs.js';
@@ -479,6 +485,22 @@ chrome.runtime.onConnect.addListener((port) => {
           await handleRemoveHook(port, msg);
           break;
 
+        case 'listSkills':
+          await handleListSkills(port, msg);
+          break;
+
+        case 'installSkill':
+          await handleInstallSkill(port, msg);
+          break;
+
+        case 'removeSkill':
+          await handleRemoveSkill(port, msg);
+          break;
+
+        case 'importSkillFromUrl':
+          await handleImportSkillFromUrl(port, msg);
+          break;
+
         default:
           port.postMessage({
             type: 'error',
@@ -901,6 +923,113 @@ async function handleUpdateAgentClaudeMdPort(
   port.postMessage({ type: 'claudeMdUpdated', agentId: msg.agentId });
 }
 
+// ── Skills port handlers ──
+
+async function handleListSkills(
+  port: chrome.runtime.Port,
+  msg: { agentId: string },
+): Promise<void> {
+  const skills = await listSkills(msg.agentId);
+  port.postMessage({ type: 'skillsList', agentId: msg.agentId, skills });
+}
+
+async function handleInstallSkill(
+  port: chrome.runtime.Port,
+  msg: { agentId: string; name: string; description: string; content: string; referenceFiles?: Record<string, string> },
+): Promise<void> {
+  const { meta: fmMeta } = parseFrontmatter(msg.content);
+  const files = new Map<string, string>();
+  files.set('SKILL.md', msg.content);
+  if (msg.referenceFiles) {
+    for (const [path, content] of Object.entries(msg.referenceFiles)) {
+      files.set(path, content);
+    }
+  }
+  const skillId = await installSkill(
+    msg.agentId,
+    {
+      name: fmMeta.name || msg.name,
+      description: fmMeta.description || msg.description,
+      author: fmMeta.author,
+      version: fmMeta.version,
+    },
+    files,
+  );
+  port.postMessage({ type: 'skillInstalled', agentId: msg.agentId, skillId });
+}
+
+async function handleRemoveSkill(
+  port: chrome.runtime.Port,
+  msg: { agentId: string; skillId: string },
+): Promise<void> {
+  await removeSkill(msg.agentId, msg.skillId);
+  port.postMessage({ type: 'skillRemoved', agentId: msg.agentId, skillId: msg.skillId });
+}
+
+async function handleImportSkillFromUrl(
+  port: chrome.runtime.Port,
+  msg: { agentId: string; url: string },
+): Promise<void> {
+  try {
+    // Try GitHub first
+    const repoMatch = msg.url.match(
+      /^https?:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/([^/]+)(?:\/(.+))?)?/,
+    );
+    let content: string | null = null;
+    let source = msg.url;
+
+    if (repoMatch) {
+      const [, owner, repo, branch = 'main', subpath = ''] = repoMatch;
+      const basePath = subpath ? `${subpath}/` : '';
+      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${basePath}SKILL.md`;
+      const response = await fetch(rawUrl);
+      if (response.ok) {
+        content = await response.text();
+        source = msg.url;
+      }
+    }
+
+    if (!content) {
+      const response = await fetch(msg.url);
+      if (response.ok) {
+        content = await response.text();
+      }
+    }
+
+    if (!content) {
+      port.postMessage({ type: 'error', error: `Could not fetch skill from ${msg.url}` });
+      return;
+    }
+
+    const { meta: fmMeta } = parseFrontmatter(content);
+    const urlName = msg.url
+      .replace(/^https?:\/\//, '')
+      .replace(/github\.com\//, '')
+      .split('/')
+      .slice(0, 2)
+      .join('/');
+
+    const files = new Map<string, string>();
+    files.set('SKILL.md', content);
+
+    const skillId = await installSkill(
+      msg.agentId,
+      {
+        name: fmMeta.name || urlName,
+        description: fmMeta.description || `Imported from ${source}`,
+        author: fmMeta.author,
+        version: fmMeta.version,
+        source,
+      },
+      files,
+    );
+
+    port.postMessage({ type: 'skillInstalled', agentId: msg.agentId, skillId });
+  } catch (err) {
+    port.postMessage({ type: 'error', error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 // ── Hooks port handlers ──
 
 async function handleGetHooks(
@@ -1083,6 +1212,39 @@ async function handleOneShotMessage(
       } catch {
         return { content: '(File not found or unreadable)' };
       }
+    }
+
+    case 'listSkills': {
+      const skills = await listSkills(msg.agentId as string);
+      return { skills };
+    }
+
+    case 'installSkill': {
+      const { meta: fmMeta } = parseFrontmatter(msg.content as string);
+      const files = new Map<string, string>();
+      files.set('SKILL.md', msg.content as string);
+      if (msg.referenceFiles) {
+        for (const [path, content] of Object.entries(msg.referenceFiles as Record<string, string>)) {
+          files.set(path, content);
+        }
+      }
+      const skillId = await installSkill(
+        msg.agentId as string,
+        {
+          name: fmMeta.name || (msg.name as string),
+          description: fmMeta.description || (msg.description as string),
+          author: fmMeta.author,
+          version: fmMeta.version,
+          source: msg.source as string | undefined,
+        },
+        files,
+      );
+      return { skillId };
+    }
+
+    case 'removeSkill': {
+      await removeSkill(msg.agentId as string, msg.skillId as string);
+      return { removed: true };
     }
 
     case 'getScheduledTasks': {

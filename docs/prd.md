@@ -98,6 +98,7 @@ Each agent gets an isolated directory in OPFS:
 - Send and receive messages to/from other agents
 - Publish and consume shared artifacts
 - Coordinate on shared tasks with dependency tracking
+- Install skills (SKILL.md instruction bundles) from paste, URL, or GitHub to gain specialised knowledge
 
 ## Agent privacy and visibility
 
@@ -237,12 +238,15 @@ class LLMToolLookup implements ToolLookup { ... }
 7. **Hook tools** (3 tools)
    - hook_create, hook_list, hook_delete
 
-8. **Provider search grounding** (provider-native, added automatically)
+8. **Skill tools** (4 tools)
+   - install_skill, remove_skill, list_skills, fetch_skill
+
+9. **Provider search grounding** (provider-native, added automatically)
    - Google: google_search (Gemini native grounding)
    - OpenAI: web_search (web search preview tool)
    - Anthropic: web_search (web search tool)
 
-Total: 69+ tools across all categories.
+Total: 73+ tools across all categories.
 
 ## Content extraction and rendering
 

@@ -1956,6 +1956,58 @@
       border-color: var(--border-focus);
     }
 
+    /* Skills list */
+    .skills-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-3);
+    }
+
+    .skill-card {
+      background: var(--bg-base);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      padding: var(--sp-3);
+    }
+
+    .skill-card-header {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      margin-bottom: var(--sp-1);
+    }
+
+    .skill-card-name {
+      font-weight: 600;
+      font-size: var(--text-sm);
+      color: var(--text-primary);
+    }
+
+    .skill-card-desc {
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      margin: 0 0 var(--sp-2) 0;
+    }
+
+    .skill-card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-3);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .skills-add-section {
+      border-top: 1px solid var(--border-default);
+      padding-top: var(--sp-4);
+    }
+
+    .btn-xs {
+      padding: 2px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+    }
+
     .tools-grid {
       display: grid;
       gap: var(--sp-2);

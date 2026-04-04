@@ -125,40 +125,40 @@ This is more advanced but very powerful.
 
 ## Implementation
 
-### Phase 1: Manual skill import
+### Phase 1: Manual skill import ✅ IMPLEMENTED
 
 **Skill storage** (`src/agents/skills.ts`):
-```typescript
-interface SkillMeta {
-  id: string;
-  name: string;
-  description: string;
-  author?: string;
-  version?: string;
-  source?: string;  // URL where it was imported from
-  installedAt: string;
-  files: string[];  // Relative paths within the skill directory
-}
-
-async function installSkill(agentId: string, skillDir: string, files: Map<string, string>): Promise<SkillMeta>
-async function removeSkill(agentId: string, skillId: string): Promise<void>
-async function listSkills(agentId: string): Promise<SkillMeta[]>
-async function getSkillContent(agentId: string, skillId: string): Promise<string>  // Returns SKILL.md
-```
+- `SkillMeta` interface with id, name, description, author, version, source, installedAt, files
+- `installSkill()`, `removeSkill()`, `listSkills()`, `getSkillContent()`, `getSkillManifest()`
+- `parseFrontmatter()` for YAML frontmatter in SKILL.md files
+- `buildSkillsPromptSection()` generates system prompt injection text
 
 **Agent loop integration** (`src/agents/agentic-loop.ts`, `src/agents/loop.ts`):
-- On each run, read `skills/skill-manifest.json` from OPFS
-- For each installed skill, read its SKILL.md
-- Append skill instructions to the system prompt
-- Add a note about available reference files
+- Both loops call `buildSkillsPromptSection()` after reading CLAUDE.md
+- Skills are injected under `## Installed Skills` with per-skill `### Skill: Name` headers
+- Reference file paths listed for on-demand reading
+- Graceful handling when no skills are installed
+
+**Agent tools** (`src/tools/skills/`):
+- `install_skill` — install from pasted SKILL.md content + optional reference files
+- `remove_skill` — remove by skill ID
+- `list_skills` — list all installed skills
+- `fetch_skill` — fetch and install from URL (GitHub repos and direct SKILL.md links)
+- All tools registered in the tool lookup registry
+
+**Background message handlers** (`src/background.ts`):
+- Port handlers: listSkills, installSkill, removeSkill, importSkillFromUrl
+- One-shot handlers: listSkills, installSkill, removeSkill
 
 **UI: Agent Settings → Skills section**:
-- List of installed skills with name, description, author
+- List of installed skills with name, description, author, source, version, installed date, file count
 - Remove button per skill
-- "Add Skill" button with options:
-  - Paste SKILL.md content
-  - Import from URL
-  - Browse installed skills (from the repo's `.agents/skills/`)
+- "Add Skill" area with:
+  - URL input with "Import" button (GitHub repos or direct URLs)
+  - Name, description, and SKILL.md textarea with "Install Skill" button
+
+**Tests** (`src/agents/__tests__/skills.test.ts`):
+- 13 tests covering: frontmatter parsing, install/list/remove lifecycle, overwrite, reference files, prompt section building
 
 ### Phase 2: URL-based import
 

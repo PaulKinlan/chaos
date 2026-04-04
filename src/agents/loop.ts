@@ -17,9 +17,11 @@ import { getWasmTools } from '../tools/wasm/index.js';
 import { getWebTools } from '../tools/web/index.js';
 import { getHookTools } from '../tools/hooks/index.js';
 import { getMasterTools } from '../tools/master/index.js';
+import { getSkillTools } from '../tools/skills/index.js';
 import type { AgentMeta } from '../storage/types.js';
 import { createToolLookup, type LookupStrategy, type ToolMeta } from '../tools/lookup/index.js';
 import { checkPermission } from '../tools/permissions.js';
+import { buildSkillsPromptSection } from './skills.js';
 
 // ── Types ──
 
@@ -463,6 +465,16 @@ async function buildSystemPrompt(
   // Core personality and instructions
   parts.push(claudeMd);
 
+  // Installed skills
+  try {
+    const skillsSection = await buildSkillsPromptSection(agentId);
+    if (skillsSection) {
+      parts.push(skillsSection);
+    }
+  } catch {
+    // No skills or error reading them — continue without
+  }
+
   // Recent activity journal
   try {
     const logPath = `${AGENTS_ROOT}/${agentId}/${ACTIVITY_LOG}`;
@@ -752,6 +764,7 @@ export async function runAgentLoop(
     ...getWebTools({ braveApiKey: apiKeys.brave }),
     ...getHookTools(agentId),
     ...getMasterTools(agentId, isMaster),
+    ...getSkillTools(agentId),
     ...providerSearchTools,
   };
 

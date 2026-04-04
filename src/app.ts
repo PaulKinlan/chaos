@@ -2927,6 +2927,39 @@ async function loadAgentSettings(): Promise<void> {
       </div>
 
       <div class="agent-settings-section">
+        <h3>Skills</h3>
+        <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">
+          Skills add specialised knowledge and instructions to this agent's system prompt.
+        </p>
+        <div id="agent-skills-list"></div>
+        <div class="skills-add-section" style="margin-top:var(--sp-4);">
+          <h4>Add Skill</h4>
+          <div class="agent-settings-field">
+            <label for="skill-url-input">Import from URL</label>
+            <div style="display:flex;gap:var(--sp-2);align-items:center;">
+              <input type="text" id="skill-url-input" placeholder="https://github.com/user/repo or direct SKILL.md URL" style="flex:1;">
+              <button class="btn btn-primary btn-sm" id="btn-import-skill-url">Import</button>
+            </div>
+          </div>
+          <div class="agent-settings-field">
+            <label for="skill-name-input">Skill Name</label>
+            <input type="text" id="skill-name-input" placeholder="e.g. Frontend Design">
+          </div>
+          <div class="agent-settings-field">
+            <label for="skill-desc-input">Description</label>
+            <input type="text" id="skill-desc-input" placeholder="Brief description of the skill">
+          </div>
+          <div class="agent-settings-field">
+            <label for="skill-content-input">SKILL.md Content</label>
+            <textarea id="skill-content-input" class="claude-md-editor" style="min-height:120px;" placeholder="Paste SKILL.md content here..."></textarea>
+          </div>
+          <div style="margin-top:var(--sp-2);">
+            <button class="btn btn-primary btn-sm" id="btn-install-skill">Install Skill</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="agent-settings-section">
         <h3>CLAUDE.md</h3>
         <textarea class="claude-md-editor" id="agent-claude-md">${escapeHtml(claudeMd)}</textarea>
         <div style="margin-top:var(--sp-3);">
@@ -3014,6 +3047,51 @@ async function loadAgentSettings(): Promise<void> {
       { const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Tool configuration saved.'); }
     });
 
+    // Skills section
+    await loadSkillsList(meta.id);
+
+    // Install skill from paste
+    document.getElementById('btn-install-skill')!.addEventListener('click', async () => {
+      const name = (document.getElementById('skill-name-input') as HTMLInputElement).value.trim();
+      const description = (document.getElementById('skill-desc-input') as HTMLInputElement).value.trim();
+      const content = (document.getElementById('skill-content-input') as HTMLTextAreaElement).value.trim();
+      if (!content) {
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Please paste SKILL.md content.');
+        return;
+      }
+      if (!name && !content.startsWith('---')) {
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Please provide a skill name or include frontmatter.');
+        return;
+      }
+      try {
+        await sendMsg({ type: 'installSkill', agentId: meta.id, name: name || 'Unnamed Skill', description: description || 'No description', content });
+        (document.getElementById('skill-name-input') as HTMLInputElement).value = '';
+        (document.getElementById('skill-desc-input') as HTMLInputElement).value = '';
+        (document.getElementById('skill-content-input') as HTMLTextAreaElement).value = '';
+        await loadSkillsList(meta.id);
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Skill installed.');
+      } catch (err) {
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Failed to install skill: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+    // Import skill from URL
+    document.getElementById('btn-import-skill-url')!.addEventListener('click', async () => {
+      const url = (document.getElementById('skill-url-input') as HTMLInputElement).value.trim();
+      if (!url) {
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Please enter a URL.');
+        return;
+      }
+      try {
+        await sendMsg({ type: 'installSkill', agentId: meta.id, name: url, description: `Imported from ${url}`, content: await fetchSkillContent(url), source: url });
+        (document.getElementById('skill-url-input') as HTMLInputElement).value = '';
+        await loadSkillsList(meta.id);
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Skill imported from URL.');
+      } catch (err) {
+        const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Failed to import skill: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
     // Save CLAUDE.md
     document.getElementById('btn-save-claude-md')!.addEventListener('click', async () => {
       const content = (document.getElementById('agent-claude-md') as HTMLTextAreaElement).value;
@@ -3040,6 +3118,90 @@ async function loadAgentSettings(): Promise<void> {
   } catch (err) {
     container.innerHTML = `<div class="panel-error" style="display:block;">Failed to load agent settings: ${err instanceof Error ? err.message : String(err)}</div>`;
   }
+}
+
+// ── Skills helpers ──
+
+interface SkillMetaUI {
+  id: string;
+  name: string;
+  description: string;
+  author?: string;
+  version?: string;
+  source?: string;
+  installedAt: string;
+  files: string[];
+}
+
+async function loadSkillsList(agentId: string): Promise<void> {
+  const container = document.getElementById('agent-skills-list');
+  if (!container) return;
+
+  try {
+    const result = await sendMsg<{ skills: SkillMetaUI[] }>({ type: 'listSkills', agentId });
+    const skills = result.skills || [];
+
+    if (skills.length === 0) {
+      container.innerHTML = '<p style="font-size:var(--text-xs);color:var(--text-muted);">No skills installed.</p>';
+      return;
+    }
+
+    let html = '<div class="skills-list">';
+    for (const skill of skills) {
+      const installed = new Date(skill.installedAt).toLocaleDateString();
+      html += `<div class="skill-card" data-skill-id="${escapeHtml(skill.id)}">`;
+      html += `<div class="skill-card-header">`;
+      html += `<span class="skill-card-name">${escapeHtml(skill.name)}</span>`;
+      if (skill.version) html += `<span class="badge badge-neutral" style="margin-left:var(--sp-2);">v${escapeHtml(skill.version)}</span>`;
+      html += `<button class="btn btn-danger btn-xs skill-remove-btn" data-skill-id="${escapeHtml(skill.id)}" title="Remove skill" style="margin-left:auto;">Remove</button>`;
+      html += `</div>`;
+      html += `<p class="skill-card-desc">${escapeHtml(skill.description)}</p>`;
+      html += `<div class="skill-card-meta">`;
+      if (skill.author) html += `<span>Author: ${escapeHtml(skill.author)}</span>`;
+      if (skill.source) html += `<span>Source: ${escapeHtml(skill.source)}</span>`;
+      html += `<span>Installed: ${installed}</span>`;
+      html += `<span>Files: ${skill.files.length}</span>`;
+      html += `</div>`;
+      html += `</div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Attach remove handlers
+    container.querySelectorAll<HTMLButtonElement>('.skill-remove-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const skillId = btn.dataset.skillId!;
+        try {
+          await sendMsg({ type: 'removeSkill', agentId, skillId });
+          await loadSkillsList(agentId);
+          const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Skill "${skillId}" removed.`);
+        } catch (err) {
+          const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, `Failed to remove skill: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
+    });
+  } catch {
+    container.innerHTML = '<p style="font-size:var(--text-xs);color:var(--text-muted);">Failed to load skills.</p>';
+  }
+}
+
+async function fetchSkillContent(url: string): Promise<string> {
+  // Try GitHub first
+  const repoMatch = url.match(
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/([^/]+)(?:\/(.+))?)?/,
+  );
+  if (repoMatch) {
+    const [, owner, repo, branch = 'main', subpath = ''] = repoMatch;
+    const basePath = subpath ? `${subpath}/` : '';
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${basePath}SKILL.md`;
+    const response = await fetch(rawUrl);
+    if (response.ok) return response.text();
+  }
+
+  // Try direct URL
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+  return response.text();
 }
 
 // ══════════════════════════════════════════

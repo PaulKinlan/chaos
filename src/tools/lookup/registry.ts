@@ -472,7 +472,35 @@ const masterTools: ToolMeta[] = [
   },
 ];
 
+/** Skills tools */
+const skillsTools: ToolMeta[] = [
+  {
+    name: 'install_skill',
+    description: 'Install a skill from provided SKILL.md content with optional reference files.',
+    keywords: ['skill', 'install', 'add', 'knowledge', 'instructions', 'prompt', 'capability'],
+    category: 'file',
+  },
+  {
+    name: 'remove_skill',
+    description: 'Remove an installed skill by its ID.',
+    keywords: ['skill', 'remove', 'delete', 'uninstall'],
+    category: 'file',
+  },
+  {
+    name: 'list_skills',
+    description: 'List all skills installed on this agent.',
+    keywords: ['skill', 'list', 'show', 'installed', 'capabilities'],
+    category: 'file',
+  },
+  {
+    name: 'fetch_skill',
+    description: 'Fetch and install a skill from a URL (GitHub repo or direct SKILL.md link).',
+    keywords: ['skill', 'fetch', 'import', 'url', 'github', 'download', 'install'],
+    category: 'web',
+  },
+];
+
 // Register all tools
-for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools, ...webTools, ...hookTools, ...masterTools]) {
+for (const meta of [...chromeTools, ...fileTools, ...communicationTools, ...wasmTools, ...webTools, ...hookTools, ...masterTools, ...skillsTools]) {
   toolRegistry.register(meta);
 }

@@ -194,6 +194,35 @@ Agents can:
 - Send and receive messages to/from other agents
 - Publish and consume shared artifacts
 - Coordinate on shared tasks with dependency tracking
+- Install and manage skills (SKILL.md bundles of instructions and reference material)
+
+### Skills system
+
+Agents can be extended with **skills** — bundles of markdown instructions and optional reference material stored in OPFS. Skills are injected into the agent's system prompt after CLAUDE.md, giving the agent specialised knowledge without modifying its core personality.
+
+**Storage layout** in OPFS:
+```
+/agents/{agentId}/skills/
+  skill-manifest.json           # Array of SkillMeta
+  {skillId}/
+    SKILL.md                    # Main instructions (injected into system prompt)
+    reference/                  # Optional reference docs (read on demand via read_file)
+      topic.md
+```
+
+**How skills are injected:**
+- Both `loop.ts` and `agentic-loop.ts` call `buildSkillsPromptSection()` after reading CLAUDE.md
+- Each installed skill's SKILL.md is appended under `## Installed Skills`
+- Reference file paths are listed so the agent can read them on demand
+- When no skills are installed, nothing is added
+
+**Skill tools** (4 tools in `src/tools/skills/`):
+- `install_skill` — install from pasted SKILL.md content with optional reference files
+- `remove_skill` — remove a skill by ID
+- `list_skills` — list installed skills
+- `fetch_skill` — fetch and install from a URL (GitHub repo or direct SKILL.md)
+
+**UI:** Agent Settings includes a Skills section for listing, installing (paste or URL), and removing skills.
 
 ## Tool lookup service
 
@@ -265,7 +294,10 @@ class LLMToolLookup implements ToolLookup { ... }
 7. **Hook tools** (3 tools)
    - hook_create, hook_list, hook_delete
 
-8. **Provider search grounding** (provider-native, added automatically per provider)
+8. **Skill tools** (4 tools)
+   - install_skill, remove_skill, list_skills, fetch_skill
+
+9. **Provider search grounding** (provider-native, added automatically per provider)
    - Google: google_search
    - OpenAI: web_search (preview)
    - Anthropic: web_search
