@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "dev": "deno run --watch --allow-net --allow-read --allow-env src/main.ts",
+    "start": "deno run --allow-net --allow-read --allow-env src/main.ts"
+  },
+  "imports": {
+    "@chaos/shared": "../shared/src/types.ts"
+  }
+}

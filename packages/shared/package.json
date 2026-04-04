@@ -1,0 +1,10 @@
+{
+  "name": "@chaos/shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/types.ts",
+  "exports": {
+    ".": "./src/types.ts"
+  }
+}
