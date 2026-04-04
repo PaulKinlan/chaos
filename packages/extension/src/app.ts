@@ -332,7 +332,20 @@ function renderAgentTabs(): void {
       renderAgentTabs(); // refresh active states
     });
 
+    const tasksBtn = document.createElement('button');
+    tasksBtn.className = 'sidebar-item' + (isActive && activeView === 'tasks' ? ' active' : '');
+    tasksBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/></svg><span class="label">Tasks</span>';
+    tasksBtn.addEventListener('click', () => {
+      if (activeAgentId !== agent.id) switchToAgent(agent.id);
+      activeView = 'tasks';
+      updateHash();
+      updateViewVisibility();
+      loadTasks(agent.id); // Filter to this agent's tasks
+      renderAgentTabs();
+    });
+
     sub.appendChild(memBtn);
+    sub.appendChild(tasksBtn);
     sub.appendChild(settingsBtn);
     details.appendChild(sub);
 
@@ -478,8 +491,12 @@ function loadCurrentViewData(): void {
     case 'chat':
       // Chat is always connected via port
       break;
-    case 'tasks':
+    case 'tasks': {
+      // When navigated from top-level sidebar, show all tasks (clear agent filter)
+      const tasksFilter = document.getElementById('tasks-filter-agent') as HTMLSelectElement;
+      if (tasksFilter) tasksFilter.value = '';
       loadTasks();
+    }
       break;
     case 'messages':
       loadMessages();
@@ -2383,7 +2400,12 @@ function populateAgentFilter(selectId: string): string {
 // ── Tasks View
 // ══════════════════════════════════════════
 
-async function loadTasks(): Promise<void> {
+async function loadTasks(filterByAgentId?: string): Promise<void> {
+  // Pre-set the agent filter if navigated from a per-agent Tasks button
+  if (filterByAgentId) {
+    const select = document.getElementById('tasks-filter-agent') as HTMLSelectElement;
+    if (select) select.value = filterByAgentId;
+  }
   showPanelLoading('view-tasks');
   try {
     const [collabResult, schedResult] = await Promise.all([
