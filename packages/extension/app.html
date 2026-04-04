@@ -2232,6 +2232,110 @@
       margin-top: var(--sp-4);
     }
 
+    /* ── Provider rows ── */
+    .provider-row {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto auto;
+      gap: 0 var(--sp-3);
+      align-items: center;
+      padding: var(--sp-3) var(--sp-4);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+    }
+    .provider-row:hover {
+      border-color: var(--border-default);
+      background: var(--bg-surface);
+    }
+    .provider-row:has(input[type="radio"]:checked) {
+      border-color: var(--border-focus);
+      background: var(--bg-surface);
+    }
+    .provider-row input[type="radio"] {
+      grid-row: 1;
+      margin: 0;
+      accent-color: var(--border-focus);
+    }
+    .provider-info {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      min-width: 0;
+    }
+    .provider-name {
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      min-width: 120px;
+    }
+    .provider-key-input {
+      flex: 1;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      padding: var(--sp-1) var(--sp-2);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      outline: none;
+      min-height: 30px;
+      min-width: 0;
+      transition: border-color var(--duration-fast) var(--ease-out);
+    }
+    .provider-key-input:focus {
+      border-color: var(--border-focus);
+    }
+    .provider-model-area {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      margin-top: var(--sp-2);
+      padding-top: var(--sp-2);
+      border-top: 1px solid var(--border-subtle);
+    }
+    .provider-model-area::before {
+      content: 'Model';
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      font-weight: 500;
+      white-space: nowrap;
+      min-width: 44px;
+    }
+    .provider-model-select {
+      flex: 1;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      padding: var(--sp-1) var(--sp-2);
+      font-size: var(--text-xs);
+      outline: none;
+      min-height: 30px;
+      min-width: 0;
+    }
+    .provider-model-select:focus {
+      border-color: var(--border-focus);
+    }
+    .provider-custom-model {
+      flex: 1;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      padding: var(--sp-1) var(--sp-2);
+      font-size: var(--text-xs);
+      outline: none;
+      min-height: 30px;
+      min-width: 0;
+    }
+    .provider-custom-model:focus {
+      border-color: var(--border-focus);
+    }
+
     /* ── Modals ── */
     .modal-overlay {
       display: none;
@@ -2988,50 +3092,62 @@
             <h2>Global Settings</h2>
           </div>
           <div class="settings-grid">
-            <div class="settings-card">
-              <h3>API Keys</h3>
-              <div class="settings-field">
-                <label for="settings-key-anthropic">Anthropic</label>
-                <input type="password" id="settings-key-anthropic" placeholder="sk-ant-...">
+            <div class="settings-card" style="grid-column: 1 / -1;">
+              <h3>Providers</h3>
+              <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Select your active provider, enter API keys, and choose a model.</p>
+              <div id="providers-list" style="display:grid;gap:8px;">
+                <label class="provider-row" data-provider="anthropic">
+                  <input type="radio" name="active-provider" value="anthropic">
+                  <div class="provider-info">
+                    <span class="provider-name">Anthropic</span>
+                    <input type="password" id="settings-key-anthropic" class="provider-key-input" placeholder="sk-ant-..." onclick="event.stopPropagation()">
+                  </div>
+                  <div class="provider-model-area" id="model-area-anthropic" style="display:none;">
+                    <select class="provider-model-select" id="model-select-anthropic"></select>
+                    <input type="text" class="provider-custom-model" id="custom-model-anthropic" placeholder="Custom model ID..." onclick="event.stopPropagation()">
+                  </div>
+                </label>
+                <label class="provider-row" data-provider="google">
+                  <input type="radio" name="active-provider" value="google">
+                  <div class="provider-info">
+                    <span class="provider-name">Google (Gemini)</span>
+                    <input type="password" id="settings-key-google" class="provider-key-input" placeholder="AI..." onclick="event.stopPropagation()">
+                  </div>
+                  <div class="provider-model-area" id="model-area-google" style="display:none;">
+                    <select class="provider-model-select" id="model-select-google"></select>
+                    <input type="text" class="provider-custom-model" id="custom-model-google" placeholder="Custom model ID..." onclick="event.stopPropagation()">
+                  </div>
+                </label>
+                <label class="provider-row" data-provider="openai">
+                  <input type="radio" name="active-provider" value="openai">
+                  <div class="provider-info">
+                    <span class="provider-name">OpenAI</span>
+                    <input type="password" id="settings-key-openai" class="provider-key-input" placeholder="sk-..." onclick="event.stopPropagation()">
+                  </div>
+                  <div class="provider-model-area" id="model-area-openai" style="display:none;">
+                    <select class="provider-model-select" id="model-select-openai"></select>
+                    <input type="text" class="provider-custom-model" id="custom-model-openai" placeholder="Custom model ID..." onclick="event.stopPropagation()">
+                  </div>
+                </label>
+                <label class="provider-row" data-provider="openrouter">
+                  <input type="radio" name="active-provider" value="openrouter">
+                  <div class="provider-info">
+                    <span class="provider-name">OpenRouter</span>
+                    <input type="password" id="settings-key-openrouter" class="provider-key-input" placeholder="sk-or-..." onclick="event.stopPropagation()">
+                  </div>
+                  <div class="provider-model-area" id="model-area-openrouter" style="display:none;">
+                    <select class="provider-model-select" id="model-select-openrouter"></select>
+                    <input type="text" class="provider-custom-model" id="custom-model-openrouter" placeholder="Custom model ID..." onclick="event.stopPropagation()">
+                  </div>
+                </label>
               </div>
-              <div class="settings-field">
-                <label for="settings-key-google">Google (Gemini)</label>
-                <input type="password" id="settings-key-google" placeholder="AI...">
-              </div>
-              <div class="settings-field">
-                <label for="settings-key-openai">OpenAI</label>
-                <input type="password" id="settings-key-openai" placeholder="sk-...">
-              </div>
-              <div class="settings-field">
-                <label for="settings-key-openrouter">OpenRouter</label>
-                <input type="password" id="settings-key-openrouter" placeholder="sk-or-...">
-              </div>
-              <div class="settings-actions">
-                <button class="btn btn-primary" id="btn-save-keys">Save Keys</button>
+              <div class="settings-actions" style="margin-top:12px;">
+                <button class="btn btn-primary" id="btn-save-provider-settings">Save</button>
               </div>
             </div>
-            <div class="settings-card">
-              <h3>Preferences</h3>
-              <div class="settings-field">
-                <label for="settings-provider">Default Provider</label>
-                <select id="settings-provider">
-                  <option value="anthropic">Anthropic</option>
-                  <option value="google">Google (Gemini)</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="openrouter">OpenRouter</option>
-                </select>
-              </div>
-              <div class="settings-field">
-                <label for="model-select">Model</label>
-                <select id="model-select">
-                  <option value="">Select a model...</option>
-                </select>
-                <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">
-                  Or enter a custom model ID:
-                </p>
-                <input type="text" id="custom-model" placeholder="e.g. claude-sonnet-4-6" style="margin-top:4px;">
-              </div>
-              <div class="settings-field">
+            <div class="settings-card" style="grid-column: 1 / -1;">
+              <h3>Appearance</h3>
+              <div class="settings-field" style="max-width:300px;">
                 <label for="theme-select">Theme</label>
                 <select id="theme-select">
                   <option value="system">System (auto)</option>
@@ -3040,7 +3156,7 @@
                 </select>
               </div>
               <div class="settings-actions">
-                <button class="btn btn-primary" id="btn-save-prefs">Save Preferences</button>
+                <button class="btn btn-primary" id="btn-save-theme">Save Theme</button>
               </div>
             </div>
             <div class="settings-card" style="grid-column: 1 / -1;">

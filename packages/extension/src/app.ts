@@ -3450,26 +3450,54 @@ async function loadArchivedAgents(): Promise<void> {
 // ── Global Settings View
 // ══════════════════════════════════════════
 
+const PROVIDERS = ['anthropic', 'google', 'openai', 'openrouter'] as const;
+
 async function loadSettings(): Promise<void> {
   try {
     const result = await sendMsg<{ keys: ApiKeys }>({ type: 'getApiKeys' });
     const keys = result.keys;
 
-    (document.getElementById('settings-key-anthropic') as HTMLInputElement).value =
-      keys.anthropic || '';
+    (document.getElementById('settings-key-anthropic') as HTMLInputElement).value = keys.anthropic || '';
     (document.getElementById('settings-key-google') as HTMLInputElement).value = keys.google || '';
     (document.getElementById('settings-key-openai') as HTMLInputElement).value = keys.openai || '';
-    (document.getElementById('settings-key-openrouter') as HTMLInputElement).value =
-      keys.openrouter || '';
+    (document.getElementById('settings-key-openrouter') as HTMLInputElement).value = keys.openrouter || '';
 
     // Load settings (provider, theme, model)
     const settingsResult = await sendMsg<{ settings: { activeProvider: string; theme: string; model?: string } }>({ type: 'getSettings' });
     const settings = settingsResult.settings;
-    (document.getElementById('settings-provider') as HTMLSelectElement).value = settings.activeProvider || 'anthropic';
+    const activeProvider = settings.activeProvider || 'anthropic';
+
+    // Select the active provider radio
+    const radio = document.querySelector(`input[name="active-provider"][value="${activeProvider}"]`) as HTMLInputElement;
+    if (radio) radio.checked = true;
+
+    // Theme
     (document.getElementById('theme-select') as HTMLSelectElement).value = settings.theme || 'system';
 
-    // Populate model selector
-    await populateModelSelect(settings.activeProvider || 'anthropic', keys, settings.model);
+    // Populate model selectors for all providers
+    for (const p of PROVIDERS) {
+      populateProviderModels(p);
+    }
+
+    // Restore selected model on the active provider
+    if (settings.model) {
+      const select = document.getElementById(`model-select-${activeProvider}`) as HTMLSelectElement | null;
+      const custom = document.getElementById(`custom-model-${activeProvider}`) as HTMLInputElement | null;
+      if (select && custom) {
+        const models = getFallbackModels(activeProvider);
+        const inList = models.some((m) => m.value === settings.model);
+        if (inList) {
+          select.value = settings.model;
+          custom.value = '';
+        } else {
+          select.value = '';
+          custom.value = settings.model;
+        }
+      }
+    }
+
+    // Show model area for active provider
+    updateProviderModelVisibility();
 
     // Load channels UI
     await renderChannelsUI();
@@ -3478,79 +3506,64 @@ async function loadSettings(): Promise<void> {
   }
 }
 
-async function populateModelSelect(
-  providerId: string,
-  keys: ApiKeys,
-  selectedModel?: string,
-): Promise<void> {
-  const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
-  const customModelInput = document.getElementById('custom-model') as HTMLInputElement;
-
-  // Show loading state
-  modelSelect.innerHTML = '<option value="">Loading models...</option>';
-
+function populateProviderModels(providerId: string): void {
+  const select = document.getElementById(`model-select-${providerId}`) as HTMLSelectElement | null;
+  if (!select) return;
   const models = getFallbackModels(providerId);
-
-  // Populate select
-  modelSelect.innerHTML = '<option value="">(provider default)</option>';
+  select.innerHTML = '<option value="">(provider default)</option>';
   for (const m of models) {
     const opt = document.createElement('option');
     opt.value = m.value;
     opt.textContent = m.label;
-    modelSelect.appendChild(opt);
+    select.appendChild(opt);
   }
+}
 
-  // Restore selection
-  if (selectedModel) {
-    // Check if selected model is in the list
-    const inList = models.some((m) => m.value === selectedModel);
-    if (inList) {
-      modelSelect.value = selectedModel;
-      customModelInput.value = '';
-    } else {
-      // Model not in list — put it in custom input
-      modelSelect.value = '';
-      customModelInput.value = selectedModel;
+function updateProviderModelVisibility(): void {
+  for (const p of PROVIDERS) {
+    const area = document.getElementById(`model-area-${p}`);
+    if (area) {
+      const radio = document.querySelector(`input[name="active-provider"][value="${p}"]`) as HTMLInputElement;
+      area.style.display = radio?.checked ? 'flex' : 'none';
     }
   }
 }
 
-document.getElementById('btn-save-keys')!.addEventListener('click', async () => {
+// Radio change → show/hide model areas
+for (const radio of document.querySelectorAll('input[name="active-provider"]')) {
+  radio.addEventListener('change', () => updateProviderModelVisibility());
+}
+
+// Save provider settings (keys + active provider + model) in one click
+document.getElementById('btn-save-provider-settings')!.addEventListener('click', async () => {
   const keys: ApiKeys = {
-    anthropic:
-      (document.getElementById('settings-key-anthropic') as HTMLInputElement).value.trim() ||
-      undefined,
-    google:
-      (document.getElementById('settings-key-google') as HTMLInputElement).value.trim() ||
-      undefined,
-    openai:
-      (document.getElementById('settings-key-openai') as HTMLInputElement).value.trim() ||
-      undefined,
-    openrouter:
-      (document.getElementById('settings-key-openrouter') as HTMLInputElement).value.trim() ||
-      undefined,
+    anthropic: (document.getElementById('settings-key-anthropic') as HTMLInputElement).value.trim() || undefined,
+    google: (document.getElementById('settings-key-google') as HTMLInputElement).value.trim() || undefined,
+    openai: (document.getElementById('settings-key-openai') as HTMLInputElement).value.trim() || undefined,
+    openrouter: (document.getElementById('settings-key-openrouter') as HTMLInputElement).value.trim() || undefined,
   };
   await sendMsg({ type: 'setApiKeys', keys });
-  alert('API keys saved.');
-});
 
-document.getElementById('btn-save-prefs')!.addEventListener('click', async () => {
-  const provider = (document.getElementById('settings-provider') as HTMLSelectElement).value;
-  const theme = (document.getElementById('theme-select') as HTMLSelectElement).value as 'system' | 'light' | 'dark';
-  const customModel = (document.getElementById('custom-model') as HTMLInputElement).value.trim();
-  const selectModel = (document.getElementById('model-select') as HTMLSelectElement).value;
+  const activeRadio = document.querySelector('input[name="active-provider"]:checked') as HTMLInputElement;
+  const provider = activeRadio?.value || 'anthropic';
+  const customModel = (document.getElementById(`custom-model-${provider}`) as HTMLInputElement)?.value.trim();
+  const selectModel = (document.getElementById(`model-select-${provider}`) as HTMLSelectElement)?.value;
   const model = customModel || selectModel || undefined;
-  await sendMsg({ type: 'setSettings', settings: { activeProvider: provider, theme, model } });
-  applyTheme(theme);
-  alert('Preferences saved.');
+
+  const settingsResult = await sendMsg<{ settings: { theme: string } }>({ type: 'getSettings' });
+  const currentTheme = settingsResult.settings?.theme || 'system';
+  await sendMsg({ type: 'setSettings', settings: { activeProvider: provider, theme: currentTheme, model } });
+  alert('Settings saved.');
 });
 
-// ── Provider change → refresh model list ──
-
-document.getElementById('settings-provider')!.addEventListener('change', async () => {
-  const providerId = (document.getElementById('settings-provider') as HTMLSelectElement).value;
-  const apiKeys = await getCurrentApiKeys();
-  await populateModelSelect(providerId, apiKeys);
+// Save theme separately
+document.getElementById('btn-save-theme')!.addEventListener('click', async () => {
+  const theme = (document.getElementById('theme-select') as HTMLSelectElement).value as 'system' | 'light' | 'dark';
+  const settingsResult = await sendMsg<{ settings: { activeProvider: string; model?: string } }>({ type: 'getSettings' });
+  const current = settingsResult.settings;
+  await sendMsg({ type: 'setSettings', settings: { activeProvider: current?.activeProvider || 'anthropic', theme, model: current?.model } });
+  applyTheme(theme);
+  alert('Theme saved.');
 });
 
 
