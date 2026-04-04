@@ -4046,30 +4046,29 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
 
     const chName = (ch as Record<string, unknown>).name as string || '';
     const chPrompt = (ch as Record<string, unknown>).prompt as string || '';
-    const dirLabel = (ch as Record<string, unknown>).direction === 'bidirectional' ? 'Two-way' : 'Inbound only';
-
-    // Config section: name + prompt (for inbound channels like webhooks)
+    // Determine direction — default based on channel type if not explicitly set
+    const explicitDir = (ch as Record<string, unknown>).direction as string | undefined;
+    const isBidirectional = explicitDir === 'bidirectional' || (!explicitDir && ch.type !== 'webhook');
+    const dirLabel = isBidirectional ? 'Two-way' : 'Inbound only';
     let configHtml = `
-      <details style="margin-top:6px;font-size:var(--text-xs);">
-        <summary style="cursor:pointer;color:var(--text-secondary);user-select:none;">Configure</summary>
-        <div style="margin-top:4px;display:flex;flex-direction:column;gap:6px;">
-          <div>
-            <label style="color:var(--text-muted);font-size:var(--text-xs);">Name</label>
-            <input type="text" class="channel-name-input" data-channel-id="${ch.id}" value="${escapeHtml(chName)}" placeholder="e.g. GitHub Webhooks" style="width:100%;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);">
-          </div>`;
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;font-size:var(--text-xs);">
+        <div>
+          <label style="color:var(--text-muted);">Name</label>
+          <input type="text" class="channel-name-input" data-channel-id="${ch.id}" value="${escapeHtml(chName)}" placeholder="e.g. GitHub Webhooks, Deploy Notifications" style="width:100%;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);">
+        </div>`;
 
-    if ((ch as Record<string, unknown>).direction !== 'bidirectional') {
+    if (!isBidirectional) {
       configHtml += `
-          <div>
-            <label style="color:var(--text-muted);font-size:var(--text-xs);">Prompt (instructions for the agent)</label>
-            <textarea class="channel-prompt-input" data-channel-id="${ch.id}" placeholder="e.g. Log this GitHub event to my journal entries..." style="width:100%;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);min-height:60px;resize:vertical;font-family:var(--font-sans);">${escapeHtml(chPrompt)}</textarea>
-          </div>`;
+        <div>
+          <label style="color:var(--text-muted);">Agent Instructions</label>
+          <p style="color:var(--text-muted);margin:2px 0 4px;">Tell the agent what to do when a message arrives on this channel.</p>
+          <textarea class="channel-prompt-input" data-channel-id="${ch.id}" placeholder="e.g. This is a GitHub webhook. When a push event arrives, log it to my journal. When an issue is filed, add it to my TODO list." style="width:100%;padding:6px 8px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);min-height:80px;resize:vertical;font-family:var(--font-sans);line-height:1.4;">${escapeHtml(chPrompt)}</textarea>
+        </div>`;
     }
 
     configHtml += `
-          <button class="btn btn-primary btn-xs btn-save-channel-config" data-channel-id="${ch.id}">Save</button>
-        </div>
-      </details>`;
+        <div><button class="btn btn-primary btn-xs btn-save-channel-config" data-channel-id="${ch.id}">Save</button></div>
+      </div>`;
 
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;">
