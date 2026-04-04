@@ -4074,8 +4074,13 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
         <div>
           <label style="color:var(--text-muted);">Agent Instructions</label>
           <p style="color:var(--text-muted);margin:2px 0 4px;">Tell the agent what to do when a message arrives on this channel.</p>
-          <textarea class="channel-prompt-input" data-channel-id="${ch.id}" placeholder="e.g. This is a GitHub webhook. When a push event arrives, log it to my journal. When an issue is filed, add it to my TODO list." style="width:100%;padding:6px 8px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);min-height:80px;resize:vertical;font-family:var(--font-sans);line-height:1.4;">${escapeHtml(chPrompt)}</textarea>
-          <button class="btn btn-ghost btn-xs btn-refine-channel-prompt" data-channel-id="${ch.id}" style="margin-top:4px;">Refine with AI</button>
+          <div class="prompt-textarea-wrapper">
+            <textarea class="channel-prompt-input" data-channel-id="${ch.id}" placeholder="e.g. This is a GitHub webhook. When a push event arrives, log it to my journal. When an issue is filed, add it to my TODO list." style="width:100%;padding:6px 8px;padding-bottom:32px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);min-height:80px;resize:vertical;font-family:var(--font-sans);line-height:1.4;">${escapeHtml(chPrompt)}</textarea>
+            <button type="button" class="refine-prompt-btn btn-refine-channel-prompt" data-channel-id="${ch.id}">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M19 15l.75 2.25L22 18l-2.25.75L19 21l-.75-2.25L16 18l2.25-.75L19 15z"/></svg>
+              Refine
+            </button>
+          </div>
         </div>`;
     }
 

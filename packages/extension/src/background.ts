@@ -27,6 +27,8 @@ import type { ProgressUpdate } from './agents/agentic-loop.js';
 import {
   getApiKeys,
   setApiKeys,
+  getSettings,
+  setSettings,
   getScheduledTasks,
   addScheduledTask,
   updateScheduledTaskRun,
@@ -36,6 +38,8 @@ import {
   updateHook,
   removeHook,
 } from './storage/chrome-storage.js';
+import { generateText } from 'ai';
+import { createLanguageModel } from './agents/provider-registry.js';
 import { getMessages } from './storage/shared.js';
 import {
   installSkill,
@@ -1324,15 +1328,12 @@ async function handleOneShotMessage(
         const rawPrompt = msg.prompt as string;
         const context = msg.context as string || '';
 
-        const { getSettings, getApiKeys: getKeys } = await import('./storage/chrome-storage.js');
         const settings = await getSettings();
-        const keys = await getKeys();
+        const keys = await getApiKeys();
         const provider = settings.activeProvider as keyof typeof keys;
         const apiKey = keys[provider];
         if (!apiKey) return { error: `No API key configured for ${settings.activeProvider}. Add one in Global Settings.` };
 
-        const { createLanguageModel } = await import('./agents/provider-registry.js');
-        const { generateText } = await import('ai');
         const model = createLanguageModel(settings.activeProvider, apiKey, settings.model);
 
         const result = await generateText({
