@@ -85,6 +85,7 @@ export async function handlePollAlarm(): Promise<void> {
             channelId: message.channelId,
             replyTo: message.id,
             content: responseContent,
+            metadata: message.metadata,
           };
           await sendReply(config, reply);
         }
