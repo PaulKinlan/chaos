@@ -4206,6 +4206,7 @@ function showPairingDialog(botUsername: string, pairingCode: string): void {
   dialog.style.cssText = `
     background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default);
     border-radius:12px;padding:0;max-width:440px;width:90%;font-family:var(--font-sans);
+    margin:auto;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
   `;
   dialog.innerHTML = `
     <div style="padding:24px;">
@@ -4233,21 +4234,26 @@ function showPairingDialog(botUsername: string, pairingCode: string): void {
         <div style="display:flex;gap:12px;align-items:flex-start;">
           <div style="background:var(--bg-surface);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);">3</div>
           <div>
-            <div style="font-weight:500;font-size:var(--text-sm);">You're paired!</div>
-            <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">The bot will confirm authorization. You can then send messages and your CHAOS agent will respond.</div>
+            <div style="font-weight:500;font-size:var(--text-sm);">Wait for confirmation</div>
+            <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">The bot will reply confirming you're authorized.</div>
           </div>
         </div>
       </div>
-      <div style="margin-top:20px;display:flex;justify-content:flex-end;">
+      <div id="pairing-status" style="margin-top:16px;padding:8px 12px;border-radius:6px;background:var(--bg-surface);font-size:var(--text-xs);color:var(--text-secondary);display:flex;align-items:center;gap:8px;">
+        <span class="spinner" style="width:14px;height:14px;border:2px solid var(--border-default);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></span>
+        Waiting for you to send the code...
+      </div>
+      <div style="margin-top:16px;display:flex;justify-content:flex-end;">
         <button class="btn btn-primary" id="btn-close-pairing-dialog">Done</button>
       </div>
     </div>
+    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
   `;
 
   document.body.appendChild(dialog);
   dialog.showModal();
 
-  // Style the backdrop
+  // Click backdrop to close
   dialog.addEventListener('click', (e) => {
     if (e.target === dialog) dialog.close();
   });
@@ -4264,8 +4270,45 @@ function showPairingDialog(botUsername: string, pairingCode: string): void {
     dialog.close();
   });
 
+  // Poll for pairing completion — check if the pairingCode was consumed
+  let pollCount = 0;
+  const maxPolls = 60; // 5 minutes at 5s intervals
+  const pairingPollInterval = setInterval(async () => {
+    pollCount++;
+    if (pollCount > maxPolls) {
+      clearInterval(pairingPollInterval);
+      return;
+    }
+    try {
+      const settings = await getRelaySettings();
+      if (!settings) return;
+      const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
+      const channels = await relayListChannels(config);
+      // Find the channel for this bot and check if pairingCode is gone
+      const ch = channels.find(c => c.metadata?.['botUsername'] === botUsername);
+      if (ch && !ch.metadata?.['pairingCode']) {
+        // Pairing completed!
+        clearInterval(pairingPollInterval);
+        const statusEl = dialog.querySelector('#pairing-status');
+        if (statusEl) {
+          statusEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg> <span style="color:#3fb950;font-weight:500;">Paired successfully!</span>';
+        }
+        channelLog('Telegram bot paired successfully');
+        // Auto-close after a brief delay and refresh
+        setTimeout(() => {
+          dialog.close();
+          renderChannelsUI();
+        }, 1500);
+      }
+    } catch {
+      // Ignore poll errors
+    }
+  }, 5000);
+
   dialog.addEventListener('close', () => {
+    clearInterval(pairingPollInterval);
     dialog.remove();
+    renderChannelsUI(); // Always refresh on close
   });
 }
 
