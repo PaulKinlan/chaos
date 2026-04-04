@@ -300,9 +300,16 @@ function renderAgentTabs(): void {
       }
     });
 
-    agentItem.appendChild(btn);
+    const details = document.createElement('details');
+    details.open = true; // All open by default
+    details.className = 'sidebar-agent-details';
+    btn.setAttribute('slot', 'summary'); // semantic only
+    const summary = document.createElement('summary');
+    summary.className = 'sidebar-agent-summary';
+    summary.appendChild(btn);
+    details.appendChild(summary);
 
-    // Sub-items always visible for all agents
+    // Sub-items
     const isActive = agent.id === activeAgentId;
     const sub = document.createElement('div');
     sub.className = 'sidebar-agent-sub';
@@ -333,9 +340,9 @@ function renderAgentTabs(): void {
 
     sub.appendChild(memBtn);
     sub.appendChild(settingsBtn);
-    agentItem.appendChild(sub);
+    details.appendChild(sub);
 
-    sidebarAgentList.appendChild(agentItem);
+    sidebarAgentList.appendChild(details);
   }
 
   // Also update the old tab bar for any code that still references it

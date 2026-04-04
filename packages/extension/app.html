@@ -525,6 +525,20 @@
       font-size: var(--text-xs);
       padding: var(--sp-1) var(--sp-2);
     }
+    .sidebar-agent-details {
+      border: none;
+    }
+    .sidebar-agent-details > summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    .sidebar-agent-details > summary::-webkit-details-marker {
+      display: none;
+    }
+    .sidebar-agent-details > summary::marker {
+      display: none;
+      content: '';
+    }
     .sidebar.collapsed .sidebar-agent-item .agent-name {
       display: none;
     }
