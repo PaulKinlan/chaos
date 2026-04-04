@@ -2920,16 +2920,16 @@ async function loadAgentSettings(): Promise<void> {
         </div>
       </div>
 
-      <div class="agent-settings-section">
-        <h3>Tools</h3>
-        <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">
+      <details class="agent-settings-section">
+        <summary style="cursor:pointer;user-select:none;"><h3 style="display:inline;">Tools</h3></summary>
+        <p style="font-size:var(--text-xs);color:var(--text-muted);margin:var(--sp-3) 0;">
           Configure which tools this agent can use. read_file and list_directory are always enabled.
         </p>
         <div id="agent-tools-config"></div>
         <div style="margin-top:var(--sp-3);">
           <button class="btn btn-primary btn-sm" id="btn-save-tools">Save Tool Configuration</button>
         </div>
-      </div>
+      </details>
 
       <div class="agent-settings-section">
         <h3>Skills</h3>
@@ -3049,9 +3049,10 @@ async function loadAgentSettings(): Promise<void> {
     for (const cat of categoryOrder) {
       const tools = toolsByCategory.get(cat);
       if (!tools || tools.length === 0) continue;
-      toolsHtml += `<div class="tools-category">`;
-      toolsHtml += `<div class="tools-category-label">${categoryLabels[cat] || cat}</div>`;
-      toolsHtml += `<div class="tools-grid">`;
+      const enabledCount = tools.filter(t => MINIMUM_TOOLS.includes(t.name) || !disabledSet.has(t.name)).length;
+      toolsHtml += `<details class="tools-category" style="border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;margin-bottom:var(--sp-2);">`;
+      toolsHtml += `<summary style="padding:8px 12px;cursor:pointer;font-size:var(--text-sm);font-weight:500;color:var(--text-primary);background:var(--bg-raised);user-select:none;">${categoryLabels[cat] || cat} <span style="font-size:var(--text-xs);color:var(--text-muted);">(${enabledCount}/${tools.length})</span></summary>`;
+      toolsHtml += `<div class="tools-grid" style="padding:8px;">`;
       for (const t of tools) {
         const isMinimum = MINIMUM_TOOLS.includes(t.name);
         const isChecked = isMinimum || !disabledSet.has(t.name);
@@ -3064,7 +3065,7 @@ async function loadAgentSettings(): Promise<void> {
         }
         toolsHtml += `</label>`;
       }
-      toolsHtml += `</div></div>`;
+      toolsHtml += `</div></details>`;
     }
     toolsContainer.innerHTML = toolsHtml;
 
