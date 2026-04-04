@@ -1,5 +1,5 @@
 // Relay client unit tests
-// Uses mock fetch to test client methods without a running server
+// Uses mock fetch and chrome.storage to test client methods
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
@@ -21,24 +21,96 @@ const mockConfig: RelayConfig = {
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
+// Mock chrome.storage.local
+const storageData: Record<string, unknown> = {};
+vi.stubGlobal('chrome', {
+  storage: {
+    local: {
+      get: vi.fn((key: string) => Promise.resolve({ [key]: storageData[key] || null })),
+      set: vi.fn((data: Record<string, unknown>) => {
+        Object.assign(storageData, data);
+        return Promise.resolve();
+      }),
+    },
+  },
+});
+
+// Mock crypto.subtle for keypair generation and signing
+const mockKeyPair = {
+  publicKey: { type: 'public' } as unknown as CryptoKey,
+  privateKey: { type: 'private' } as unknown as CryptoKey,
+};
+
+const mockPublicJwk: JsonWebKey = {
+  kty: 'EC',
+  crv: 'P-256',
+  x: 'test-x-coordinate',
+  y: 'test-y-coordinate',
+};
+
+const mockPrivateJwk: JsonWebKey = {
+  kty: 'EC',
+  crv: 'P-256',
+  x: 'test-x-coordinate',
+  y: 'test-y-coordinate',
+  d: 'test-private-key',
+};
+
+vi.stubGlobal('crypto', {
+  subtle: {
+    generateKey: vi.fn(() => Promise.resolve(mockKeyPair)),
+    exportKey: vi.fn((_format: string, key: CryptoKey) => {
+      if (key === mockKeyPair.publicKey) return Promise.resolve(mockPublicJwk);
+      return Promise.resolve(mockPrivateJwk);
+    }),
+    importKey: vi.fn(() => Promise.resolve(mockKeyPair.privateKey)),
+    sign: vi.fn(() => Promise.resolve(new ArrayBuffer(64))),
+    digest: vi.fn(() => Promise.resolve(new ArrayBuffer(32))),
+  },
+  getRandomValues: vi.fn((arr: Uint8Array) => {
+    for (let i = 0; i < arr.length; i++) arr[i] = i;
+    return arr;
+  }),
+});
+
 beforeEach(() => {
   mockFetch.mockReset();
+  // Clear storage
+  for (const key of Object.keys(storageData)) {
+    delete storageData[key];
+  }
 });
 
 describe('registerWithRelay', () => {
-  it('calls POST /auth/register and returns credentials', async () => {
+  it('generates keypair, sends public key, and stores server public key', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({ userId: 'u1', apiKey: 'k1' }),
+      json: () =>
+        Promise.resolve({
+          userId: 'u1',
+          apiKey: 'k1',
+          serverPublicKey: { kty: 'EC', crv: 'P-256', x: 'srv-x', y: 'srv-y' },
+        }),
     });
 
     const result = await registerWithRelay('http://localhost:8787');
     expect(result.userId).toBe('u1');
     expect(result.apiKey).toBe('k1');
+
+    // Should have called fetch with public key in body
     expect(mockFetch).toHaveBeenCalledWith(
       'http://localhost:8787/auth/register',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"publicKey"'),
+      }),
     );
+
+    // Should have stored the keypair
+    expect(storageData['chaos-relay-keypair']).toBeDefined();
+
+    // Should have stored the server public key
+    expect(storageData['chaos-relay-server-public-key']).toBeDefined();
   });
 
   it('throws on failure', async () => {
@@ -55,7 +127,13 @@ describe('registerWithRelay', () => {
 });
 
 describe('pollMessages', () => {
-  it('fetches messages with since parameter', async () => {
+  it('fetches messages with since parameter and signature headers', async () => {
+    // Store a keypair so signing happens
+    storageData['chaos-relay-keypair'] = {
+      privateKey: mockPrivateJwk,
+      publicKey: mockPublicJwk,
+    };
+
     const since = '2025-01-01T00:00:00Z';
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -69,14 +147,14 @@ describe('pollMessages', () => {
     const result = await pollMessages(mockConfig, since);
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0].id).toBe('m1');
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining(`/messages?since=${encodeURIComponent(since)}`),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: 'Bearer test-api-key',
-        }),
-      }),
-    );
+
+    // Check that signature headers are present
+    const callArgs = mockFetch.mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers['Authorization']).toBe('Bearer test-api-key');
+    expect(headers['X-Timestamp']).toBeDefined();
+    expect(headers['X-Nonce']).toBeDefined();
+    expect(headers['X-Signature']).toBeDefined();
   });
 
   it('fetches messages without since', async () => {

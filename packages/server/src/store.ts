@@ -1,5 +1,5 @@
 // In-memory message store for the relay server
-// Phase 1: no database, just a Map. Good enough for testing.
+// Phase 2: adds message expiry (24 hours) and periodic cleanup
 
 export interface StoredMessage {
   id: string;
@@ -13,12 +13,78 @@ export interface StoredMessage {
 }
 
 const MAX_MESSAGES_PER_USER = 100;
+const MESSAGE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;  // 10 minutes
 
 // userId -> messages (most recent last)
 const messageStore: Map<string, StoredMessage[]> = new Map();
 
 // channelId -> responses waiting to be picked up
 const responseStore: Map<string, StoredMessage[]> = new Map();
+
+// Periodic cleanup timer
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start the periodic message cleanup timer.
+ * Call once at server startup.
+ */
+export function startMessageCleanup(): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    cleanupExpiredMessages();
+  }, CLEANUP_INTERVAL_MS);
+}
+
+/**
+ * Stop the cleanup timer (for graceful shutdown).
+ */
+export function stopMessageCleanup(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
+}
+
+/**
+ * Remove messages older than 24 hours from all stores.
+ */
+export function cleanupExpiredMessages(): number {
+  const cutoff = Date.now() - MESSAGE_TTL_MS;
+  let removed = 0;
+
+  for (const [userId, msgs] of messageStore) {
+    const before = msgs.length;
+    const filtered = msgs.filter((m) => new Date(m.timestamp).getTime() > cutoff);
+    if (filtered.length < before) {
+      removed += before - filtered.length;
+      if (filtered.length === 0) {
+        messageStore.delete(userId);
+      } else {
+        messageStore.set(userId, filtered);
+      }
+    }
+  }
+
+  for (const [channelId, msgs] of responseStore) {
+    const before = msgs.length;
+    const filtered = msgs.filter((m) => new Date(m.timestamp).getTime() > cutoff);
+    if (filtered.length < before) {
+      removed += before - filtered.length;
+      if (filtered.length === 0) {
+        responseStore.delete(channelId);
+      } else {
+        responseStore.set(channelId, filtered);
+      }
+    }
+  }
+
+  if (removed > 0) {
+    console.log(`[store] Cleaned up ${removed} expired messages`);
+  }
+
+  return removed;
+}
 
 export function addMessage(userId: string, msg: StoredMessage): void {
   let msgs = messageStore.get(userId);

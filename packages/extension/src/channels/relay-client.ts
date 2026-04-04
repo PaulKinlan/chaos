@@ -1,42 +1,118 @@
 // HTTP client for the CHAOS relay server
-// Used by the extension to communicate with the relay
+// Uses ECDSA P-256 request signing for authentication
 
 import type { ChannelResponse, ChannelConfig, RelayPollResponse } from './types.js';
+import {
+  generateKeyPair,
+  storeKeyPair,
+  loadKeyPair,
+  signRequest,
+  generateNonce,
+  storeServerPublicKey,
+} from './crypto.js';
 
 export interface RelayConfig {
   serverUrl: string;
   apiKey: string;
 }
 
+/**
+ * Signed fetch wrapper — adds ECDSA signature headers to every request.
+ *
+ * Headers added:
+ *   X-Timestamp: ISO 8601 timestamp
+ *   X-Nonce: random 16 bytes hex
+ *   X-Signature: base64-encoded ECDSA-SHA256 signature
+ *   Authorization: Bearer {apiKey}
+ */
+async function signedFetch(
+  url: string,
+  options: RequestInit & { relayConfig: RelayConfig },
+): Promise<Response> {
+  const { relayConfig, ...fetchOptions } = options;
+  const parsedUrl = new URL(url);
+  const path = parsedUrl.pathname;
+
+  // Prepare headers
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${relayConfig.apiKey}`,
+    ...(fetchOptions.headers as Record<string, string> || {}),
+  };
+
+  // Try to load keypair and sign
+  const keyPair = await loadKeyPair();
+  if (keyPair) {
+    const timestamp = new Date().toISOString();
+    const nonce = generateNonce();
+    const body = typeof fetchOptions.body === 'string' ? fetchOptions.body : '';
+
+    const signature = await signRequest(
+      keyPair.privateKey,
+      timestamp,
+      nonce,
+      path,
+      body,
+    );
+
+    headers['X-Timestamp'] = timestamp;
+    headers['X-Nonce'] = nonce;
+    headers['X-Signature'] = signature;
+  }
+
+  return fetch(url, {
+    ...fetchOptions,
+    headers,
+  });
+}
+
+/**
+ * Internal helper for authenticated relay requests
+ */
 async function relayFetch(
   config: RelayConfig,
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
   const url = `${config.serverUrl.replace(/\/$/, '')}${path}`;
-  const resp = await fetch(url, {
+  return signedFetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-      ...options.headers,
-    },
+    relayConfig: config,
   });
-  return resp;
 }
 
+/**
+ * Register with the relay server.
+ * Generates a keypair if none exists, sends the public key, and stores credentials.
+ */
 export async function registerWithRelay(
   serverUrl: string,
 ): Promise<{ userId: string; apiKey: string }> {
+  // Generate keypair if none exists
+  let keyPair = await loadKeyPair();
+  if (!keyPair) {
+    keyPair = await generateKeyPair();
+    await storeKeyPair(keyPair);
+  }
+
   const url = `${serverUrl.replace(/\/$/, '')}/auth/register`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ publicKey: keyPair.publicKey }),
   });
   if (!resp.ok) {
     throw new Error(`Registration failed: ${resp.status} ${resp.statusText}`);
   }
-  return resp.json();
+
+  const data = await resp.json();
+
+  // Store the server's public key if provided (TOFU — Trust On First Use)
+  if (data.serverPublicKey) {
+    await storeServerPublicKey(data.serverPublicKey);
+  }
+
+  return { userId: data.userId, apiKey: data.apiKey };
 }
 
 export async function pollMessages(
