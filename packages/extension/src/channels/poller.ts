@@ -3,7 +3,7 @@
 // WebSocket provides the fast path; alarm polling is the reliable fallback
 
 import { getRelaySettings, setRelaySettings, updateLastPollTimestamp } from './config.js';
-import { pollMessages, sendReply, registerWithRelay } from './relay-client.js';
+import { pollMessages, sendReply, registerWithRelay, listChannels } from './relay-client.js';
 import {
   connectWebSocket,
   disconnectWebSocket,
@@ -87,6 +87,26 @@ function markProcessed(id: string): boolean {
   return true; // first time seeing this
 }
 
+// Cache of known channel IDs — refreshed periodically
+let knownChannelIds: Set<string> | null = null;
+let channelCacheTime = 0;
+const CHANNEL_CACHE_TTL = 60_000; // 1 minute
+
+async function getKnownChannels(config: { serverUrl: string; apiKey: string }): Promise<Set<string>> {
+  if (knownChannelIds && Date.now() - channelCacheTime < CHANNEL_CACHE_TTL) {
+    return knownChannelIds;
+  }
+  try {
+    const channels = await listChannels(config);
+    knownChannelIds = new Set(channels.map(c => c.id));
+    channelCacheTime = Date.now();
+  } catch {
+    // If we can't fetch, use stale cache or empty set
+    if (!knownChannelIds) knownChannelIds = new Set();
+  }
+  return knownChannelIds;
+}
+
 async function processMessage(message: ChannelMessage): Promise<void> {
   // Deduplicate: skip if we've already processed this message
   if (!markProcessed(message.id)) {
@@ -106,6 +126,14 @@ async function processMessage(message: ChannelMessage): Promise<void> {
     serverUrl: settings.serverUrl,
     apiKey: settings.apiKey,
   };
+
+  // Validate: skip messages for channels we don't have configured
+  const known = await getKnownChannels(config);
+  if (!known.has(message.channelId)) {
+    console.log(`[poller] Skipping message for unknown/removed channel ${message.channelId.slice(0, 8)}`);
+    broadcastChannelLog(`Skipped message for unconfigured channel ${message.channelId.slice(0, 8)}`);
+    return;
+  }
 
   broadcastChannelLog(`Processing message ${message.id.slice(0, 8)} from ${message.channelType}`);
 
