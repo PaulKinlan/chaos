@@ -771,21 +771,29 @@ async function executeAssignedTask(agentId: string, taskId: string): Promise<voi
       try { port.postMessage({ type: 'agenticDone', result, agentId }); } catch { /* */ }
     }
 
-    // Send result back to the master via inter-agent messaging
+    // Send result back to whoever created/assigned the task
     try {
       const { appendMessage } = await import('./storage/shared.js');
+      // The task's creator is tracked — find who assigned it by looking at the task events
+      // For now, reply to the master agent (most common case) or the task assigner
       const agents = await listAgents();
       const master = agents.find(a => a.master);
-      if (master) {
+      // Send to the agent that created the task (createdBy on the agent meta, or master)
+      const { meta: selfMeta } = await getAgent(agentId);
+      const replyTo = selfMeta.createdBy || master?.id;
+      if (replyTo) {
         await appendMessage({
           id: crypto.randomUUID(),
           from: agentId,
-          to: master.id,
+          to: replyTo,
           body: `Task "${taskSubject}" completed.\n\nResult: ${result?.slice(0, 500) || 'Done'}`,
           timestamp: new Date().toISOString(),
         });
+        console.log(`[background] Sent completion message from ${agentId} to ${replyTo}`);
       }
-    } catch { /* */ }
+    } catch (err) {
+      console.error('[background] Failed to send completion message:', err);
+    }
 
     console.log(`[background] Task ${taskId} completed by agent ${agentId}`);
   } catch (err) {

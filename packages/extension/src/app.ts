@@ -347,7 +347,20 @@ function renderAgentTabs(): void {
       renderAgentTabs();
     });
 
+    const msgsBtn = document.createElement('button');
+    msgsBtn.className = 'sidebar-item' + (isActive && activeView === 'messages' ? ' active' : '');
+    msgsBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><span class="label">Messages</span>';
+    msgsBtn.addEventListener('click', () => {
+      if (activeAgentId !== agent.id) switchToAgent(agent.id);
+      activeView = 'messages';
+      updateHash();
+      updateViewVisibility();
+      loadCurrentViewData();
+      renderAgentTabs();
+    });
+
     sub.appendChild(memBtn);
+    sub.appendChild(msgsBtn);
     sub.appendChild(tasksBtn);
     sub.appendChild(settingsBtn);
     details.appendChild(sub);
