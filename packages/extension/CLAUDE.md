@@ -44,3 +44,5 @@ When in doubt:
 - Chrome permissions should be optional where possible
 - All Chrome API tools should check permissions before use
 - Use inline SVG icons, never emoji, for UI elements
+- **NEVER use `alert()`, `confirm()`, or `prompt()`** — use `<dialog>` elements instead. The native dialogs break the UI aesthetic and block the thread. Use the existing `showConfirm()` helper or create a new `<dialog>` for custom flows.
+- **NEVER use `innerHTML` for user-provided content** — always escape with `escapeHtml()` first

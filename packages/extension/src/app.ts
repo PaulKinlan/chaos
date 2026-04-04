@@ -2595,12 +2595,13 @@ function renderTasks(): void {
 
   // Wire up delete buttons for collaborative tasks
   container.querySelectorAll<HTMLButtonElement>('.delete-task-btn').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const taskId = btn.dataset.deleteTaskId!;
-      if (!confirm('Delete this task? This cannot be undone.')) return;
-      await sendMsg({ type: 'deleteTask', taskId });
-      await loadTasks();
+      showConfirm('Delete Task', 'Delete this task? This cannot be undone.', async () => {
+        await sendMsg({ type: 'deleteTask', taskId });
+        await loadTasks();
+      });
     });
   });
 
@@ -2803,9 +2804,10 @@ function renderArtifacts(): void {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const artifactPath = btn.dataset.artifactPath!;
-      if (!confirm('Delete this artifact? This cannot be undone.')) return;
-      await sendMsg({ type: 'deleteArtifact', artifactPath });
-      await loadArtifacts();
+      showConfirm('Delete Artifact', 'Delete this artifact? This cannot be undone.', async () => {
+        await sendMsg({ type: 'deleteArtifact', artifactPath });
+        await loadArtifacts();
+      });
     });
   });
 }
@@ -2847,9 +2849,24 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
     </div>
     <div class="task-detail-field">
       <div class="task-detail-label">Content</div>
-      <div class="modal-content-preview">${escapeHtml(fileContent)}</div>
+      <div style="position:relative;">
+        <button id="artifact-copy-btn" title="Copy to clipboard" style="position:absolute;top:6px;right:6px;background:var(--bg-surface);border:1px solid var(--border-default);border-radius:4px;padding:4px;cursor:pointer;color:var(--text-muted);z-index:1;line-height:1;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <div class="modal-content-preview">${escapeHtml(fileContent)}</div>
+      </div>
     </div>
   `;
+
+  document.getElementById('artifact-copy-btn')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(fileContent).then(() => {
+      const btn = document.getElementById('artifact-copy-btn')!;
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      setTimeout(() => {
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      }, 2000);
+    });
+  });
 
   modal.classList.add('visible');
 }
@@ -3696,7 +3713,7 @@ document.getElementById('btn-save-provider-settings')!.addEventListener('click',
   const settingsResult = await sendMsg<{ settings: { theme: string } }>({ type: 'getSettings' });
   const currentTheme = settingsResult.settings?.theme || 'system';
   await sendMsg({ type: 'setSettings', settings: { activeProvider: provider, theme: currentTheme, model } });
-  alert('Settings saved.');
+  channelLog('Settings saved.');
 });
 
 // Save theme separately
@@ -3706,7 +3723,7 @@ document.getElementById('btn-save-theme')!.addEventListener('click', async () =>
   const current = settingsResult.settings;
   await sendMsg({ type: 'setSettings', settings: { activeProvider: current?.activeProvider || 'anthropic', theme, model: current?.model } });
   applyTheme(theme);
-  alert('Theme saved.');
+  { const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Theme saved.'); }
 });
 
 
@@ -3913,7 +3930,7 @@ document.getElementById('btn-save-permissions')!.addEventListener('click', async
     const level = sel.value as PermissionLevel;
     await setPermission(toolName, level);
   }
-  alert('Tool permissions saved.');
+  { const c = getFocusedColumn(); if (c) addChatSystemMessageToColumn(c, 'Tool permissions saved.'); }
 });
 
 // ══════════════════════════════════════════
@@ -4145,7 +4162,7 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         channelLog(`Failed to remove channel: ${errMsg}`);
-        alert(`Failed to remove channel: ${errMsg}`);
+        channelLog(`Failed to remove channel: ${errMsg}`);
       }
     });
   });
@@ -4164,7 +4181,7 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         channelLog(`Failed to update allowlist: ${errMsg}`);
-        alert(`Failed: ${errMsg}`);
+        channelLog(`Failed: ${errMsg}`);
       }
     });
   });
@@ -4197,7 +4214,7 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         channelLog(`Failed to update channel: ${errMsg}`);
-        alert(`Failed: ${errMsg}`);
+        channelLog(`Failed: ${errMsg}`);
       }
     });
   });
@@ -4292,7 +4309,7 @@ document.getElementById('btn-add-webhook')!.addEventListener('click', async () =
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     channelLog(`Failed to add webhook channel: ${errMsg}`);
-    alert(`Failed to add channel: ${errMsg}`);
+    channelLog(`Failed to add channel: ${errMsg}`);
   }
 });
 
