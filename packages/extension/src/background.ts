@@ -64,7 +64,7 @@ import {
   ensureContentExtraction,
   ensurePermission,
 } from './permissions.js';
-import { initHooksListeners } from './hooks/listener.js';
+import { initHooksListeners, setHookUiPortGetter } from './hooks/listener.js';
 import {
   isChannelPollAlarm,
   handlePollAlarm,
@@ -230,6 +230,7 @@ chrome.runtime.onStartup?.addListener(() => {
 
 // ── Initialize hooks event listeners ──
 initHooksListeners();
+setHookUiPortGetter(() => activeUiPort);
 
 // ── Context menus ──
 

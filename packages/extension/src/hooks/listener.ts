@@ -28,20 +28,67 @@ function globToRegex(pattern: string): RegExp {
 
 // ── Hook execution ──
 
+// Set by background.ts so hooks can stream progress to the UI
+let uiPortGetter: (() => chrome.runtime.Port | null) | null = null;
+
+export function setHookUiPortGetter(getter: () => chrome.runtime.Port | null): void {
+  uiPortGetter = getter;
+}
+
 async function executeHook(hook: Hook, contextMessage: string): Promise<void> {
   try {
     const fullPrompt = `[Hook triggered: ${hook.description}]\n\nEvent context: ${contextMessage}\n\nInstructions: ${hook.prompt}`;
+    const port = uiPortGetter?.() ?? null;
 
-    await runAgenticLoop({
+    // Notify UI to open a column for this hook
+    if (port) {
+      try {
+        port.postMessage({
+          type: 'channelMessageReceived',
+          agentId: hook.agentId,
+          channelLabel: `Hook`,
+          from: hook.description,
+          content: contextMessage,
+          channelType: 'hook',
+          channelId: hook.id,
+        });
+        port.postMessage({ type: 'agenticStart', agentId: hook.agentId });
+      } catch { /* port disconnected */ }
+    }
+
+    console.log(`[hooks] Executing hook "${hook.description}" for agent ${hook.agentId}`);
+
+    const result = await runAgenticLoop({
       agentId: hook.agentId,
       task: fullPrompt,
+      onProgress: port ? (update) => {
+        try {
+          port.postMessage({
+            type: 'agenticProgress',
+            agentId: hook.agentId,
+            progressType: update.type,
+            content: update.content,
+            toolName: update.toolName,
+            toolArgs: update.toolArgs,
+            toolResult: update.toolResult,
+            iteration: update.iteration,
+            totalIterations: update.totalIterations,
+          });
+        } catch { /* port disconnected */ }
+      } : undefined,
     });
+
+    if (port) {
+      try { port.postMessage({ type: 'agenticDone', result, agentId: hook.agentId }); } catch { /* */ }
+    }
 
     // Update trigger stats
     await updateHook(hook.id, {
       lastTriggeredAt: new Date().toISOString(),
       triggerCount: hook.triggerCount + 1,
     });
+
+    console.log(`[hooks] Hook "${hook.description}" completed`);
   } catch (err) {
     console.error(`Hook "${hook.description}" (${hook.id}) failed:`, err);
   }
