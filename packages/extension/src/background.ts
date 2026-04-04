@@ -389,10 +389,15 @@ function stopKeepalive(): void {
 
 // ── Port-based streaming communication ──
 
+// Track the active UI port so channel messages can stream progress to the UI
+let activeUiPort: chrome.runtime.Port | null = null;
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'chaos-sidepanel') return;
+  activeUiPort = port;
 
   port.onDisconnect.addListener(() => {
+    if (activeUiPort === port) activeUiPort = null;
     // Cancel any active agent loop for this port
     const controller = activeAbortControllers.get(port);
     if (controller) {
@@ -1503,16 +1508,67 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 setMessageHandler(async (message) => {
   // Find an agent to handle this channel message
-  // For now, use the default agent or the first available one
   const agents = await listAgents();
   if (agents.length === 0) return null;
 
-  // Use the first agent (TODO: use the channel's assigned agentId)
-  const agent = agents[0];
+  // Route to master agent, or first available
+  const master = agents.find((a) => a.master) || agents[0];
+  const task = `You received a message from an external channel (${message.channelType}).\n\nFrom: ${message.from}\nChannel: ${message.channelId}\nMessage:\n${message.content}\n\nRespond to this message.`;
+
+  // Notify UI to open a channel column (if UI is open)
+  const port = activeUiPort;
+  if (port) {
+    const channelLabel = message.channelType === 'telegram'
+      ? `Telegram`
+      : message.channelType.charAt(0).toUpperCase() + message.channelType.slice(1);
+
+    port.postMessage({
+      type: 'channelMessageReceived',
+      agentId: master.id,
+      channelLabel,
+      from: message.from,
+      content: message.content,
+      channelType: message.channelType,
+      channelId: message.channelId,
+    });
+  }
+
+  // Signal UI that agentic loop is starting
+  if (port) {
+    try { port.postMessage({ type: 'agenticStart', agentId: master.id }); } catch { /* */ }
+  }
+
+  // Run the agentic loop — stream progress to UI if available
   const result = await runAgenticLoop({
-    agentId: agent.id,
-    task: `You received a message from an external channel (${message.channelType}).\n\nFrom: ${message.from}\nChannel: ${message.channelId}\nMessage:\n${message.content}\n\nRespond to this message.`,
+    agentId: master.id,
+    task,
+    onProgress: port ? (update: ProgressUpdate) => {
+      try {
+        port.postMessage({
+          type: 'agenticProgress',
+          agentId: master.id,
+          progressType: update.type,
+          content: update.content,
+          toolName: update.toolName,
+          toolArgs: update.toolArgs,
+          toolResult: update.toolResult,
+          iteration: update.iteration,
+          totalIterations: update.totalIterations,
+        });
+      } catch {
+        // Port disconnected
+      }
+    } : undefined,
   });
+
+  if (port) {
+    try {
+      port.postMessage({ type: 'agenticDone', result, agentId: master.id });
+    } catch {
+      // Port disconnected
+    }
+  }
+
   return result || null;
 });
 

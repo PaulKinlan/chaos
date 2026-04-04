@@ -712,6 +712,31 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
     }
 
+    case 'channelMessageReceived': {
+      // Open a new column for the incoming channel message
+      const agentId = msg.agentId as string;
+      const channelLabel = msg.channelLabel as string || 'Channel';
+      const from = msg.from as string || 'unknown';
+      const content = msg.content as string || '';
+
+      const col = addColumn(agentId, true);
+      if (col) {
+        // Rename the column header to show channel name
+        const headerName = col.columnEl.querySelector('.column-agent-name');
+        if (headerName) headerName.textContent = `${channelLabel}: ${from}`;
+
+        // Show the incoming message
+        const incomingEl = document.createElement('div');
+        incomingEl.className = 'chat-message user-message';
+        const preview = content.length > 500 ? content.slice(0, 500) + '...' : content;
+        incomingEl.innerHTML = `<strong style="font-size:var(--text-xs);color:var(--text-muted);">${escapeHtml(from)} via ${escapeHtml(channelLabel)}</strong><br>${escapeHtml(preview)}`;
+        col.messagesEl.appendChild(incomingEl);
+        columnScrollToBottom(col);
+        focusedColumnId = col.id;
+      }
+      break;
+    }
+
     case 'agenticStart': {
       const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
       if (col) {
