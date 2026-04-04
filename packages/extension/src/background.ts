@@ -658,6 +658,51 @@ async function handleChat(
   }
 }
 
+/** Wake an agent to process a new inter-agent message. */
+async function wakeAgentForMessage(agentId: string, fromAgentId: string, body: string): Promise<void> {
+  console.log(`[background] Waking agent ${agentId} for message from ${fromAgentId}`);
+
+  const agents = await listAgents();
+  const sender = agents.find(a => a.id === fromAgentId);
+  const senderName = sender?.name || fromAgentId;
+
+  const port = activeUiPort;
+  if (port) {
+    try { port.postMessage({ type: 'agenticStart', agentId }); } catch { /* */ }
+  }
+
+  startKeepalive();
+  try {
+    const result = await runAgenticLoop({
+      agentId,
+      task: `You received a message from another agent.\n\nFrom: ${senderName}\nMessage: ${body}\n\nProcess this message and take any appropriate action. If the message reports task completion, review the results. If it asks you to do something, do it.`,
+      onProgress: port ? (update: ProgressUpdate) => {
+        try {
+          port.postMessage({
+            type: 'agenticProgress',
+            agentId,
+            progressType: update.type,
+            content: update.content,
+            toolName: update.toolName,
+            toolArgs: update.toolArgs,
+            toolResult: update.toolResult,
+            iteration: update.iteration,
+            totalIterations: update.totalIterations,
+          });
+        } catch { /* */ }
+      } : undefined,
+    });
+
+    if (port) {
+      try { port.postMessage({ type: 'agenticDone', result, agentId }); } catch { /* */ }
+    }
+  } catch (err) {
+    console.error(`[background] Agent ${agentId} message processing failed:`, err);
+  } finally {
+    stopKeepalive();
+  }
+}
+
 /** Execute an assigned task: update status, stream to UI, mark complete/failed. */
 async function executeAssignedTask(agentId: string, taskId: string): Promise<void> {
   console.log(`[background] Executing assigned task: agent=${agentId}, task=${taskId}`);
@@ -1209,6 +1254,34 @@ chrome.runtime.onMessage.addListener(
     // Handle assigned task execution (fire-and-forget, no response needed)
     if (msgType === 'executeAssignedTask') {
       executeAssignedTask(msg.agentId as string, msg.taskId as string);
+      return false;
+    }
+    // Handle inter-agent message: notify UI and wake the recipient
+    if (msgType === 'interAgentMessage') {
+      const to = msg.to as string;
+      const from = msg.from as string;
+      const body = msg.body as string;
+      console.log(`[background] Inter-agent message: ${from} → ${to}`);
+
+      // Notify UI
+      if (activeUiPort) {
+        try {
+          activeUiPort.postMessage({
+            type: 'channelMessageReceived',
+            agentId: to,
+            channelLabel: 'Agent Message',
+            from: from,
+            content: body.slice(0, 200),
+            channelType: 'agent-message',
+            channelId: `msg-${msg.messageId}`,
+          });
+        } catch { /* */ }
+      }
+
+      // Wake the recipient agent to process the message
+      wakeAgentForMessage(to, from, body).catch(
+        (err) => console.error(`[background] Failed to wake agent ${to}:`, err),
+      );
       return false;
     }
     // Forward sub-agent creation to UI so it opens a column

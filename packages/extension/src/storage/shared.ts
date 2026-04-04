@@ -22,6 +22,19 @@ const ARTIFACTS_PATH = 'shared/artifacts.jsonl';
 export async function appendMessage(msg: AgentMessage): Promise<void> {
   const line = JSON.stringify(msg) + '\n';
   await opfs.appendFile(MESSAGES_PATH, line);
+
+  // Notify the system about the new message so the recipient can be woken
+  try {
+    chrome.runtime.sendMessage({
+      type: 'interAgentMessage',
+      from: msg.from,
+      to: msg.to,
+      body: msg.body,
+      messageId: msg.id,
+    });
+  } catch {
+    // Best-effort — may fail in tests or if no listener
+  }
 }
 
 export interface GetMessagesOpts {
