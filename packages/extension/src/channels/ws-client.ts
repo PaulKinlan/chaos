@@ -87,7 +87,7 @@ export function connectWebSocket(settings: RelaySettings): void {
   }
 
   socket.addEventListener('open', () => {
-    log('Connected');
+    log('WebSocket connected to relay server');
     // Reset backoff on successful connection
     currentBackoff = 5000;
   });
@@ -95,11 +95,16 @@ export function connectWebSocket(settings: RelaySettings): void {
   socket.addEventListener('message', (event) => {
     try {
       const data = JSON.parse(String(event.data));
-      if (data.type === 'message' && data.payload && messageHandler) {
-        log(`Received message ${data.payload.id?.slice(0, 8) ?? '???'} via WebSocket`);
-        messageHandler(data.payload as ChannelMessage);
-      } else if (data.type === 'ping') {
+      const msg = data.payload || data.message;
+      if (data.type === 'message' && msg && messageHandler) {
+        log(`Received channel message ${msg.id?.slice(0, 8) ?? '???'} from ${msg.channelType ?? 'unknown'}`);
+        messageHandler(msg as ChannelMessage);
+      } else if (data.type === 'pong' || data.type === 'ping') {
         // Server keepalive — no action needed
+      } else if (data.type === 'reply_ack') {
+        log(`Reply acknowledged: ${data.responseId?.slice(0, 8) ?? '???'}`);
+      } else {
+        log(`Unknown WS message type: ${data.type}`);
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
