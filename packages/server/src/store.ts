@@ -137,3 +137,16 @@ export function getResponses(channelId: string, since?: string): StoredMessage[]
 export function clearResponses(channelId: string): void {
   responseStore.delete(channelId);
 }
+
+/** Get all recent messages across all users (for admin debugging). */
+export function getAllRecentMessages(limit = 50): StoredMessage[] {
+  const all: StoredMessage[] = [];
+  for (const msgs of messageStore.values()) {
+    all.push(...msgs);
+  }
+  for (const msgs of responseStore.values()) {
+    all.push(...msgs);
+  }
+  all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return all.slice(0, limit);
+}

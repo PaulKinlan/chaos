@@ -163,21 +163,57 @@ Deno.serve(serveOptions, async (req: Request) => {
 
     const { isKvAvailable, getKv } = await import('./kv.ts');
     const { getConnectionCount } = await import('./ws.ts');
+    const { getAllRecentMessages } = await import('./store.ts');
 
-    const sessions: Array<{ userId: string; channels: number; channelTypes: string[]; createdAt: string; wsConnections: number }> = [];
+    interface AdminChannel {
+      id: string;
+      type: string;
+      agentId: string;
+      enabled: boolean;
+      botUsername?: string;
+      allowedUsers?: string[];
+      hasPairingCode: boolean;
+    }
+
+    const sessions: Array<{
+      userId: string;
+      channels: AdminChannel[];
+      createdAt: string;
+      wsConnections: number;
+    }> = [];
+
     if (isKvAvailable() && getKv()) {
       const iter = getKv()!.list<UserSession>({ prefix: ['sessions'] });
       for await (const entry of iter) {
         const s = entry.value;
         sessions.push({
           userId: s.userId,
-          channels: s.channels.length,
-          channelTypes: s.channels.map(c => c.type),
+          channels: s.channels.map(ch => ({
+            id: ch.id,
+            type: ch.type,
+            agentId: ch.agentId || '(default)',
+            enabled: ch.enabled,
+            botUsername: ch.metadata['botUsername'] as string | undefined,
+            allowedUsers: ch.metadata['allowedUsers'] as string[] | undefined,
+            hasPairingCode: !!ch.metadata['pairingCode'],
+          })),
           createdAt: s.createdAt,
           wsConnections: getConnectionCount(s.userId),
         });
       }
     }
+
+    // Get recent messages for debugging
+    const recentMessages = getAllRecentMessages(30).map(m => ({
+      id: m.id,
+      userId: m.userId.slice(0, 8),
+      channelType: m.channelType,
+      channelId: m.channelId.slice(0, 8),
+      from: m.from,
+      direction: m.from === 'agent' ? 'out' : 'in',
+      content: m.content.slice(0, 100) + (m.content.length > 100 ? '...' : ''),
+      timestamp: m.timestamp,
+    }));
 
     return json({
       status: 'ok',
@@ -186,6 +222,7 @@ Deno.serve(serveOptions, async (req: Request) => {
       websockets: getConnectionCount(),
       uptime: Math.floor(performance.now() / 1000),
       sessions,
+      recentMessages,
     });
   }
 
@@ -592,7 +629,7 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
 <title>CHAOS Admin Dashboard</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:system-ui,sans-serif;background:#0f1117;color:#e1e4e8;padding:24px}
+  body{font-family:system-ui,sans-serif;background:#0f1117;color:#e1e4e8;padding:24px;max-width:1200px;margin:0 auto}
   h1{font-size:20px;margin-bottom:4px}
   .subtitle{color:#8b949e;font-size:13px;margin-bottom:24px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px}
@@ -600,20 +637,32 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   .stat-value{font-size:24px;font-weight:600;color:#f0f3f6}
   .stat-label{font-size:11px;color:#8b949e;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px}
   .stat-ok{color:#3fb950}.stat-warn{color:#d29922}.stat-err{color:#f85149}
-  h2{font-size:16px;margin-bottom:12px;color:#f0f3f6}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;padding:8px 12px;border-bottom:1px solid #30363d;color:#8b949e;font-weight:500}
-  td{padding:8px 12px;border-bottom:1px solid #21262d}
-  .badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:500}
-  .badge-tg{background:#2b5278;color:#7bc8f6}.badge-wh{background:#2d3a2d;color:#7ee787}
+  h2{font-size:16px;margin:24px 0 12px;color:#f0f3f6}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:12px}
+  .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .card-title{font-size:14px;font-weight:600;color:#f0f3f6}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;padding:6px 10px;border-bottom:1px solid #30363d;color:#8b949e;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.3px}
+  td{padding:6px 10px;border-bottom:1px solid #21262d;vertical-align:top}
+  .badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:500;margin-right:4px}
+  .badge-telegram{background:#2b5278;color:#7bc8f6}
+  .badge-webhook{background:#2d3a2d;color:#7ee787}
+  .badge-in{background:#1f3a1f;color:#7ee787}
+  .badge-out{background:#3a1f1f;color:#f0883e}
+  .badge-paired{background:#1a3a1a;color:#3fb950}
+  .badge-pending{background:#3a3a1a;color:#d29922}
+  .channel-detail{font-size:11px;color:#8b949e;margin-top:2px}
   .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
   .btn-logout{background:none;border:1px solid #30363d;border-radius:6px;color:#8b949e;padding:4px 12px;cursor:pointer;font-size:12px}
   .btn-logout:hover{color:#f0f3f6;border-color:#8b949e}
   .btn-refresh{background:none;border:1px solid #30363d;border-radius:6px;color:#58a6ff;padding:4px 12px;cursor:pointer;font-size:12px;margin-right:8px}
   #status{font-size:11px;color:#8b949e}
+  .msg-content{max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:11px}
+  .ts{font-size:11px;color:#8b949e;font-family:monospace}
+  code{background:#21262d;padding:1px 4px;border-radius:3px;font-size:11px}
 </style></head><body>
 <div class="topbar">
-  <div><h1>CHAOS Relay Admin</h1><div class="subtitle">Server dashboard</div></div>
+  <div><h1>CHAOS Relay Admin</h1><div class="subtitle">Server dashboard — auto-refreshes every 10s</div></div>
   <div>
     <span id="status"></span>
     <button class="btn-refresh" onclick="load()">Refresh</button>
@@ -621,32 +670,71 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   </div>
 </div>
 <div class="grid" id="stats"></div>
-<h2>Sessions</h2>
-<table><thead><tr><th>User ID</th><th>Channels</th><th>WebSocket</th><th>Created</th></tr></thead><tbody id="sessions"></tbody></table>
+
+<h2>Sessions &amp; Channels</h2>
+<div id="sessions"></div>
+
+<h2>Recent Messages</h2>
+<table><thead><tr><th>Time</th><th>Dir</th><th>From</th><th>Channel</th><th>User</th><th>Content</th></tr></thead><tbody id="messages"></tbody></table>
+
 <script>
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function ago(ts){const s=Math.floor((Date.now()-new Date(ts).getTime())/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';return Math.floor(s/3600)+'h ago'}
+
 async function load(){
   document.getElementById('status').textContent='Loading...';
   try{
     const r=await fetch('/admin/status');
     if(r.status===401){location.href='/admin/login';return}
     const d=await r.json();
+
+    // Stats
     document.getElementById('stats').innerHTML=
       '<div class="stat"><div class="stat-value '+(d.kv?'stat-ok':'stat-err')+'">'+(d.kv?'Connected':'Offline')+'</div><div class="stat-label">Deno KV</div></div>'+
       '<div class="stat"><div class="stat-value">'+d.websockets+'</div><div class="stat-label">WebSockets</div></div>'+
       '<div class="stat"><div class="stat-value">'+d.sessions.length+'</div><div class="stat-label">Sessions</div></div>'+
       '<div class="stat"><div class="stat-value">'+Math.floor(d.uptime/60)+'m</div><div class="stat-label">Uptime</div></div>';
-    const tb=document.getElementById('sessions');
-    tb.innerHTML=d.sessions.map(s=>
-      '<tr><td><code>'+s.userId.slice(0,12)+'...</code></td>'+
-      '<td>'+s.channelTypes.map(t=>'<span class="badge badge-'+(t==='telegram'?'tg':'wh')+'">'+t+'</span> ').join('')+(s.channels===0?'<span style="color:#8b949e">none</span>':'')+'</td>'+
-      '<td>'+(s.wsConnections>0?'<span class="stat-ok">'+s.wsConnections+' active</span>':'<span style="color:#8b949e">0</span>')+'</td>'+
-      '<td>'+new Date(s.createdAt).toLocaleString()+'</td></tr>'
-    ).join('');
+
+    // Sessions with channel details
+    const sc=document.getElementById('sessions');
+    sc.innerHTML=d.sessions.map(s=>{
+      const wsStatus=s.wsConnections>0?'<span class="stat-ok">'+s.wsConnections+' connected</span>':'<span style="color:#8b949e">disconnected</span>';
+      const channels=s.channels.length===0?'<div style="color:#8b949e;font-size:12px;padding:4px 0">No channels</div>':
+        s.channels.map(ch=>{
+          let detail='<code>'+esc(ch.id.slice(0,12))+'</code>';
+          if(ch.type==='telegram'){
+            detail+=' @'+esc(ch.botUsername||'?');
+            if(ch.hasPairingCode) detail+=' <span class="badge badge-pending">awaiting pairing</span>';
+            else if(ch.allowedUsers&&ch.allowedUsers.length>0) detail+=' <span class="badge badge-paired">'+ch.allowedUsers.length+' user(s)</span>';
+            else detail+=' <span class="badge badge-pending">open (no allowlist)</span>';
+          }else{
+            detail+=' <span class="badge badge-webhook">webhook</span>';
+          }
+          return '<div style="padding:4px 0;font-size:12px"><span class="badge badge-'+esc(ch.type)+'">'+esc(ch.type)+'</span> '+detail+'</div>';
+        }).join('');
+      return '<div class="card"><div class="card-header"><span class="card-title"><code>'+esc(s.userId.slice(0,12))+'...</code></span><span>'+wsStatus+'</span></div>'+
+        '<div class="channel-detail">Created: '+new Date(s.createdAt).toLocaleString()+'</div>'+
+        '<div style="margin-top:8px">'+channels+'</div></div>';
+    }).join('')||'<div style="color:#8b949e">No sessions</div>';
+
+    // Recent messages
+    const mt=document.getElementById('messages');
+    mt.innerHTML=(d.recentMessages||[]).map(m=>
+      '<tr>'+
+      '<td class="ts">'+ago(m.timestamp)+'</td>'+
+      '<td><span class="badge badge-'+m.direction+'">'+m.direction+'</span></td>'+
+      '<td>'+esc(m.from)+'</td>'+
+      '<td><span class="badge badge-'+esc(m.channelType)+'">'+esc(m.channelType)+'</span> '+esc(m.channelId)+'</td>'+
+      '<td><code>'+esc(m.userId)+'</code></td>'+
+      '<td class="msg-content" title="'+esc(m.content)+'">'+esc(m.content)+'</td>'+
+      '</tr>'
+    ).join('')||'<tr><td colspan="6" style="color:#8b949e;text-align:center">No recent messages</td></tr>';
+
     document.getElementById('status').textContent='Updated '+new Date().toLocaleTimeString();
   }catch(e){
     document.getElementById('status').textContent='Error: '+e.message;
   }
 }
 load();
-setInterval(load,15000);
+setInterval(load,10000);
 </script></body></html>`;
