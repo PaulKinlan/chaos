@@ -87,7 +87,7 @@ export async function handleWebhook(
     metadata,
   };
 
-  addMessage(session.userId, message);
+  await addMessage(session.userId, message);
 
   logger.info("webhook", "Webhook message stored", {
     channelId,

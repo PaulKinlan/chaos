@@ -14,10 +14,10 @@ export interface ReplyPayload {
   metadata?: Record<string, unknown>;
 }
 
-export function handleReply(
+export async function handleReply(
   userId: string,
   payload: ReplyPayload,
-): { ok: boolean; responseId: string } {
+): Promise<{ ok: boolean; responseId: string }> {
   const response: StoredMessage = {
     id: crypto.randomUUID(),
     userId,
@@ -33,7 +33,7 @@ export function handleReply(
   };
 
   // Store the response for polling
-  addResponse(payload.channelId, response);
+  await addResponse(payload.channelId, response);
 
   logger.info("responder", "Outgoing reply stored", {
     userId,

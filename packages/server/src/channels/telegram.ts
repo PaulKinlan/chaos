@@ -335,7 +335,7 @@ export async function handleTelegramWebhook(
     metadata,
   };
 
-  addMessage(session.userId, message);
+  await addMessage(session.userId, message);
 
   logger.info("telegram", "Telegram message stored", {
     channelId,

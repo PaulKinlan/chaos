@@ -18,7 +18,7 @@ import {
   registerTelegramBot,
 } from "./channels/telegram.ts";
 import { getServerPublicKey, initServerKeyPair } from "./crypto.ts";
-import { initKv } from "./kv.ts";
+import { getKv, initKv, isKvAvailable } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
 import { sanitizeMessage } from "./sanitize.ts";
 import { logger, requestLog } from "./logger.ts";
@@ -41,8 +41,8 @@ async function ensureInitialized(): Promise<void> {
 // Rate limiter instance
 const rateLimiter = new RateLimiter();
 
-// Admin session tokens (token -> creation timestamp)
-const adminSessions = new Map<string, number>();
+// Admin session tokens — in-memory cache, KV is source of truth
+const adminSessionCache = new Map<string, number>();
 
 // CORS headers for cross-origin requests from the extension
 const corsHeaders: Record<string, string> = {
@@ -118,21 +118,29 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   // ── Admin dashboard (session cookie auth) ──
 
-  // Admin session tokens (in-memory, short-lived)
-  const ADMIN_SESSION_TTL = 4 * 60 * 60 * 1000; // 4 hours
+  const ADMIN_SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-  function verifyAdminSession(req: Request): boolean {
+  async function verifyAdminSession(req: Request): Promise<boolean> {
     const cookie = req.headers.get("cookie") || "";
     const match = cookie.match(/chaos_admin=([^;]+)/);
     if (!match) return false;
     const token = match[1];
-    const stored = adminSessions.get(token);
-    if (!stored) return false;
-    if (Date.now() - stored > ADMIN_SESSION_TTL) {
-      adminSessions.delete(token);
-      return false;
+
+    // Check in-memory cache first
+    const cached = adminSessionCache.get(token);
+    if (cached && Date.now() - cached < ADMIN_SESSION_TTL) return true;
+
+    // Check KV
+    if (isKvAvailable() && getKv()) {
+      const result = await getKv()!.get<number>(["admin_sessions", token]);
+      if (result.value && Date.now() - result.value < ADMIN_SESSION_TTL) {
+        adminSessionCache.set(token, result.value);
+        return true;
+      }
     }
-    return true;
+
+    adminSessionCache.delete(token);
+    return false;
   }
 
   // Login page
@@ -159,13 +167,19 @@ Deno.serve(serveOptions, async (req: Request) => {
         });
       }
       const token = crypto.randomUUID();
-      adminSessions.set(token, Date.now());
+      const now = Date.now();
+      adminSessionCache.set(token, now);
+      if (isKvAvailable() && getKv()) {
+        await getKv()!.set(["admin_sessions", token], now, {
+          expireIn: ADMIN_SESSION_TTL,
+        });
+      }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
           "Set-Cookie":
-            `chaos_admin=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=14400`,
+            `chaos_admin=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=86400`,
           ...corsHeaders,
         },
       });
@@ -176,7 +190,7 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   // Admin dashboard page
   if (url.pathname === "/admin" && method === "GET") {
-    if (!verifyAdminSession(req)) {
+    if (!(await verifyAdminSession(req))) {
       return new Response(null, {
         status: 302,
         headers: { Location: "/admin/login" },
@@ -189,13 +203,11 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   // Admin status API (used by dashboard JS)
   if (url.pathname === "/admin/status" && method === "GET") {
-    if (!verifyAdminSession(req)) return error("Unauthorized", 401);
+    if (!(await verifyAdminSession(req))) return error("Unauthorized", 401);
 
     const { isKvAvailable, getKv } = await import("./kv.ts");
     const { getConnectionCount } = await import("./ws.ts");
-    const { getAllRecentMessages, getRecentEventsFromKv } = await import(
-      "./store.ts"
-    );
+    const { getAllRecentMessages } = await import("./store.ts");
 
     interface AdminChannel {
       id: string;
@@ -235,9 +247,9 @@ Deno.serve(serveOptions, async (req: Request) => {
       }
     }
 
-    // Get recent messages — use KV events (durable) as primary, in-memory as supplement
-    const kvEvents = await getRecentEventsFromKv(30);
-    const memEvents = getAllRecentMessages(30).map((m) => ({
+    // Get recent messages from KV (durable across restarts)
+    const allMsgs = await getAllRecentMessages(30);
+    const recentMessages = allMsgs.map((m) => ({
       id: m.id,
       userId: m.userId.slice(0, 8),
       channelType: m.channelType,
@@ -247,15 +259,6 @@ Deno.serve(serveOptions, async (req: Request) => {
       content: m.content.slice(0, 100) + (m.content.length > 100 ? "..." : ""),
       timestamp: m.timestamp,
     }));
-    // Merge and deduplicate by id, prefer KV events
-    const seenIds = new Set(kvEvents.map((e) => e.id));
-    const recentMessages = [
-      ...kvEvents,
-      ...memEvents.filter((m) => !seenIds.has(m.id)),
-    ].sort((a, b) =>
-      new Date(b.timestamp as string).getTime() -
-      new Date(a.timestamp as string).getTime()
-    ).slice(0, 30);
 
     return json({
       status: "ok",
@@ -270,7 +273,7 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   // Admin: delete a session
   if (url.pathname.startsWith("/admin/sessions/") && method === "DELETE") {
-    if (!verifyAdminSession(req)) return error("Unauthorized", 401);
+    if (!(await verifyAdminSession(req))) return error("Unauthorized", 401);
     const targetUserId = url.pathname.split("/").pop()!;
     const { isKvAvailable: kvOk, getKv } = await import("./kv.ts");
     if (kvOk() && getKv()) {
@@ -295,7 +298,12 @@ Deno.serve(serveOptions, async (req: Request) => {
   if (url.pathname === "/admin/logout" && method === "POST") {
     const cookie = req.headers.get("cookie") || "";
     const match = cookie.match(/chaos_admin=([^;]+)/);
-    if (match) adminSessions.delete(match[1]);
+    if (match) {
+      adminSessionCache.delete(match[1]);
+      if (isKvAvailable() && getKv()) {
+        await getKv()!.delete(["admin_sessions", match[1]]);
+      }
+    }
     return new Response(null, {
       status: 302,
       headers: {
@@ -383,7 +391,7 @@ Deno.serve(serveOptions, async (req: Request) => {
   if (responsesMatch && method === "GET") {
     const channelId = responsesMatch[1];
     const since = url.searchParams.get("since") || undefined;
-    const responses = getResponses(channelId, since);
+    const responses = await getResponses(channelId, since);
     logger.info("server", "Responses polled", {
       channelId,
       count: responses.length,
@@ -477,7 +485,7 @@ Deno.serve(serveOptions, async (req: Request) => {
             return;
           }
           payload.content = sanitized.content;
-          const result = handleReply(wsUserId, payload);
+          const result = await handleReply(wsUserId, payload);
           socket.send(JSON.stringify({ type: "reply_ack", ...result }));
         } else if (data.type === "ping") {
           socket.send(JSON.stringify({ type: "pong" }));
@@ -532,7 +540,7 @@ Deno.serve(serveOptions, async (req: Request) => {
     }
 
     const since = url.searchParams.get("since") || undefined;
-    const messages = getMessages(session.userId, since);
+    const messages = await getMessages(session.userId, since);
     logger.info("server", "Messages polled", {
       userId: session.userId,
       count: messages.length,
@@ -575,7 +583,7 @@ Deno.serve(serveOptions, async (req: Request) => {
       }
       payload.content = sanitized.content;
 
-      const result = handleReply(session.userId, payload);
+      const result = await handleReply(session.userId, payload);
       logger.info("server", "Reply sent", {
         userId: session.userId,
         channelId: payload.channelId,
