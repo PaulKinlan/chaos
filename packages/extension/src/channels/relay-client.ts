@@ -195,6 +195,20 @@ export async function listChannels(
   return data.channels;
 }
 
+export async function updateChannel(
+  config: RelayConfig,
+  channelId: string,
+  updates: { metadata?: Record<string, unknown> },
+): Promise<void> {
+  const resp = await relayFetch(config, `/channels/${channelId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  if (!resp.ok) {
+    throw new Error(`Update channel failed: ${resp.status} ${resp.statusText}`);
+  }
+}
+
 export async function removeChannel(
   config: RelayConfig,
   channelId: string,

@@ -3814,6 +3814,7 @@ import {
   registerChannel as relayRegisterChannel,
   registerTelegramChannel,
   listChannels as relayListChannels,
+  updateChannel as relayUpdateChannel,
   removeChannel as relayRemoveChannel,
   type RelayConfig,
 } from './channels/relay-client.js';
@@ -3941,7 +3942,7 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
   listDiv.innerHTML = '';
   for (const ch of channels) {
     const card = document.createElement('div');
-    card.style.cssText = 'padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;';
+    card.style.cssText = 'padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);';
 
     let detailHtml = '';
     if (ch.type === 'webhook') {
@@ -3949,16 +3950,29 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       detailHtml = `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;word-break:break-all;"><code>${webhookUrl}</code></div>`;
     } else if (ch.type === 'telegram') {
       const botUsername = ch.metadata['botUsername'] as string || 'unknown';
+      const allowedUsers = (ch.metadata['allowedUsers'] as string[] || []).join(', ');
       detailHtml = `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">Bot: @${botUsername}</div>`;
+      detailHtml += `
+        <details style="margin-top:6px;font-size:var(--text-xs);">
+          <summary style="cursor:pointer;color:var(--text-secondary);user-select:none;">Allowed Users</summary>
+          <div style="margin-top:4px;">
+            <p style="color:var(--text-muted);margin-bottom:4px;">Comma-separated Telegram user IDs. Leave empty to allow everyone.</p>
+            <div style="display:flex;gap:4px;align-items:center;">
+              <input type="text" class="allowlist-input" data-channel-id="${ch.id}" value="${escapeHtml(allowedUsers)}" placeholder="e.g. 123456789, 987654321" style="flex:1;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);font-family:var(--font-mono);">
+              <button class="btn btn-primary btn-xs btn-save-allowlist" data-channel-id="${ch.id}">Save</button>
+            </div>
+            <p style="color:var(--text-muted);margin-top:4px;">Tip: message the bot and check server logs to find your Telegram user ID.</p>
+          </div>
+        </details>`;
     }
 
     card.innerHTML = `
-      <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
         <strong style="font-size:var(--text-sm);">${ch.type}: ${ch.id.slice(0, 8)}...</strong>
-        ${detailHtml}
-        <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'}</div>
+        <button class="btn btn-ghost btn-remove-channel" data-channel-id="${ch.id}" style="color:var(--danger, red);font-size:var(--text-xs);">Remove</button>
       </div>
-      <button class="btn btn-ghost btn-remove-channel" data-channel-id="${ch.id}" style="color:var(--danger, red);font-size:var(--text-xs);">Remove</button>
+      ${detailHtml}
+      <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'}</div>
     `;
     listDiv.appendChild(card);
   }
@@ -3976,6 +3990,25 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
         const errMsg = err instanceof Error ? err.message : String(err);
         channelLog(`Failed to remove channel: ${errMsg}`);
         alert(`Failed to remove channel: ${errMsg}`);
+      }
+    });
+  });
+
+  // Attach allowlist save handlers
+  listDiv.querySelectorAll('.btn-save-allowlist').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const channelId = (btn as HTMLElement).dataset.channelId!;
+      const input = listDiv.querySelector(`.allowlist-input[data-channel-id="${channelId}"]`) as HTMLInputElement;
+      if (!input) return;
+      const allowedUsers = input.value.split(',').map(s => s.trim()).filter(Boolean);
+      try {
+        channelLog(`Updating allowlist for ${channelId.slice(0, 8)}... (${allowedUsers.length} users)`);
+        await relayUpdateChannel(config, channelId, { metadata: { allowedUsers } });
+        channelLog('Allowlist updated');
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        channelLog(`Failed to update allowlist: ${errMsg}`);
+        alert(`Failed: ${errMsg}`);
       }
     });
   });

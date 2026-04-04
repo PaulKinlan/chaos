@@ -36,7 +36,7 @@ const adminSessions = new Map<string, number>();
 // CORS headers for cross-origin requests from the extension
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Timestamp, X-Nonce, X-Signature',
 };
 
@@ -501,6 +501,33 @@ Deno.serve(serveOptions, async (req: Request) => {
     const channels = await getChannels(session.userId);
     logger.info('server', 'Channels listed', { userId: session.userId, count: channels.length });
     return json({ channels });
+  }
+
+  // Update channel metadata (e.g. allowlist)
+  const channelPatchMatch = url.pathname.match(/^\/channels\/([^/]+)$/);
+  if (channelPatchMatch && method === 'PATCH') {
+    try {
+      const channelId = channelPatchMatch[1];
+      const body = await req.json();
+      const channels = await getChannels(session.userId);
+      const channel = channels.find((ch) => ch.id === channelId);
+      if (!channel) {
+        return error('Channel not found', 404);
+      }
+      // Merge metadata updates (only allow safe fields)
+      if (body.metadata) {
+        if (Array.isArray(body.metadata.allowedUsers)) {
+          channel.metadata['allowedUsers'] = body.metadata.allowedUsers.map(String);
+        }
+      }
+      // Persist the updated channel by re-adding it
+      await removeChannel(session.userId, channelId);
+      await addChannel(session.userId, channel);
+      logger.info('server', 'Channel updated', { userId: session.userId, channelId, allowedUsers: channel.metadata['allowedUsers'] });
+      return json({ ok: true, channel });
+    } catch {
+      return error('Invalid JSON body');
+    }
   }
 
   // Delete a channel

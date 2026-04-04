@@ -179,14 +179,17 @@ export async function handleTelegramWebhook(
   const telegramMsg = update.message || update.edited_message;
   let content = '';
   let from = 'unknown';
+  let senderId: number | undefined;
   let chatId: number | undefined;
   const metadata: Record<string, unknown> = { updateId: update.update_id };
 
   if (telegramMsg) {
     content = telegramMsg.text || '';
     from = telegramMsg.from?.username || telegramMsg.from?.first_name || 'unknown';
+    senderId = telegramMsg.from?.id;
     chatId = telegramMsg.chat.id;
     metadata.chatId = chatId;
+    metadata.senderId = senderId;
     metadata.messageId = telegramMsg.message_id;
     metadata.chatType = telegramMsg.chat.type;
     if (telegramMsg.edit_date) {
@@ -195,14 +198,41 @@ export async function handleTelegramWebhook(
   } else if (update.callback_query) {
     content = update.callback_query.data || '';
     from = update.callback_query.from.username || update.callback_query.from.first_name;
+    senderId = update.callback_query.from.id;
     chatId = update.callback_query.message?.chat.id;
     metadata.chatId = chatId;
+    metadata.senderId = senderId;
     metadata.callbackQueryId = update.callback_query.id;
   }
 
   if (!content) {
-    // Acknowledge but ignore updates without text content
     return jsonResponse({ ok: true });
+  }
+
+  // Check allowlist — if configured, only permit listed Telegram user IDs
+  const allowlist = channel.metadata['allowedUsers'] as string[] | undefined;
+  if (allowlist && allowlist.length > 0 && senderId !== undefined) {
+    const senderStr = String(senderId);
+    if (!allowlist.includes(senderStr)) {
+      logger.warn('telegram', 'Sender not in allowlist', { channelId, senderId, from });
+      // Send a rejection message if we have the bot token and chatId
+      if (chatId) {
+        let botToken = channel.metadata['botTokenPlain'] as string | undefined;
+        if (!botToken) {
+          const encrypted = channel.metadata['botToken'] as string | undefined;
+          if (encrypted) {
+            try {
+              const { decryptToken } = await import('../crypto.ts');
+              botToken = await decryptToken(encrypted);
+            } catch { /* */ }
+          }
+        }
+        if (botToken) {
+          await sendTelegramReply(botToken, chatId, 'Sorry, you are not authorized to use this bot.').catch(() => {});
+        }
+      }
+      return jsonResponse({ ok: true });
+    }
   }
 
   // Store as a ChannelMessage
