@@ -66,25 +66,38 @@ export function setMessageHandler(handler: MessageHandler): void {
  * Shared message processing logic used by both WebSocket and poll paths.
  * Calls the registered message handler and sends a reply if one is returned.
  */
-// Track processed message IDs to prevent duplicate processing
-const processedMessageIds = new Set<string>();
-const MAX_PROCESSED_IDS = 500;
+// Track processed message IDs in chrome.storage.local to survive SW restarts
+const PROCESSED_IDS_KEY = 'chaos-processed-message-ids';
+let processedMessageIds: Set<string> | null = null;
+const MAX_PROCESSED_IDS = 200;
 
-function markProcessed(id: string): boolean {
-  if (processedMessageIds.has(id)) return false; // already processed
-  processedMessageIds.add(id);
-  // Trim old entries to prevent unbounded growth
-  if (processedMessageIds.size > MAX_PROCESSED_IDS) {
-    const iter = processedMessageIds.values();
-    for (let i = 0; i < 100; i++) iter.next(); // skip first 100
-    // Actually, just clear the oldest half
-    const arr = Array.from(processedMessageIds);
-    processedMessageIds.clear();
-    for (const id of arr.slice(arr.length - MAX_PROCESSED_IDS / 2)) {
-      processedMessageIds.add(id);
-    }
+async function loadProcessedIds(): Promise<Set<string>> {
+  if (processedMessageIds) return processedMessageIds;
+  try {
+    const result = await chrome.storage.local.get(PROCESSED_IDS_KEY);
+    const ids = result[PROCESSED_IDS_KEY] as string[] | undefined;
+    processedMessageIds = new Set(ids || []);
+  } catch {
+    processedMessageIds = new Set();
   }
-  return true; // first time seeing this
+  return processedMessageIds;
+}
+
+async function saveProcessedIds(): Promise<void> {
+  if (!processedMessageIds) return;
+  const arr = Array.from(processedMessageIds);
+  // Keep only the most recent IDs
+  const trimmed = arr.length > MAX_PROCESSED_IDS ? arr.slice(arr.length - MAX_PROCESSED_IDS) : arr;
+  await chrome.storage.local.set({ [PROCESSED_IDS_KEY]: trimmed }).catch(() => {});
+}
+
+async function markProcessed(id: string): Promise<boolean> {
+  const ids = await loadProcessedIds();
+  if (ids.has(id)) return false;
+  ids.add(id);
+  // Save periodically (not on every message to reduce writes)
+  if (ids.size % 5 === 0) saveProcessedIds();
+  return true;
 }
 
 // Cache of known channel IDs — refreshed periodically
@@ -108,8 +121,8 @@ async function getKnownChannels(config: { serverUrl: string; apiKey: string }): 
 }
 
 async function processMessage(message: ChannelMessage): Promise<void> {
-  // Deduplicate: skip if we've already processed this message
-  if (!markProcessed(message.id)) {
+  // Deduplicate: skip if we've already processed this message (persisted across SW restarts)
+  if (!(await markProcessed(message.id))) {
     console.log(`[poller] Skipping duplicate message ${message.id.slice(0, 8)}`);
     return;
   }
@@ -159,6 +172,9 @@ async function processMessage(message: ChannelMessage): Promise<void> {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error(`Failed to process channel message ${message.id}:`, err);
     broadcastChannelLog(`Error processing message ${message.id.slice(0, 8)}: ${errMsg}`);
+  } finally {
+    // Persist processed IDs to survive SW restarts
+    saveProcessedIds();
   }
 }
 
