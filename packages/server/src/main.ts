@@ -30,6 +30,9 @@ async function ensureInitialized(): Promise<void> {
 // Rate limiter instance
 const rateLimiter = new RateLimiter();
 
+// Admin session tokens (token -> creation timestamp)
+const adminSessions = new Map<string, number>();
+
 // CORS headers for cross-origin requests from the extension
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -89,19 +92,79 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
-  // Admin status page (protected by CHAOS_ADMIN_KEY env var)
-  if (url.pathname === '/admin/status' && method === 'GET') {
-    const adminKey = Deno.env.get('CHAOS_ADMIN_KEY');
-    const providedKey = url.searchParams.get('key') || req.headers.get('X-Admin-Key');
-    if (!adminKey || providedKey !== adminKey) {
-      return error('Unauthorized', 401);
+  // ── Admin dashboard (session cookie auth) ──
+
+  // Admin session tokens (in-memory, short-lived)
+  const ADMIN_SESSION_TTL = 4 * 60 * 60 * 1000; // 4 hours
+
+  function verifyAdminSession(req: Request): boolean {
+    const cookie = req.headers.get('cookie') || '';
+    const match = cookie.match(/chaos_admin=([^;]+)/);
+    if (!match) return false;
+    const token = match[1];
+    const stored = adminSessions.get(token);
+    if (!stored) return false;
+    if (Date.now() - stored > ADMIN_SESSION_TTL) {
+      adminSessions.delete(token);
+      return false;
     }
+    return true;
+  }
+
+  // Login page
+  if (url.pathname === '/admin/login' && method === 'GET') {
+    const adminKey = Deno.env.get('CHAOS_ADMIN_KEY');
+    if (!adminKey) return error('Admin not configured (set CHAOS_ADMIN_KEY env var)', 503);
+    return new Response(ADMIN_LOGIN_HTML, {
+      headers: { 'Content-Type': 'text/html', ...corsHeaders },
+    });
+  }
+
+  // Login POST
+  if (url.pathname === '/admin/login' && method === 'POST') {
+    const adminKey = Deno.env.get('CHAOS_ADMIN_KEY');
+    if (!adminKey) return error('Admin not configured', 503);
+    try {
+      const body = await req.json();
+      if (body.password !== adminKey) {
+        return new Response(JSON.stringify({ error: 'Invalid password' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+      const token = crypto.randomUUID();
+      adminSessions.set(token, Date.now());
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Set-Cookie': `chaos_admin=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=14400`,
+          ...corsHeaders,
+        },
+      });
+    } catch {
+      return error('Invalid request body');
+    }
+  }
+
+  // Admin dashboard page
+  if (url.pathname === '/admin' && method === 'GET') {
+    if (!verifyAdminSession(req)) {
+      return new Response(null, { status: 302, headers: { Location: '/admin/login' } });
+    }
+    return new Response(ADMIN_DASHBOARD_HTML, {
+      headers: { 'Content-Type': 'text/html', ...corsHeaders },
+    });
+  }
+
+  // Admin status API (used by dashboard JS)
+  if (url.pathname === '/admin/status' && method === 'GET') {
+    if (!verifyAdminSession(req)) return error('Unauthorized', 401);
 
     const { isKvAvailable, getKv } = await import('./kv.ts');
     const { getConnectionCount } = await import('./ws.ts');
 
-    // List all sessions from KV
-    const sessions: Array<{ userId: string; channels: number; createdAt: string }> = [];
+    const sessions: Array<{ userId: string; channels: number; channelTypes: string[]; createdAt: string; wsConnections: number }> = [];
     if (isKvAvailable() && getKv()) {
       const iter = getKv()!.list<UserSession>({ prefix: ['sessions'] });
       for await (const entry of iter) {
@@ -109,7 +172,9 @@ Deno.serve(serveOptions, async (req: Request) => {
         sessions.push({
           userId: s.userId,
           channels: s.channels.length,
+          channelTypes: s.channels.map(c => c.type),
           createdAt: s.createdAt,
+          wsConnections: getConnectionCount(s.userId),
         });
       }
     }
@@ -121,6 +186,20 @@ Deno.serve(serveOptions, async (req: Request) => {
       websockets: getConnectionCount(),
       uptime: Math.floor(performance.now() / 1000),
       sessions,
+    });
+  }
+
+  // Admin logout
+  if (url.pathname === '/admin/logout' && method === 'POST') {
+    const cookie = req.headers.get('cookie') || '';
+    const match = cookie.match(/chaos_admin=([^;]+)/);
+    if (match) adminSessions.delete(match[1]);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: '/admin/login',
+        'Set-Cookie': 'chaos_admin=; Path=/admin; HttpOnly; Max-Age=0',
+      },
     });
   }
 
@@ -442,3 +521,101 @@ Deno.serve(serveOptions, async (req: Request) => {
 });
 
 logger.info('server', 'CHAOS relay server started', { port: PORT, version: VERSION });
+
+// ── Admin HTML templates ──
+
+const ADMIN_LOGIN_HTML = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CHAOS Admin - Login</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#0f1117;color:#e1e4e8;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:32px;width:100%;max-width:360px}
+  h1{font-size:18px;margin-bottom:16px;color:#f0f3f6}
+  input{width:100%;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;font-size:14px;margin-bottom:12px}
+  input:focus{outline:none;border-color:#58a6ff}
+  button{width:100%;padding:8px 12px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:14px;cursor:pointer;font-weight:500}
+  button:hover{background:#2ea043}
+  .error{color:#f85149;font-size:12px;margin-bottom:8px;display:none}
+</style></head><body>
+<div class="card">
+  <h1>CHAOS Relay Admin</h1>
+  <div class="error" id="err"></div>
+  <form id="f">
+    <input type="password" id="pw" placeholder="Admin password" autofocus>
+    <button type="submit">Log in</button>
+  </form>
+</div>
+<script>
+document.getElementById('f').onsubmit=async e=>{
+  e.preventDefault();
+  const pw=document.getElementById('pw').value;
+  const r=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  if(r.ok){location.href='/admin'}
+  else{const d=await r.json().catch(()=>({}));const el=document.getElementById('err');el.textContent=d.error||'Login failed';el.style.display='block'}
+};
+</script></body></html>`;
+
+const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CHAOS Admin Dashboard</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#0f1117;color:#e1e4e8;padding:24px}
+  h1{font-size:20px;margin-bottom:4px}
+  .subtitle{color:#8b949e;font-size:13px;margin-bottom:24px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+  .stat{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px}
+  .stat-value{font-size:24px;font-weight:600;color:#f0f3f6}
+  .stat-label{font-size:11px;color:#8b949e;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px}
+  .stat-ok{color:#3fb950}.stat-warn{color:#d29922}.stat-err{color:#f85149}
+  h2{font-size:16px;margin-bottom:12px;color:#f0f3f6}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:8px 12px;border-bottom:1px solid #30363d;color:#8b949e;font-weight:500}
+  td{padding:8px 12px;border-bottom:1px solid #21262d}
+  .badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:500}
+  .badge-tg{background:#2b5278;color:#7bc8f6}.badge-wh{background:#2d3a2d;color:#7ee787}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+  .btn-logout{background:none;border:1px solid #30363d;border-radius:6px;color:#8b949e;padding:4px 12px;cursor:pointer;font-size:12px}
+  .btn-logout:hover{color:#f0f3f6;border-color:#8b949e}
+  .btn-refresh{background:none;border:1px solid #30363d;border-radius:6px;color:#58a6ff;padding:4px 12px;cursor:pointer;font-size:12px;margin-right:8px}
+  #status{font-size:11px;color:#8b949e}
+</style></head><body>
+<div class="topbar">
+  <div><h1>CHAOS Relay Admin</h1><div class="subtitle">Server dashboard</div></div>
+  <div>
+    <span id="status"></span>
+    <button class="btn-refresh" onclick="load()">Refresh</button>
+    <form action="/admin/logout" method="POST" style="display:inline"><button class="btn-logout" type="submit">Logout</button></form>
+  </div>
+</div>
+<div class="grid" id="stats"></div>
+<h2>Sessions</h2>
+<table><thead><tr><th>User ID</th><th>Channels</th><th>WebSocket</th><th>Created</th></tr></thead><tbody id="sessions"></tbody></table>
+<script>
+async function load(){
+  document.getElementById('status').textContent='Loading...';
+  try{
+    const r=await fetch('/admin/status');
+    if(r.status===401){location.href='/admin/login';return}
+    const d=await r.json();
+    document.getElementById('stats').innerHTML=
+      '<div class="stat"><div class="stat-value '+(d.kv?'stat-ok':'stat-err')+'">'+(d.kv?'Connected':'Offline')+'</div><div class="stat-label">Deno KV</div></div>'+
+      '<div class="stat"><div class="stat-value">'+d.websockets+'</div><div class="stat-label">WebSockets</div></div>'+
+      '<div class="stat"><div class="stat-value">'+d.sessions.length+'</div><div class="stat-label">Sessions</div></div>'+
+      '<div class="stat"><div class="stat-value">'+Math.floor(d.uptime/60)+'m</div><div class="stat-label">Uptime</div></div>';
+    const tb=document.getElementById('sessions');
+    tb.innerHTML=d.sessions.map(s=>
+      '<tr><td><code>'+s.userId.slice(0,12)+'...</code></td>'+
+      '<td>'+s.channelTypes.map(t=>'<span class="badge badge-'+(t==='telegram'?'tg':'wh')+'">'+t+'</span> ').join('')+(s.channels===0?'<span style="color:#8b949e">none</span>':'')+'</td>'+
+      '<td>'+(s.wsConnections>0?'<span class="stat-ok">'+s.wsConnections+' active</span>':'<span style="color:#8b949e">0</span>')+'</td>'+
+      '<td>'+new Date(s.createdAt).toLocaleString()+'</td></tr>'
+    ).join('');
+    document.getElementById('status').textContent='Updated '+new Date().toLocaleTimeString();
+  }catch(e){
+    document.getElementById('status').textContent='Error: '+e.message;
+  }
+}
+load();
+setInterval(load,15000);
+</script></body></html>`;
