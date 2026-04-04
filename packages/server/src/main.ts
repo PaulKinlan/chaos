@@ -10,7 +10,12 @@ import {
   type UserSession,
   validateAuth,
 } from "./auth.ts";
-import { getMessages, getResponses, startMessageCleanup } from "./store.ts";
+import {
+  getMessages,
+  getResponses,
+  startMessageCleanup,
+  type StoredMessage,
+} from "./store.ts";
 import { handleWebhook } from "./channels/webhook.ts";
 import { handleReply, type ReplyPayload } from "./channels/responder.ts";
 import {
@@ -27,6 +32,88 @@ import type { ChannelConfig } from "@chaos/shared";
 
 const PORT = parseInt(Deno.env.get("PORT") || "8787");
 const VERSION = "0.1.0";
+
+/**
+ * Watch KV for new messages and push them to a WebSocket.
+ * Uses kv.watch() which works across Deno Deploy isolates.
+ * On connection, first sends any messages since lastPollTimestamp to catch
+ * messages that arrived between WS reconnects.
+ */
+async function startKvWatch(
+  kv: Deno.Kv,
+  userId: string,
+  socket: WebSocket,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    // First, send any messages that arrived while the client was disconnected
+    // Use a short lookback window (5 minutes) to catch missed messages
+    const lookback = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { getMessages } = await import("./store.ts");
+    const missed = await getMessages(userId, lookback);
+    if (missed.length > 0) {
+      logger.info("server", "Sending missed messages on WS connect", {
+        userId,
+        count: missed.length,
+      });
+      for (const msg of missed) {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "message", message: msg }));
+        }
+      }
+    }
+
+    // Now watch for new messages via KV watch
+    logger.info("server", "Starting KV watch for user", { userId });
+    const stream = kv.watch([["last_message", userId]]);
+    const reader = stream.getReader();
+
+    while (!signal.aborted) {
+      const { done, value } = await reader.read();
+      if (done || signal.aborted) break;
+
+      const entry = value[0];
+      if (!entry.value) continue;
+
+      const { messageId, timestamp } = entry.value as {
+        messageId: string;
+        timestamp: string;
+      };
+
+      logger.info("server", "KV watch triggered", {
+        userId,
+        messageId,
+        timestamp,
+      });
+
+      // Fetch the actual message from KV and push it
+      const result = await kv.get<StoredMessage>([
+        "messages",
+        userId,
+        timestamp,
+        messageId,
+      ]);
+      if (result.value && socket.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({ type: "message", message: result.value }),
+        );
+        logger.info("server", "KV watch pushed message via WS", {
+          userId,
+          messageId,
+        });
+      }
+    }
+
+    reader.releaseLock();
+  } catch (err) {
+    if (!signal.aborted) {
+      logger.error("server", "KV watch error", {
+        userId,
+        error: String(err),
+      });
+    }
+  }
+}
 
 // Lazy initialization — runs once on first request, not during module warmup
 let initialized = false;
@@ -454,9 +541,18 @@ Deno.serve(serveOptions, async (req: Request) => {
     const { socket, response } = Deno.upgradeWebSocket(req);
     const wsUserId = wsSession.userId;
 
+    // Track the KV watch abort controller so we can stop it on close
+    let watchController: AbortController | null = null;
+
     socket.onopen = () => {
       addConnection(wsUserId, socket);
       logger.info("server", "WebSocket connected", { userId: wsUserId });
+
+      // Start watching KV for new messages (works across isolates on Deno Deploy)
+      if (isKvAvailable() && getKv()) {
+        watchController = new AbortController();
+        startKvWatch(getKv()!, wsUserId, socket, watchController.signal);
+      }
     };
 
     socket.onmessage = async (event) => {
@@ -501,6 +597,7 @@ Deno.serve(serveOptions, async (req: Request) => {
     };
 
     socket.onclose = () => {
+      watchController?.abort();
       removeConnection(wsUserId, socket);
       logger.info("server", "WebSocket disconnected", { userId: wsUserId });
     };
@@ -512,6 +609,7 @@ Deno.serve(serveOptions, async (req: Request) => {
         userId: wsUserId,
         error: String(msg),
       });
+      watchController?.abort();
       removeConnection(wsUserId, socket);
     };
 

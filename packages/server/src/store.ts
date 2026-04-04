@@ -104,6 +104,11 @@ export async function addMessage(
     await kv.set(["messages", userId, msg.timestamp, msg.id], msg, {
       expireIn: MESSAGE_TTL_MS,
     });
+    // Update the watch key so kv.watch() on other isolates sees the new message
+    await kv.set(["last_message", userId], {
+      messageId: msg.id,
+      timestamp: msg.timestamp,
+    });
   }
 
   // Cache in memory
