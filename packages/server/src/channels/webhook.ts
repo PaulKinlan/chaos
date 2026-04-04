@@ -75,8 +75,10 @@ export async function handleWebhook(
     content = await req.text().catch(() => "(empty body)");
   }
 
-  // Store the message (include channel direction for client-side reply decision)
+  // Include channel config for client-side processing
   metadata.channelDirection = channel.direction || "inbound";
+  if (channel.name) metadata.channelName = channel.name;
+  if (channel.prompt) metadata.channelPrompt = channel.prompt;
 
   const message: StoredMessage = {
     id: crypto.randomUUID(),

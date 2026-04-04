@@ -865,6 +865,9 @@ Deno.serve(serveOptions, async (req: Request) => {
       if (!channel) {
         return error("Channel not found", 404);
       }
+      // Update top-level fields
+      if (typeof body.name === "string") channel.name = body.name;
+      if (typeof body.prompt === "string") channel.prompt = body.prompt;
       // Merge metadata updates (only allow safe fields)
       if (body.metadata) {
         if (Array.isArray(body.metadata.allowedUsers)) {

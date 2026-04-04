@@ -4075,13 +4075,41 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
         </details>`;
     }
 
+    const chName = (ch as Record<string, unknown>).name as string || '';
+    const chPrompt = (ch as Record<string, unknown>).prompt as string || '';
+    const dirLabel = (ch as Record<string, unknown>).direction === 'bidirectional' ? 'Two-way' : 'Inbound only';
+
+    // Config section: name + prompt (for inbound channels like webhooks)
+    let configHtml = `
+      <details style="margin-top:6px;font-size:var(--text-xs);">
+        <summary style="cursor:pointer;color:var(--text-secondary);user-select:none;">Configure</summary>
+        <div style="margin-top:4px;display:flex;flex-direction:column;gap:6px;">
+          <div>
+            <label style="color:var(--text-muted);font-size:var(--text-xs);">Name</label>
+            <input type="text" class="channel-name-input" data-channel-id="${ch.id}" value="${escapeHtml(chName)}" placeholder="e.g. GitHub Webhooks" style="width:100%;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);">
+          </div>`;
+
+    if ((ch as Record<string, unknown>).direction !== 'bidirectional') {
+      configHtml += `
+          <div>
+            <label style="color:var(--text-muted);font-size:var(--text-xs);">Prompt (instructions for the agent)</label>
+            <textarea class="channel-prompt-input" data-channel-id="${ch.id}" placeholder="e.g. Log this GitHub event to my journal entries..." style="width:100%;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);min-height:60px;resize:vertical;font-family:var(--font-sans);">${escapeHtml(chPrompt)}</textarea>
+          </div>`;
+    }
+
+    configHtml += `
+          <button class="btn btn-primary btn-xs btn-save-channel-config" data-channel-id="${ch.id}">Save</button>
+        </div>
+      </details>`;
+
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <strong style="font-size:var(--text-sm);">${ch.type}: ${ch.id.slice(0, 8)}...</strong>
+        <strong style="font-size:var(--text-sm);">${escapeHtml(chName || ch.type)}: ${ch.id.slice(0, 8)}...</strong>
         <button class="btn btn-ghost btn-remove-channel" data-channel-id="${ch.id}" style="color:var(--danger, red);font-size:var(--text-xs);">Remove</button>
       </div>
       ${detailHtml}
-      <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'} | ${(ch as Record<string, unknown>).direction === 'bidirectional' ? 'Two-way' : 'Inbound only'}</div>
+      ${configHtml}
+      <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">${dirLabel} | Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'}</div>
     `;
     listDiv.appendChild(card);
   }
@@ -4117,6 +4145,28 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         channelLog(`Failed to update allowlist: ${errMsg}`);
+        alert(`Failed: ${errMsg}`);
+      }
+    });
+  });
+
+  // Attach channel config save handlers (name, prompt)
+  listDiv.querySelectorAll('.btn-save-channel-config').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const channelId = (btn as HTMLElement).dataset.channelId!;
+      const nameInput = listDiv.querySelector(`.channel-name-input[data-channel-id="${channelId}"]`) as HTMLInputElement;
+      const promptInput = listDiv.querySelector(`.channel-prompt-input[data-channel-id="${channelId}"]`) as HTMLTextAreaElement;
+      const updates: Record<string, unknown> = {};
+      if (nameInput) updates.name = nameInput.value.trim();
+      if (promptInput) updates.prompt = promptInput.value.trim();
+      try {
+        channelLog(`Updating channel ${channelId.slice(0, 8)}...`);
+        await relayUpdateChannel(config, channelId, updates);
+        channelLog('Channel config updated');
+        await renderChannelsUI(); // Refresh to show new name
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        channelLog(`Failed to update channel: ${errMsg}`);
         alert(`Failed: ${errMsg}`);
       }
     });

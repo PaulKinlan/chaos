@@ -1513,7 +1513,13 @@ setMessageHandler(async (message) => {
 
   // Route to master agent, or first available
   const master = agents.find((a) => a.master) || agents[0];
-  const task = `You received a message from an external channel (${message.channelType}).\n\nFrom: ${message.from}\nChannel: ${message.channelId}\nMessage:\n${message.content}\n\nRespond to this message.`;
+  const channelName = message.metadata?.['channelName'] as string || message.channelType;
+  const channelPrompt = message.metadata?.['channelPrompt'] as string || '';
+  const direction = message.metadata?.['channelDirection'] as string || 'bidirectional';
+  const defaultInstruction = direction === 'inbound'
+    ? 'Process this message according to the instructions below.'
+    : 'Respond to this message.';
+  const task = `You received a message from an external channel.\n\nChannel: ${channelName} (${message.channelType})\nFrom: ${message.from}\nMessage:\n${message.content}\n\n${channelPrompt || defaultInstruction}`;
 
   // Notify UI to open a channel column (if UI is open)
   const port = activeUiPort;

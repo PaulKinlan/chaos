@@ -23,8 +23,10 @@ export type ChannelDirection = 'inbound' | 'bidirectional';
 
 export interface ChannelConfig {
   id: string;
+  name?: string;
   type: 'discord' | 'telegram' | 'email' | 'webhook' | 'slack';
   direction: ChannelDirection;
+  prompt?: string;
   agentId: string;
   enabled: boolean;
   metadata: Record<string, unknown>;
