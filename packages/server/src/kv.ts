@@ -86,6 +86,19 @@ export async function kvDeleteChannelIndex(channelId: string): Promise<void> {
   await kv.delete(['channels', channelId]);
 }
 
+// ── Public key index (fingerprint -> apiKey, for session reclaim) ──
+
+export async function kvSetPubKeyIndex(fingerprint: string, apiKey: string): Promise<void> {
+  if (!kv) return;
+  await kv.set(['pubkeys', fingerprint], apiKey);
+}
+
+export async function kvGetPubKeyIndex(fingerprint: string): Promise<string | null> {
+  if (!kv) return null;
+  const result = await kv.get<string>(['pubkeys', fingerprint]);
+  return result.value;
+}
+
 // ── Server keypair operations ──
 
 export interface StoredKeyPair {

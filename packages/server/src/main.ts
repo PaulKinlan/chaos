@@ -1,7 +1,7 @@
 // CHAOS Relay Server
 // Handles message relay between external channels and the Chrome extension
 
-import { validateAuth, createSession, addChannel, removeChannel, getChannels, getSessionByApiKey } from './auth.ts';
+import { validateAuth, createSession, addChannel, removeChannel, getChannels, getSessionByApiKey, type UserSession } from './auth.ts';
 import { getMessages, getResponses, startMessageCleanup } from './store.ts';
 import { handleWebhook } from './channels/webhook.ts';
 import { handleReply, type ReplyPayload } from './channels/responder.ts';
@@ -86,6 +86,41 @@ Deno.serve(serveOptions, async (req: Request) => {
       kv: isKvAvailable(),
       websockets: getConnectionCount(),
       uptime: Math.floor(performance.now() / 1000),
+    });
+  }
+
+  // Admin status page (protected by CHAOS_ADMIN_KEY env var)
+  if (url.pathname === '/admin/status' && method === 'GET') {
+    const adminKey = Deno.env.get('CHAOS_ADMIN_KEY');
+    const providedKey = url.searchParams.get('key') || req.headers.get('X-Admin-Key');
+    if (!adminKey || providedKey !== adminKey) {
+      return error('Unauthorized', 401);
+    }
+
+    const { isKvAvailable, getKv } = await import('./kv.ts');
+    const { getConnectionCount } = await import('./ws.ts');
+
+    // List all sessions from KV
+    const sessions: Array<{ userId: string; channels: number; createdAt: string }> = [];
+    if (isKvAvailable() && getKv()) {
+      const iter = getKv()!.list<UserSession>({ prefix: ['sessions'] });
+      for await (const entry of iter) {
+        const s = entry.value;
+        sessions.push({
+          userId: s.userId,
+          channels: s.channels.length,
+          createdAt: s.createdAt,
+        });
+      }
+    }
+
+    return json({
+      status: 'ok',
+      version: VERSION,
+      kv: isKvAvailable(),
+      websockets: getConnectionCount(),
+      uptime: Math.floor(performance.now() / 1000),
+      sessions,
     });
   }
 

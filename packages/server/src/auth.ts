@@ -14,6 +14,8 @@ import {
   kvSetChannelIndex,
   kvGetChannelOwner,
   kvDeleteChannelIndex,
+  kvSetPubKeyIndex,
+  kvGetPubKeyIndex,
 } from './kv.ts';
 
 export interface UserSession {
@@ -155,10 +157,38 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
 }
 
 /**
+ * Compute a fingerprint of a JWK public key for indexing.
+ */
+function pubKeyFingerprint(publicKey: JsonWebKey): string {
+  // Use the x and y coordinates of the P-256 key as a stable fingerprint
+  return `${publicKey.x || ''}:${publicKey.y || ''}`;
+}
+
+/**
  * Create a new session, optionally storing a public key.
- * Now async — writes to KV for persistence.
+ * If a session with the same public key already exists (reclaim),
+ * returns the existing session instead of creating a new one.
  */
 export async function createSession(publicKey?: JsonWebKey): Promise<{ userId: string; apiKey: string }> {
+  // Check if this public key already has a session (reclaim after server restart)
+  if (publicKey && isKvAvailable()) {
+    const fingerprint = pubKeyFingerprint(publicKey);
+    const existingApiKey = await kvGetPubKeyIndex(fingerprint);
+    if (existingApiKey) {
+      const existingSession = await kvGetSession(existingApiKey);
+      if (existingSession) {
+        // Reclaim: populate caches and return existing credentials
+        sessionCache.set(existingApiKey, existingSession);
+        userIndexCache.set(existingSession.userId, existingApiKey);
+        for (const ch of existingSession.channels) {
+          channelIndexCache.set(ch.id, existingSession.userId);
+        }
+        logger.info('auth', 'Session reclaimed', { userId: existingSession.userId, channels: existingSession.channels.length });
+        return { userId: existingSession.userId, apiKey: existingApiKey };
+      }
+    }
+  }
+
   const userId = crypto.randomUUID();
   const apiKey = crypto.randomUUID();
 
@@ -171,6 +201,12 @@ export async function createSession(publicKey?: JsonWebKey): Promise<{ userId: s
   };
 
   await persistSession(session);
+
+  // Index by public key fingerprint for future reclaim
+  if (publicKey && isKvAvailable()) {
+    const fingerprint = pubKeyFingerprint(publicKey);
+    await kvSetPubKeyIndex(fingerprint, apiKey);
+  }
 
   logger.info('auth', 'Session created', { userId, hasPublicKey: !!publicKey });
   return { userId, apiKey };
