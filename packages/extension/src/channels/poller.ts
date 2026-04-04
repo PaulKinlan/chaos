@@ -66,7 +66,34 @@ export function setMessageHandler(handler: MessageHandler): void {
  * Shared message processing logic used by both WebSocket and poll paths.
  * Calls the registered message handler and sends a reply if one is returned.
  */
+// Track processed message IDs to prevent duplicate processing
+const processedMessageIds = new Set<string>();
+const MAX_PROCESSED_IDS = 500;
+
+function markProcessed(id: string): boolean {
+  if (processedMessageIds.has(id)) return false; // already processed
+  processedMessageIds.add(id);
+  // Trim old entries to prevent unbounded growth
+  if (processedMessageIds.size > MAX_PROCESSED_IDS) {
+    const iter = processedMessageIds.values();
+    for (let i = 0; i < 100; i++) iter.next(); // skip first 100
+    // Actually, just clear the oldest half
+    const arr = Array.from(processedMessageIds);
+    processedMessageIds.clear();
+    for (const id of arr.slice(arr.length - MAX_PROCESSED_IDS / 2)) {
+      processedMessageIds.add(id);
+    }
+  }
+  return true; // first time seeing this
+}
+
 async function processMessage(message: ChannelMessage): Promise<void> {
+  // Deduplicate: skip if we've already processed this message
+  if (!markProcessed(message.id)) {
+    console.log(`[poller] Skipping duplicate message ${message.id.slice(0, 8)}`);
+    return;
+  }
+
   if (!messageHandler) {
     console.warn('No message handler registered for channel messages');
     return;
@@ -79,6 +106,8 @@ async function processMessage(message: ChannelMessage): Promise<void> {
     serverUrl: settings.serverUrl,
     apiKey: settings.apiKey,
   };
+
+  broadcastChannelLog(`Processing message ${message.id.slice(0, 8)} from ${message.channelType}`);
 
   try {
     const responseContent = await messageHandler(message);
