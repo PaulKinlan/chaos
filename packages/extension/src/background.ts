@@ -1205,6 +1205,26 @@ chrome.runtime.onMessage.addListener(
       executeAssignedTask(msg.agentId as string, msg.taskId as string);
       return false;
     }
+    // Forward sub-agent creation to UI so it opens a column
+    if (msgType === 'subAgentCreated' && activeUiPort) {
+      const uiPort = activeUiPort;
+      try {
+        uiPort.postMessage({
+          type: 'channelMessageReceived',
+          agentId: msg.agentId as string,
+          channelLabel: 'New Agent',
+          from: msg.name as string,
+          content: `Sub-agent "${msg.name}" (${msg.role}) created. Waiting for tasks...`,
+          channelType: 'agent',
+          channelId: msg.agentId as string,
+        });
+        // Refresh agent list so sidebar updates
+        listAgents().then(agents => {
+          try { uiPort.postMessage({ type: 'agentList', agents }); } catch { /* */ }
+        });
+      } catch { /* */ }
+      return false;
+    }
     console.log(`[background] one-shot message: ${msgType}`);
     handleOneShotMessage(msg)
       .then((result) => {

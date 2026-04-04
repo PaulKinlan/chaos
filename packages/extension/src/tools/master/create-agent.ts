@@ -41,6 +41,17 @@ export function createCreateAgentTool(masterAgentId: string) {
           await opfs.writeFile(claudeMdPath, existing + purposeSection);
         }
 
+        // Notify UI to open a column for the new agent
+        try {
+          chrome.runtime.sendMessage({
+            type: 'subAgentCreated',
+            agentId: agent.id,
+            name: agent.name,
+            role: agent.role,
+            createdBy: masterAgentId,
+          });
+        } catch { /* */ }
+
         return {
           ok: true,
           agentId: agent.id,
