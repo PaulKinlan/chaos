@@ -269,6 +269,86 @@ Allow CHAOS agents to connect to MCP servers as a client:
 
 Implementation: MCP client in the extension that connects to configured MCP servers. Tools from MCP servers are added to the agent's tool set dynamically.
 
+## Monorepo Architecture
+
+When we implement channels, we need a server component. Rather than creating separate repos, everything stays in one monorepo:
+
+```
+chaos/
+  packages/
+    extension/          # Chrome extension (current src/, app.html, manifest.json)
+      src/
+      app.html
+      manifest.json
+      vite.config.ts
+      package.json
+
+    server/             # Relay server for external channels
+      src/
+        channels/       # Per-channel handlers (discord, telegram, slack, email)
+        relay/          # Message queue, polling endpoint, auth
+        registry/       # Skills registry / marketplace API
+        webhooks/       # Generic webhook receiver
+      deno.json         # or package.json if Node
+
+    web/                # Public website
+      src/
+      public/
+      package.json
+
+    shared/             # Types and protocols shared across all packages
+      src/
+        types.ts        # Message formats, channel configs, skill manifests
+        protocol.ts     # Relay protocol (extension ↔ server)
+      package.json
+
+  package.json          # Root workspace config
+  turbo.json            # or nx.json for task orchestration
+```
+
+### Why monorepo
+
+- **Shared types**: The relay protocol between extension and server needs to stay in sync. One PR changes both sides.
+- **Lockstep versioning**: Server and extension evolve together, no version drift.
+- **Single CI**: One pipeline tests everything.
+- **Easier to develop**: `npm run dev` starts extension + server + web together.
+
+### Runtime choices
+
+**Server**: Deno is the preference (familiar, good sandbox infrastructure, built-in TypeScript, easy deployment). But the architecture shouldn't lock us in — use standard HTTP/fetch patterns so it can also run on Node/Cloudflare Workers/Fly.io.
+
+**Extension**: Stays as-is (Vite + @crxjs/vite-plugin).
+
+**Web**: Static site or lightweight framework (could be Vite + vanilla, or Astro for content-heavy pages).
+
+### Migration path
+
+Phase 0 (before implementing channels):
+1. Create `packages/` directory structure
+2. Move current extension code into `packages/extension/`
+3. Set up workspace (npm workspaces or pnpm)
+4. Verify extension still builds and tests pass
+5. Create `packages/shared/` with types extracted from extension
+
+Phase 1 (with channels):
+1. Create `packages/server/` with the relay server
+2. Import shared types
+3. Deploy server (Deno Deploy initially)
+4. Extension polls server for messages
+
+Phase 2 (website):
+1. Create `packages/web/`
+2. Public landing page, docs
+3. Skill marketplace browser (reads from server's registry API)
+
+### Deployment
+
+- **Extension**: Built locally or in CI, distributed via Chrome Web Store (or as .crx/.zip)
+- **Server**: Deployed to Deno Deploy (or any platform supporting Deno/Node). Could also be self-hosted for privacy.
+- **Web**: Static hosting (GitHub Pages, Netlify, Cloudflare Pages)
+
+Each package deploys independently but shares the same codebase and types.
+
 ## Related
 
 - [emaila.gent](https://github.com/PaulKinlan/emaila.gent) - email-based agent communication pattern
