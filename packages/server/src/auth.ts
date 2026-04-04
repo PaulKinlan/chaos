@@ -176,6 +176,24 @@ export async function createSession(publicKey?: JsonWebKey): Promise<{ userId: s
   return { userId, apiKey };
 }
 
+/**
+ * Look up a session by API key (for WebSocket auth where Bearer headers aren't available).
+ */
+export async function getSessionByApiKey(apiKey: string): Promise<UserSession | null> {
+  let session = sessionCache.get(apiKey) ?? null;
+  if (!session && isKvAvailable()) {
+    session = await kvGetSession(apiKey);
+    if (session) {
+      sessionCache.set(apiKey, session);
+      userIndexCache.set(session.userId, apiKey);
+      for (const ch of session.channels) {
+        channelIndexCache.set(ch.id, session.userId);
+      }
+    }
+  }
+  return session;
+}
+
 export async function getSessionByUserId(userId: string): Promise<UserSession | null> {
   // Try cache first
   let apiKey = userIndexCache.get(userId) ?? null;

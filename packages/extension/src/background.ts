@@ -61,6 +61,8 @@ import {
   handlePollAlarm,
   startChannelPolling,
   stopChannelPolling,
+  startWebSocket,
+  stopWebSocket,
   setMessageHandler,
 } from './channels/poller.js';
 import { getRelaySettings } from './channels/config.js';
@@ -1328,11 +1330,13 @@ Return ONLY the refined prompt text, nothing else. No explanations or commentary
     case 'startChannelPolling': {
       const interval = (msg.intervalMinutes as number) || 1;
       startChannelPolling(interval);
+      startWebSocket();
       return { ok: true };
     }
 
     case 'stopChannelPolling': {
       stopChannelPolling();
+      stopWebSocket();
       return { ok: true };
     }
 
@@ -1512,10 +1516,11 @@ setMessageHandler(async (message) => {
   return result || null;
 });
 
-// Start polling if relay is configured
+// Start polling and WebSocket if relay is configured
 getRelaySettings().then((settings) => {
   if (settings) {
     startChannelPolling(settings.pollIntervalMinutes);
+    startWebSocket();
   }
 }).catch((err) => {
   console.error('Failed to initialize channel polling:', err);

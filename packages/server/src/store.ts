@@ -2,6 +2,7 @@
 // Phase 2: adds message expiry (24 hours) and periodic cleanup
 
 import { logger } from './logger.ts';
+import { pushToUser } from './ws.ts';
 
 export interface StoredMessage {
   id: string;
@@ -100,6 +101,9 @@ export function addMessage(userId: string, msg: StoredMessage): void {
   if (msgs.length > MAX_MESSAGES_PER_USER) {
     messageStore.set(userId, msgs.slice(-MAX_MESSAGES_PER_USER));
   }
+
+  // Push to any connected WebSocket clients immediately
+  pushToUser(userId, { type: 'message', message: msg });
 }
 
 export function getMessages(userId: string, since?: string): StoredMessage[] {

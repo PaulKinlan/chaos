@@ -1,7 +1,7 @@
 // CHAOS Relay Server
 // Handles message relay between external channels and the Chrome extension
 
-import { validateAuth, createSession, addChannel, removeChannel, getChannels } from './auth.ts';
+import { validateAuth, createSession, addChannel, removeChannel, getChannels, getSessionByApiKey } from './auth.ts';
 import { getMessages, getResponses, startMessageCleanup } from './store.ts';
 import { handleWebhook } from './channels/webhook.ts';
 import { handleReply, type ReplyPayload } from './channels/responder.ts';
@@ -11,6 +11,7 @@ import { initKv } from './kv.ts';
 import { RateLimiter, RATE_LIMITS } from './rate-limit.ts';
 import { sanitizeMessage } from './sanitize.ts';
 import { logger, requestLog } from './logger.ts';
+import { addConnection, removeConnection } from './ws.ts';
 import type { ChannelConfig } from '@chaos/shared';
 
 const PORT = parseInt(Deno.env.get('PORT') || '8787');
@@ -160,6 +161,71 @@ Deno.serve(serveOptions, async (req: Request) => {
       status: resp.status,
       headers: { ...Object.fromEntries(resp.headers.entries()), ...corsHeaders },
     });
+  }
+
+  // ── WebSocket upgrade ──
+
+  if (url.pathname === '/ws' && req.headers.get('upgrade') === 'websocket') {
+    const token = url.searchParams.get('token');
+    if (!token) {
+      return error('Missing token query parameter', 401);
+    }
+
+    const wsSession = await getSessionByApiKey(token);
+    if (!wsSession) {
+      return error('Invalid token', 401);
+    }
+
+    const { socket, response } = Deno.upgradeWebSocket(req);
+    const wsUserId = wsSession.userId;
+
+    socket.onopen = () => {
+      addConnection(wsUserId, socket);
+      logger.info('server', 'WebSocket connected', { userId: wsUserId });
+    };
+
+    socket.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'reply') {
+          const payload: ReplyPayload = {
+            channelType: data.channelType,
+            channelId: data.channelId,
+            replyTo: data.replyTo,
+            content: data.content,
+            metadata: data.metadata,
+          };
+          if (!payload.channelId || !payload.content) {
+            socket.send(JSON.stringify({ type: 'error', error: 'Missing channelId or content' }));
+            return;
+          }
+          const sanitized = sanitizeMessage(payload.content);
+          if (!sanitized.valid) {
+            socket.send(JSON.stringify({ type: 'error', error: sanitized.error || 'Invalid message content' }));
+            return;
+          }
+          payload.content = sanitized.content;
+          const result = handleReply(wsUserId, payload);
+          socket.send(JSON.stringify({ type: 'reply_ack', ...result }));
+        } else if (data.type === 'ping') {
+          socket.send(JSON.stringify({ type: 'pong' }));
+        }
+      } catch {
+        socket.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }));
+      }
+    };
+
+    socket.onclose = () => {
+      removeConnection(wsUserId, socket);
+      logger.info('server', 'WebSocket disconnected', { userId: wsUserId });
+    };
+
+    socket.onerror = (err) => {
+      logger.error('server', 'WebSocket error', { userId: wsUserId, error: String(err) });
+      removeConnection(wsUserId, socket);
+    };
+
+    return response;
   }
 
   // ── Authenticated endpoints ──
