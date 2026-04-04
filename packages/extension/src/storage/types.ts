@@ -187,4 +187,6 @@ export type HookTrigger =
   | { type: 'window-created' }
   | { type: 'window-focused' }
   | { type: 'window-closed' }
-  | { type: 'context-menu'; label: string };
+  | { type: 'context-menu'; label: string }
+  | { type: 'clipboard-changed' }
+  | { type: 'filesystem-changed'; path?: string };

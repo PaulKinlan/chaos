@@ -4658,6 +4658,18 @@ function formatTrigger(trigger: HookTrigger): string {
       return `Omnibox keyword: "${trigger.keyword}"`;
     case 'context-menu':
       return `Context menu: "${trigger.label}"`;
+    case 'reading-list-changed':
+      return 'Reading list changed';
+    case 'window-created':
+      return 'Window created';
+    case 'window-focused':
+      return 'Window focused';
+    case 'window-closed':
+      return 'Window closed';
+    case 'clipboard-changed':
+      return 'Clipboard changed';
+    case 'filesystem-changed':
+      return `File system changed${trigger.path ? ` (${trigger.path})` : ''}`;
     default:
       return (trigger as HookTrigger).type;
   }
@@ -4889,6 +4901,26 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
       const label = (document.getElementById('hook-filter-label') as HTMLInputElement)?.value.trim() || '';
       if (!label) return;
       trigger = { type: 'context-menu', label };
+      break;
+    }
+    case 'reading-list-changed':
+      trigger = { type: 'reading-list-changed' };
+      break;
+    case 'window-created':
+      trigger = { type: 'window-created' };
+      break;
+    case 'window-focused':
+      trigger = { type: 'window-focused' };
+      break;
+    case 'window-closed':
+      trigger = { type: 'window-closed' };
+      break;
+    case 'clipboard-changed':
+      trigger = { type: 'clipboard-changed' };
+      break;
+    case 'filesystem-changed': {
+      const path = (document.getElementById('hook-filter-fs-path') as HTMLInputElement)?.value.trim() || undefined;
+      trigger = { type: 'filesystem-changed', path };
       break;
     }
     default:

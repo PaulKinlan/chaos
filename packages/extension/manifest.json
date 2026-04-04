@@ -18,7 +18,9 @@
     "notifications",
     "downloads",
     "readingList",
-    "idle"
+    "idle",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "host_permissions": [],
   "optional_host_permissions": [

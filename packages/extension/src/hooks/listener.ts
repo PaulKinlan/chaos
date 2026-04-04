@@ -258,6 +258,49 @@ function registerReadingListListener(): void {
   });
 }
 
+// ── Clipboard listener ──
+
+function registerClipboardListener(): void {
+  // The clipboardchange event fires when the system clipboard content changes.
+  // Requires clipboardRead permission. Available in Chrome 124+.
+  // In a service worker context, we need to use self.addEventListener.
+  try {
+    (self as unknown as EventTarget).addEventListener('clipboardchange', async () => {
+      const hooks = await getEnabledHooks();
+      const matching = hooks.filter((h) => h.trigger.type === 'clipboard-changed');
+      if (matching.length === 0) return;
+
+      let content = '(could not read clipboard)';
+      try {
+        // Read clipboard text
+        const items = await (navigator as any).clipboard.readText();
+        content = typeof items === 'string' ? items.slice(0, 500) : String(items).slice(0, 500);
+      } catch {
+        // Clipboard read may require focus or permission
+      }
+
+      const context = `Clipboard changed. Content preview: ${content}`;
+      for (const hook of matching) {
+        executeHook(hook, context);
+      }
+    });
+    console.log('[hooks] Clipboard change listener registered');
+  } catch {
+    console.log('[hooks] clipboardchange event not available in this context');
+  }
+}
+
+// ── FileSystem Observer listener ──
+
+function registerFileSystemListener(): void {
+  // FileSystemObserver is available in Chrome 129+
+  // This is a placeholder — the actual observation requires a FileSystemHandle
+  // which must be obtained via the File System Access API (user gesture required).
+  // For now, we register the hook type and log that it needs setup.
+  // The observation will be started when the user configures a path via the UI.
+  console.log('[hooks] FileSystem observer hook type registered (requires user-granted file handle)');
+}
+
 // ── Initialization ──
 
 /**
@@ -278,6 +321,8 @@ export function initHooksListeners(): void {
   registerWindowFocusedListener();
   registerWindowClosedListener();
   registerReadingListListener();
+  registerClipboardListener();
+  registerFileSystemListener();
 
   console.log('CHAOS hooks listeners initialized');
 }
