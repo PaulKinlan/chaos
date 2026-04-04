@@ -467,6 +467,26 @@
       height: 18px;
     }
 
+    .sidebar-divider {
+      height: 1px;
+      background: var(--border-subtle);
+      margin: var(--sp-2) var(--sp-3);
+    }
+    .sidebar.collapsed .sidebar-divider {
+      margin: var(--sp-2) var(--sp-1);
+    }
+    .sidebar-section-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: var(--sp-1) var(--sp-3);
+      font-weight: 600;
+    }
+    .sidebar.collapsed .sidebar-section-label {
+      display: none;
+    }
+
     .sidebar-item .label {
       overflow: hidden;
       text-overflow: ellipsis;
@@ -2866,13 +2886,19 @@
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           <span class="label">Artifacts</span>
         </button>
-        <button class="sidebar-item" data-view="files" title="Memory">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          <span class="label">Memory</span>
+        <button class="sidebar-item" data-view="channels" title="Channels">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <span class="label">Channels</span>
         </button>
         <button class="sidebar-item" data-view="hooks" title="Hooks">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           <span class="label">Hooks</span>
+        </button>
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-section-label">Agent</div>
+        <button class="sidebar-item" data-view="files" title="Memory">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span class="label">Memory</span>
         </button>
         <button class="sidebar-item" data-view="agent-settings" title="Agent Settings">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -2981,6 +3007,67 @@
             </div>
             <h3>No artifacts</h3>
             <p>Shared artifacts will appear here when this agent publishes them.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════ Channels View ════════ -->
+      <div class="view-panel" id="view-channels">
+        <div class="view-padded">
+          <div class="section-header">
+            <h2>Channels</h2>
+          </div>
+          <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:16px;">Connect external channels (webhooks, Discord, Telegram) to your agents via a relay server.</p>
+          <div id="channels-section">
+            <div id="channels-connect" style="margin-bottom:12px;">
+              <div class="settings-field">
+                <label for="relay-server-url">Relay Server URL <span id="relay-url-default-label" style="font-size:var(--text-xs);color:var(--text-muted);"></span></label>
+                <div style="display:flex;gap:var(--sp-1);align-items:center;">
+                  <input type="text" id="relay-server-url" list="relay-server-urls" placeholder="https://chaos--main.paulkinlan-ea.deno.net" style="flex:1;">
+                  <datalist id="relay-server-urls">
+                    <option value="https://chaos--main.paulkinlan-ea.deno.net">
+                    <option value="http://localhost:8787">
+                  </datalist>
+                  <button class="btn btn-ghost" id="btn-relay-url-reset" style="display:none;font-size:var(--text-xs);white-space:nowrap;">Reset to default</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:var(--sp-2);align-items:center;margin-top:8px;">
+                <button class="btn btn-primary" id="btn-relay-connect">Connect</button>
+                <button class="btn btn-ghost" id="btn-relay-disconnect" style="display:none;">Disconnect</button>
+                <span id="relay-status" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
+              </div>
+            </div>
+            <div id="channels-connected" style="display:none;">
+              <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:12px;">
+                <button class="btn btn-ghost" id="btn-add-channel">+ Add Channel</button>
+              </div>
+              <div id="channel-type-picker" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
+                <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:8px;">Choose channel type:</p>
+                <div style="display:flex;gap:var(--sp-2);">
+                  <button class="btn btn-ghost" id="btn-add-webhook">Webhook</button>
+                  <button class="btn btn-ghost" id="btn-add-telegram">Telegram Bot</button>
+                </div>
+              </div>
+              <div id="telegram-setup" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
+                <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:8px;">Enter your Telegram bot token (from @BotFather):</p>
+                <div class="settings-field">
+                  <input type="password" id="telegram-bot-token" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" style="font-family:monospace;">
+                </div>
+                <div style="display:flex;gap:var(--sp-2);align-items:center;margin-top:8px;">
+                  <button class="btn btn-primary" id="btn-telegram-validate">Validate & Connect</button>
+                  <button class="btn btn-ghost" id="btn-telegram-cancel">Cancel</button>
+                  <span id="telegram-status" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
+                </div>
+              </div>
+              <div id="channels-list" style="display:grid;gap:8px;"></div>
+            </div>
+            <details id="channel-log-details" style="margin-top:12px;">
+              <summary style="cursor:pointer;font-size:var(--text-xs);color:var(--text-secondary);user-select:none;">Channel Logs</summary>
+              <div style="margin-top:6px;position:relative;">
+                <button id="btn-clear-channel-log" class="btn btn-ghost" style="position:absolute;top:4px;right:4px;font-size:var(--text-xs);z-index:1;padding:2px 6px;">Clear</button>
+                <pre id="channel-log-output" style="max-height:200px;overflow-y:auto;background:var(--bg-tertiary, #1a1a2e);color:var(--text-secondary, #ccc);font-family:monospace;font-size:11px;padding:8px;border-radius:var(--radius-sm);margin:0;white-space:pre-wrap;word-break:break-all;"></pre>
+              </div>
+            </details>
           </div>
         </div>
       </div>
@@ -3180,61 +3267,7 @@
               <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Manage Chrome extension permissions.</p>
               <div id="browser-permissions-area"></div>
             </div>
-            <div class="settings-card" style="grid-column: 1 / -1;">
-              <h3>Channels</h3>
-              <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Connect external channels (webhooks, Discord, Telegram) to your agents via a relay server.</p>
-              <div id="channels-section">
-                <div id="channels-connect" style="margin-bottom:12px;">
-                  <div class="settings-field">
-                    <label for="relay-server-url">Relay Server URL <span id="relay-url-default-label" style="font-size:var(--text-xs);color:var(--text-muted);"></span></label>
-                    <div style="display:flex;gap:var(--sp-1);align-items:center;">
-                      <input type="text" id="relay-server-url" list="relay-server-urls" placeholder="https://chaos--main.paulkinlan-ea.deno.net" style="flex:1;">
-                      <datalist id="relay-server-urls">
-                        <option value="https://chaos--main.paulkinlan-ea.deno.net">
-                        <option value="http://localhost:8787">
-                      </datalist>
-                      <button class="btn btn-ghost" id="btn-relay-url-reset" style="display:none;font-size:var(--text-xs);white-space:nowrap;">Reset to default</button>
-                    </div>
-                  </div>
-                  <div style="display:flex;gap:var(--sp-2);align-items:center;margin-top:8px;">
-                    <button class="btn btn-primary" id="btn-relay-connect">Connect</button>
-                    <button class="btn btn-ghost" id="btn-relay-disconnect" style="display:none;">Disconnect</button>
-                    <span id="relay-status" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
-                  </div>
-                </div>
-                <div id="channels-connected" style="display:none;">
-                  <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:12px;">
-                    <button class="btn btn-ghost" id="btn-add-channel">+ Add Channel</button>
-                  </div>
-                  <div id="channel-type-picker" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
-                    <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:8px;">Choose channel type:</p>
-                    <div style="display:flex;gap:var(--sp-2);">
-                      <button class="btn btn-ghost" id="btn-add-webhook">Webhook</button>
-                      <button class="btn btn-ghost" id="btn-add-telegram">Telegram Bot</button>
-                    </div>
-                  </div>
-                  <div id="telegram-setup" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
-                    <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:8px;">Enter your Telegram bot token (from @BotFather):</p>
-                    <div class="settings-field">
-                      <input type="password" id="telegram-bot-token" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" style="font-family:monospace;">
-                    </div>
-                    <div style="display:flex;gap:var(--sp-2);align-items:center;margin-top:8px;">
-                      <button class="btn btn-primary" id="btn-telegram-validate">Validate & Connect</button>
-                      <button class="btn btn-ghost" id="btn-telegram-cancel">Cancel</button>
-                      <span id="telegram-status" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
-                    </div>
-                  </div>
-                  <div id="channels-list" style="display:grid;gap:8px;"></div>
-                </div>
-                <details id="channel-log-details" style="margin-top:12px;">
-                  <summary style="cursor:pointer;font-size:var(--text-xs);color:var(--text-secondary);user-select:none;">Channel Logs</summary>
-                  <div style="margin-top:6px;position:relative;">
-                    <button id="btn-clear-channel-log" class="btn btn-ghost" style="position:absolute;top:4px;right:4px;font-size:var(--text-xs);z-index:1;padding:2px 6px;">Clear</button>
-                    <pre id="channel-log-output" style="max-height:200px;overflow-y:auto;background:var(--bg-tertiary, #1a1a2e);color:var(--text-secondary, #ccc);font-family:monospace;font-size:11px;padding:8px;border-radius:var(--radius-sm);margin:0;white-space:pre-wrap;word-break:break-all;"></pre>
-                  </div>
-                </details>
-              </div>
-            </div>
+            <!-- Channels moved to its own sidebar view -->
             <details class="settings-card" style="grid-column: 1 / -1;">
               <summary style="cursor:pointer;user-select:none;"><h3 style="display:inline;">Tool Permissions</h3></summary>
               <p style="font-size:var(--text-xs);color:var(--text-secondary);margin:12px 0;">Control which tools agents can use. "Always" allows without prompting, "Ask" prompts before use, "Never" blocks the tool entirely.</p>

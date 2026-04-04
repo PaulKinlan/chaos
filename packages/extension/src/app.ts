@@ -439,6 +439,9 @@ function loadCurrentViewData(): void {
     case 'artifacts':
       loadArtifacts();
       break;
+    case 'channels':
+      renderChannelsUI();
+      break;
     case 'files':
       loadFilesView();
       break;
@@ -3556,9 +3559,6 @@ async function loadSettings(): Promise<void> {
 
     // Show model area for active provider
     updateProviderModelVisibility();
-
-    // Load channels UI
-    await renderChannelsUI();
   } catch (err) {
     showPanelError('view-global-settings', `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
   }
