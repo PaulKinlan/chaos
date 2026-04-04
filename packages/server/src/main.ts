@@ -226,6 +226,29 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
+  // Admin: delete a session
+  if (url.pathname.startsWith('/admin/sessions/') && method === 'DELETE') {
+    if (!verifyAdminSession(req)) return error('Unauthorized', 401);
+    const targetUserId = url.pathname.split('/').pop()!;
+    const { isKvAvailable: kvOk, getKv } = await import('./kv.ts');
+    if (kvOk() && getKv()) {
+      // Find and delete the session by userId
+      const iter = getKv()!.list<UserSession>({ prefix: ['sessions'] });
+      for await (const entry of iter) {
+        if (entry.value.userId === targetUserId) {
+          await getKv()!.delete(entry.key);
+          await getKv()!.delete(['users', targetUserId]);
+          for (const ch of entry.value.channels) {
+            await getKv()!.delete(['channels', ch.id]);
+          }
+          logger.info('admin', 'Session deleted', { userId: targetUserId });
+          return json({ ok: true, deleted: targetUserId });
+        }
+      }
+    }
+    return error('Session not found', 404);
+  }
+
   // Admin logout
   if (url.pathname === '/admin/logout' && method === 'POST') {
     const cookie = req.headers.get('cookie') || '';
@@ -712,8 +735,8 @@ async function load(){
           }
           return '<div style="padding:4px 0;font-size:12px"><span class="badge badge-'+esc(ch.type)+'">'+esc(ch.type)+'</span> '+detail+'</div>';
         }).join('');
-      return '<div class="card"><div class="card-header"><span class="card-title"><code>'+esc(s.userId.slice(0,12))+'...</code></span><span>'+wsStatus+'</span></div>'+
-        '<div class="channel-detail">Created: '+new Date(s.createdAt).toLocaleString()+'</div>'+
+      return '<div class="card"><div class="card-header"><span class="card-title"><code>'+esc(s.userId.slice(0,12))+'...</code></span><span>'+wsStatus+' <button onclick="delSession(\''+esc(s.userId)+'\')" style="background:none;border:1px solid #f85149;color:#f85149;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:10px;margin-left:8px">Delete</button></span></div>'+
+        '<div class="channel-detail">Created: '+new Date(s.createdAt).toLocaleString()+' | ID: <code>'+esc(s.userId)+'</code></div>'+
         '<div style="margin-top:8px">'+channels+'</div></div>';
     }).join('')||'<div style="color:#8b949e">No sessions</div>';
 
@@ -737,4 +760,9 @@ async function load(){
 }
 load();
 setInterval(load,10000);
+async function delSession(userId){
+  if(!confirm('Delete session '+userId.slice(0,12)+'...?'))return;
+  const r=await fetch('/admin/sessions/'+userId,{method:'DELETE'});
+  if(r.ok){load()}else{alert('Failed: '+(await r.json()).error)}
+}
 </script></body></html>`;

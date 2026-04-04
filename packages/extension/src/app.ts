@@ -1111,8 +1111,8 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
     b.classList.toggle('active', b.dataset.view === activeView);
   });
 
-  // Update view visibility
-  if (activeAgentId) {
+  // Update view visibility — but don't overwrite global settings if that's the active view
+  if (activeAgentId && activeView !== 'global-settings') {
     updateViewVisibility();
 
     // Initialize columns if none exist

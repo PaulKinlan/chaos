@@ -148,7 +148,14 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   );
 
   if (!verified) {
-    logger.warn('auth', 'Invalid signature', { userId: session.userId });
+    logger.warn('auth', 'Invalid signature', {
+      userId: session.userId,
+      path,
+      method: req.method,
+      timestamp,
+      bodyLength: bodyText.length,
+      bodyHashHex: bodyHashHex.slice(0, 16) + '...',
+    });
     return null; // reject invalid signatures
   }
 
