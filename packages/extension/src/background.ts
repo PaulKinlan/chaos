@@ -1342,6 +1342,18 @@ async function handleOneShotMessage(
       return { artifacts };
     }
 
+    case 'deleteArtifact': {
+      const { deleteArtifact } = await import('./storage/shared.js');
+      await deleteArtifact(msg.artifactPath as string);
+      return { deleted: true };
+    }
+
+    case 'deleteTask': {
+      const { deleteTask } = await import('./storage/shared.js');
+      await deleteTask(msg.taskId as string);
+      return { deleted: true };
+    }
+
     case 'readArtifactContent': {
       try {
         const content = await opfs.readFile(msg.path as string);

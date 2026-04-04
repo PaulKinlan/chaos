@@ -100,6 +100,8 @@ export async function getTaskState(): Promise<Task[]> {
         createdAt: event.timestamp,
         updatedAt: event.timestamp,
       });
+    } else if (event.type === 'deleted') {
+      tasks.delete(event.taskId);
     } else if (event.type === 'updated') {
       const existing = tasks.get(event.taskId);
       if (existing) {
@@ -201,6 +203,51 @@ export async function listArtifacts(opts?: ListArtifactsOpts): Promise<ArtifactM
   }
 
   return artifacts;
+}
+
+// ── Deletions ──
+
+/**
+ * Delete a task by appending a 'deleted' event to the task log.
+ * The event-sourced replay in getTaskState will remove it from results.
+ */
+export async function deleteTask(taskId: string): Promise<void> {
+  const event: TaskEvent = {
+    taskId,
+    type: 'deleted',
+    timestamp: new Date().toISOString(),
+    data: {},
+  };
+  const line = JSON.stringify(event) + '\n';
+  await opfs.appendFile(TASKS_PATH, line);
+}
+
+/**
+ * Delete an artifact by removing its entry from the artifacts JSONL
+ * and optionally deleting the backing file from OPFS.
+ */
+export async function deleteArtifact(artifactPath: string): Promise<void> {
+  // Rewrite the artifacts JSONL without the matching entry
+  let lines: string[];
+  try {
+    lines = await opfs.readLines(ARTIFACTS_PATH);
+  } catch {
+    return; // Nothing to delete
+  }
+
+  const remaining = lines.filter((line) => {
+    const meta = JSON.parse(line) as ArtifactMeta;
+    return meta.path !== artifactPath;
+  });
+
+  await opfs.writeFile(ARTIFACTS_PATH, remaining.map((l) => l + '\n').join(''));
+
+  // Try to delete the backing file too
+  try {
+    await opfs.delete(artifactPath);
+  } catch {
+    // File may already be gone
+  }
 }
 
 // ── Helpers ──

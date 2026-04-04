@@ -2499,6 +2499,7 @@ function renderTasks(): void {
           <th>Dependencies</th>
           <th>Created</th>
           <th>Updated</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>`;
@@ -2510,6 +2511,7 @@ function renderTasks(): void {
         <td>${t.blockedBy && t.blockedBy.length > 0 ? t.blockedBy.map((id) => escapeHtml(taskSubject(id))).join(', ') : '<span style="color:var(--text-muted)">None</span>'}</td>
         <td class="col-time">${formatTime(t.createdAt)}</td>
         <td class="col-time">${formatTime(t.updatedAt)}</td>
+        <td><button class="btn btn-ghost btn-xs delete-task-btn" data-delete-task-id="${escapeHtml(t.id)}" title="Delete task" style="color:var(--text-muted);">&#x2715;</button></td>
       </tr>`).join('');
     html += `</tbody></table>`;
   }
@@ -2591,9 +2593,22 @@ function renderTasks(): void {
     }
   });
 
+  // Wire up delete buttons for collaborative tasks
+  container.querySelectorAll<HTMLButtonElement>('.delete-task-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const taskId = btn.dataset.deleteTaskId!;
+      if (!confirm('Delete this task? This cannot be undone.')) return;
+      await sendMsg({ type: 'deleteTask', taskId });
+      await loadTasks();
+    });
+  });
+
   // Wire up collaborative task rows
   container.querySelectorAll<HTMLTableRowElement>('tr.clickable').forEach((row) => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      // Don't open detail if the delete button was clicked
+      if ((e.target as HTMLElement).closest('.delete-task-btn')) return;
       showTaskDetail(row.dataset.taskId!);
     });
   });
@@ -2768,16 +2783,29 @@ function renderArtifacts(): void {
         <span class="artifact-agent-label">${escapeHtml(agentName(a.agentId))}</span>
         <span>${formatTime(a.timestamp)}</span>
       </div>
+      <button class="btn btn-ghost btn-xs delete-artifact-btn" data-artifact-path="${escapeHtml(a.path)}" title="Delete artifact" style="position:absolute;top:6px;right:6px;color:var(--text-muted);">&#x2715;</button>
     </div>
   `,
     )
     .join('');
 
   grid.querySelectorAll<HTMLDivElement>('.artifact-card').forEach((card) => {
-    card.addEventListener('click', async () => {
+    card.addEventListener('click', async (e) => {
+      // Don't open detail if the delete button was clicked
+      if ((e.target as HTMLElement).closest('.delete-artifact-btn')) return;
       const idx = parseInt(card.dataset.artifactIndex!, 10);
       const artifact = filtered[idx];
       await showArtifactDetail(artifact);
+    });
+  });
+
+  grid.querySelectorAll<HTMLButtonElement>('.delete-artifact-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const artifactPath = btn.dataset.artifactPath!;
+      if (!confirm('Delete this artifact? This cannot be undone.')) return;
+      await sendMsg({ type: 'deleteArtifact', artifactPath });
+      await loadArtifacts();
     });
   });
 }
