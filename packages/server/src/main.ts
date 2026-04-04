@@ -748,7 +748,7 @@ async function load(){
           }
           return '<div style="padding:4px 0;font-size:12px"><span class="badge badge-'+esc(ch.type)+'">'+esc(ch.type)+'</span> '+detail+'</div>';
         }).join('');
-      return '<div class="card"><div class="card-header"><span class="card-title"><code>'+esc(s.userId.slice(0,12))+'...</code></span><span>'+wsStatus+' <button onclick="delSession(\''+esc(s.userId)+'\')" style="background:none;border:1px solid #f85149;color:#f85149;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:10px;margin-left:8px">Delete</button></span></div>'+
+      return '<div class="card"><div class="card-header"><span class="card-title"><code>'+esc(s.userId.slice(0,12))+'...</code></span><span>'+wsStatus+' <button onclick="delSession(&apos;'+esc(s.userId)+'&apos;)" style="background:none;border:1px solid #f85149;color:#f85149;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:10px;margin-left:8px">Delete</button></span></div>'+
         '<div class="channel-detail">Created: '+new Date(s.createdAt).toLocaleString()+' | ID: <code>'+esc(s.userId)+'</code></div>'+
         '<div style="margin-top:8px">'+channels+'</div></div>';
     }).join('')||'<div style="color:#8b949e">No sessions</div>';
