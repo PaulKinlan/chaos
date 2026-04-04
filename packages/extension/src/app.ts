@@ -216,7 +216,10 @@ chrome.storage.sync.get('chaos:settings').then((result) => {
 
 async function sendMsg<T = unknown>(msg: Record<string, unknown>): Promise<T> {
   const result = await (chrome.runtime.sendMessage(msg) as Promise<T & { error?: string }>);
-  if (result && typeof result === 'object' && 'error' in result && result.error) {
+  if (result === null || result === undefined) {
+    throw new Error(`No response from background for ${msg.type}. The service worker may have restarted.`);
+  }
+  if (typeof result === 'object' && 'error' in result && result.error) {
     throw new Error(result.error);
   }
   return result;
