@@ -17,7 +17,7 @@ export function createInstallSkillTool(agentId: string) {
       description: z.string().describe('Brief description of what the skill provides'),
       content: z.string().describe('The SKILL.md content (markdown instructions)'),
       referenceFiles: z
-        .record(z.string())
+        .record(z.string(), z.string())
         .optional()
         .describe('Optional map of relative paths to content for reference files (e.g. {"reference/topic.md": "content"})'),
     }),
@@ -31,7 +31,7 @@ export function createInstallSkillTool(agentId: string) {
 
         if (referenceFiles) {
           for (const [path, refContent] of Object.entries(referenceFiles)) {
-            files.set(path, refContent);
+            files.set(path, String(refContent));
           }
         }
 
