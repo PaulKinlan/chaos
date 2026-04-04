@@ -9,6 +9,11 @@
  * - Alarm-based agent wake-ups
  */
 
+// Polyfill: some AI SDK dependencies reference `window` which doesn't exist in service workers
+if (typeof globalThis.window === 'undefined') {
+  (globalThis as unknown as Record<string, unknown>).window = globalThis;
+}
+
 import {
   createAgent,
   listAgents,

@@ -2927,9 +2927,9 @@
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span class="label">Chat</span>
         </button>
-        <button class="sidebar-item" data-view="tasks" title="Tasks">
+        <button class="sidebar-item" data-view="tasks" title="Jobs">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/></svg>
-          <span class="label">Tasks</span>
+          <span class="label">Jobs</span>
         </button>
         <button class="sidebar-item" data-view="messages" title="Messages">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -2999,7 +2999,7 @@
       <div class="view-panel" id="view-tasks">
         <div class="view-padded">
           <div class="section-header">
-            <h2>Tasks</h2>
+            <h2>Jobs</h2>
           </div>
           <div class="filter-bar" id="tasks-filter-bar">
             <select id="tasks-filter-agent">
@@ -3007,7 +3007,7 @@
             </select>
             <select id="tasks-filter-status">
               <option value="">All statuses</option>
-              <option value="pending">Pending</option>
+              <option value="pending">Open</option>
               <option value="in_progress">In Progress</option>
               <option value="completed">Completed</option>
               <option value="failed">Failed</option>
@@ -3018,8 +3018,8 @@
             <div class="empty-state-icon">
               <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg>
             </div>
-            <h3>No tasks yet</h3>
-            <p>No tasks yet. Scheduled tasks are created when you ask your agent to do something on a timer (like "check my bookmarks every morning"). Collaborative tasks appear when agents create work items for each other.</p>
+            <h3>No jobs yet</h3>
+            <p>Jobs are work items posted to a shared board. You or any agent can post a job, and specialised agents will pick them up. Think of it like a Kanban board.</p>
           </div>
         </div>
       </div>

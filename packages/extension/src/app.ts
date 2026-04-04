@@ -2456,20 +2456,22 @@ function renderTasks(): void {
   let html = '';
 
   // ── Quick links to agent tasks ──
-  if (!filterAgentId && agents.length > 0) {
-    html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">`;
+  if (agents.length > 0) {
+    html += `<div style="margin-bottom:16px;">`;
+    html += `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:6px;">Jump to agent tasks:</div>`;
+    html += `<div style="display:flex;flex-wrap:wrap;gap:6px;">`;
     for (const agent of agents) {
-      const agentTaskCount = tasks.filter(t => t.owner === agent.id).length;
+      const agentTaskCount = tasks.filter(t => t.owner === agent.id).length + scheduledTasks.filter(t => t.agentId === agent.id).length;
       html += `<button class="btn btn-ghost btn-xs agent-task-link" data-agent-id="${escapeHtml(agent.id)}" style="font-size:var(--text-xs);">${escapeHtml(agent.name)}${agentTaskCount > 0 ? ` (${agentTaskCount})` : ''}</button>`;
     }
-    html += `</div>`;
+    html += `</div></div>`;
   }
 
-  // ── Collaborative Tasks ──
+  // ── Jobs ──
   html += `<div class="tasks-section">`;
   html += `<div class="tasks-section-header">
-    <h3>Collaborative Tasks</h3>
-    <p class="tasks-section-subtitle">Cross-agent work items in the shared task board</p>
+    <h3>Jobs Board</h3>
+    <p class="tasks-section-subtitle">Work items posted to the shared board. Agents pick up jobs based on their specialisation.</p>
   </div>`;
 
   if (agentCollab.length === 0) {
@@ -4063,11 +4065,12 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
           <label style="color:var(--text-muted);">Agent Instructions</label>
           <p style="color:var(--text-muted);margin:2px 0 4px;">Tell the agent what to do when a message arrives on this channel.</p>
           <textarea class="channel-prompt-input" data-channel-id="${ch.id}" placeholder="e.g. This is a GitHub webhook. When a push event arrives, log it to my journal. When an issue is filed, add it to my TODO list." style="width:100%;padding:6px 8px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);min-height:80px;resize:vertical;font-family:var(--font-sans);line-height:1.4;">${escapeHtml(chPrompt)}</textarea>
+          <button class="btn btn-ghost btn-xs btn-refine-channel-prompt" data-channel-id="${ch.id}" style="margin-top:4px;">Refine with AI</button>
         </div>`;
     }
 
     configHtml += `
-        <div><button class="btn btn-primary btn-xs btn-save-channel-config" data-channel-id="${ch.id}">Save</button></div>
+        <div style="display:flex;gap:6px;"><button class="btn btn-primary btn-xs btn-save-channel-config" data-channel-id="${ch.id}">Save</button></div>
       </div>`;
 
     card.innerHTML = `
@@ -4114,6 +4117,17 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
         const errMsg = err instanceof Error ? err.message : String(err);
         channelLog(`Failed to update allowlist: ${errMsg}`);
         alert(`Failed: ${errMsg}`);
+      }
+    });
+  });
+
+  // Attach refine prompt handlers
+  listDiv.querySelectorAll<HTMLButtonElement>('.btn-refine-channel-prompt').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const channelId = btn.dataset.channelId!;
+      const textarea = listDiv.querySelector(`.channel-prompt-input[data-channel-id="${channelId}"]`) as HTMLTextAreaElement;
+      if (textarea) {
+        openRefineModal(textarea, 'This prompt tells an AI agent what to do when a webhook message arrives on a channel. Make it specific and actionable.');
       }
     });
   });
