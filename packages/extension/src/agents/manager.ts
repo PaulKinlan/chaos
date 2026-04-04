@@ -70,7 +70,7 @@ export async function createAgent(
     id,
     name,
     role,
-    visibility: 'private',
+    visibility: 'visible',
     bookmarkFolderId,
     createdAt: new Date().toISOString(),
   };

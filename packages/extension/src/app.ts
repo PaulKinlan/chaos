@@ -4429,7 +4429,7 @@ const createConfirmBtn = document.getElementById('btn-create-confirm')!;
 function showCreateAgentModal(): void {
   (document.getElementById('create-agent-name') as HTMLInputElement).value = '';
   (document.getElementById('create-agent-role') as HTMLSelectElement).value = 'neutral';
-  (document.getElementById('create-agent-visibility') as HTMLSelectElement).value = 'private';
+  (document.getElementById('create-agent-visibility') as HTMLSelectElement).value = 'visible';
   createAgentModal.classList.add('visible');
   (document.getElementById('create-agent-name') as HTMLInputElement).focus();
 }
