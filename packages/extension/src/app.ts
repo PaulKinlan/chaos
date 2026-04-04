@@ -375,10 +375,11 @@ sidebarItems.forEach((btn) => {
   });
 });
 
-// Global settings button
-document.getElementById('btn-global-settings')!.addEventListener('click', () => {
+// Global settings — shared logic used by button click and hash navigation
+function showGlobalSettings(updateURL = true): void {
+  if (activeView === 'global-settings') return; // already showing
   activeView = 'global-settings';
-  updateHash();
+  if (updateURL) updateHash();
 
   // Deselect sidebar items
   sidebarItems.forEach((b) => b.classList.remove('active'));
@@ -390,6 +391,11 @@ document.getElementById('btn-global-settings')!.addEventListener('click', () => 
   loadSettings();
   loadPermissions();
   loadBrowserPermissions();
+}
+
+// Global settings button
+document.getElementById('btn-global-settings')!.addEventListener('click', () => {
+  showGlobalSettings();
 });
 
 function loadCurrentViewData(): void {
@@ -1052,9 +1058,8 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
     hasRestoredFromHash = true;
     const hashState = parseHash();
     if (hashState.view === 'global-settings') {
-      activeView = 'global-settings';
-      // Trigger the global settings view
-      document.getElementById('btn-global-settings')!.click();
+      // Trigger the global settings view directly (not via click)
+      showGlobalSettings(false);
       return;
     }
     if (hashState.agentId && agents.find((a) => a.id === hashState.agentId)) {
@@ -4584,8 +4589,7 @@ async function init(): Promise<void> {
 window.addEventListener('hashchange', () => {
   const hashState = parseHash();
   if (hashState.view === 'global-settings') {
-    activeView = 'global-settings';
-    document.getElementById('btn-global-settings')!.click();
+    showGlobalSettings(false); // false = don't update hash (it already changed)
   } else if (hashState.agentId && agents.find((a) => a.id === hashState.agentId)) {
     if (hashState.agentId !== activeAgentId) {
       switchToAgent(hashState.agentId);
