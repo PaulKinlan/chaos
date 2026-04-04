@@ -45,12 +45,14 @@ async function signedFetch(
   const parsedUrl = new URL(url);
   const path = parsedUrl.pathname;
 
-  // Prepare headers
+  // Prepare headers — only set Content-Type when there's a body
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     'Authorization': `Bearer ${relayConfig.apiKey}`,
     ...(fetchOptions.headers as Record<string, string> || {}),
   };
+  if (fetchOptions.body) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   // Try to load keypair and sign
   const keyPair = await loadKeyPair();

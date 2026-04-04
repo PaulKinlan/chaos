@@ -20,24 +20,41 @@ interface LogEntry {
   [key: string]: unknown;
 }
 
+const LOG_FORMAT = Deno.env.get('LOG_FORMAT') || 'pretty'; // 'json' or 'pretty'
+
+const LEVEL_COLORS: Record<LogLevel, string> = {
+  debug: '\x1b[90m',  // gray
+  info:  '\x1b[36m',  // cyan
+  warn:  '\x1b[33m',  // yellow
+  error: '\x1b[31m',  // red
+};
+const RESET = '\x1b[0m';
+
 function emit(level: LogLevel, component: string, message: string, data?: Record<string, unknown>): void {
   if (LOG_LEVELS[level] < configuredLevelNum) return;
 
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level,
-    component,
-    message,
-    ...data,
-  };
+  const ts = new Date().toISOString();
 
-  const line = JSON.stringify(entry);
-  if (level === 'error') {
-    console.error(line);
-  } else if (level === 'warn') {
-    console.warn(line);
+  if (LOG_FORMAT === 'json') {
+    const entry: LogEntry = { timestamp: ts, level, component, message, ...data };
+    const line = JSON.stringify(entry);
+    if (level === 'error') console.error(line);
+    else if (level === 'warn') console.warn(line);
+    else console.log(line);
   } else {
-    console.log(line);
+    // Human-readable format
+    const time = ts.slice(11, 23); // HH:MM:SS.mmm
+    const lvl = level.toUpperCase().padEnd(5);
+    const comp = component.padEnd(12);
+    const color = LEVEL_COLORS[level];
+    let line = `${color}${time} ${lvl}${RESET} [${comp}] ${message}`;
+    if (data && Object.keys(data).length > 0) {
+      const parts = Object.entries(data).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`);
+      line += ` ${'\x1b[90m'}${parts.join(' ')}${RESET}`;
+    }
+    if (level === 'error') console.error(line);
+    else if (level === 'warn') console.warn(line);
+    else console.log(line);
   }
 }
 

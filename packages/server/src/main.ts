@@ -76,9 +76,17 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   // ── Public endpoints (no auth) ──
 
-  // Health check
+  // Health check / status page
   if (url.pathname === '/health' && method === 'GET') {
-    return json({ status: 'ok', version: VERSION });
+    const { isKvAvailable } = await import('./kv.ts');
+    const { getConnectionCount } = await import('./ws.ts');
+    return json({
+      status: 'ok',
+      version: VERSION,
+      kv: isKvAvailable(),
+      websockets: getConnectionCount(),
+      uptime: Math.floor(performance.now() / 1000),
+    });
   }
 
   // Auth registration

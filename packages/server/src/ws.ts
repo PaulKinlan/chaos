@@ -55,6 +55,9 @@ export function pushToUser(userId: string, message: unknown): void {
 /**
  * Get the number of active connections for a user.
  */
-export function getConnectionCount(userId: string): number {
-  return connections.get(userId)?.size ?? 0;
+export function getConnectionCount(userId?: string): number {
+  if (userId) return connections.get(userId)?.size ?? 0;
+  let total = 0;
+  for (const sockets of connections.values()) total += sockets.size;
+  return total;
 }
