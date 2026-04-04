@@ -435,6 +435,9 @@ Deno.serve(serveOptions, async (req: Request) => {
       const { encryptToken } = await import('./crypto.ts');
       const encryptedToken = await encryptToken(botToken);
 
+      // Generate a pairing code for the owner to send to the bot
+      const pairingCode = crypto.randomUUID().slice(0, 8).toUpperCase();
+
       const channel: ChannelConfig = {
         id: channelId,
         type: 'telegram',
@@ -445,13 +448,14 @@ Deno.serve(serveOptions, async (req: Request) => {
           botTokenPlain: botToken,   // Kept in memory only, not persisted
           botUsername,
           webhookSecret,
+          pairingCode,
         },
       };
 
       await addChannel(session.userId, channel);
 
-      logger.info('server', 'Telegram bot channel registered', { userId: session.userId, channelId, botUsername });
-      return json({ channelId, botUsername }, 201);
+      logger.info('server', 'Telegram bot channel registered', { userId: session.userId, channelId, botUsername, pairingCode });
+      return json({ channelId, botUsername, pairingCode }, 201);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error('server', 'Telegram registration failed', { userId: session.userId, error: message });

@@ -3952,9 +3952,15 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       const botUsername = ch.metadata['botUsername'] as string || 'unknown';
       const allowedUsers = (ch.metadata['allowedUsers'] as string[] || []).join(', ');
       detailHtml = `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">Bot: @${botUsername}</div>`;
+      const pendingCode = ch.metadata['pairingCode'] as string | undefined;
+      if (pendingCode) {
+        detailHtml += `<div style="font-size:var(--text-xs);margin-top:4px;padding:6px 8px;background:var(--bg-surface);border:1px solid var(--border-focus);border-radius:4px;">
+          <strong style="color:var(--text-primary);">Pairing required:</strong> Send <code style="background:var(--bg-base);padding:1px 4px;border-radius:2px;">${escapeHtml(pendingCode)}</code> to @${escapeHtml(botUsername)} in Telegram to authorize yourself.
+        </div>`;
+      }
       detailHtml += `
         <details style="margin-top:6px;font-size:var(--text-xs);">
-          <summary style="cursor:pointer;color:var(--text-secondary);user-select:none;">Allowed Users</summary>
+          <summary style="cursor:pointer;color:var(--text-secondary);user-select:none;">Allowed Users${allowedUsers ? ` (${(ch.metadata['allowedUsers'] as string[]).length})` : ''}</summary>
           <div style="margin-top:4px;">
             <p style="color:var(--text-muted);margin-bottom:4px;">Comma-separated Telegram user IDs. Leave empty to allow everyone.</p>
             <div style="display:flex;gap:4px;align-items:center;">
@@ -4139,17 +4145,21 @@ document.getElementById('btn-telegram-validate')!.addEventListener('click', asyn
   const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
 
   try {
-    const result = await registerTelegramChannel(config, botToken);
+    const result = await registerTelegramChannel(config, botToken) as { channelId: string; botUsername: string; pairingCode?: string };
     channelLog(`Telegram bot connected: @${result.botUsername}`);
-    statusSpan.textContent = `Connected as @${result.botUsername}`;
-    statusSpan.style.color = 'var(--success, #4caf50)';
+
+    if (result.pairingCode) {
+      statusSpan.innerHTML = `Connected as @${result.botUsername}<br><strong style="font-size:var(--text-sm);color:var(--text-primary);">Send this code to your bot in Telegram to pair: <code style="background:var(--bg-base);padding:2px 6px;border-radius:4px;font-size:var(--text-md);">${result.pairingCode}</code></strong>`;
+      statusSpan.style.color = 'var(--success, #4caf50)';
+      channelLog(`Pairing code: ${result.pairingCode} — send this to @${result.botUsername} in Telegram`);
+    } else {
+      statusSpan.textContent = `Connected as @${result.botUsername}`;
+      statusSpan.style.color = 'var(--success, #4caf50)';
+    }
     tokenInput.value = '';
 
-    // Hide the setup form after a short delay and refresh
-    setTimeout(() => {
-      document.getElementById('telegram-setup')!.style.display = 'none';
-      renderChannelsUI();
-    }, 1500);
+    // Refresh channels list (keep setup visible so user can see pairing code)
+    await renderChannelsUI();
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     channelLog(`Telegram registration failed: ${errMsg}`);

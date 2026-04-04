@@ -209,13 +209,47 @@ export async function handleTelegramWebhook(
     return jsonResponse({ ok: true });
   }
 
-  // Check allowlist — if configured, only permit listed Telegram user IDs
+  // ── Pairing code flow ──
+  // If there's a pairing code and the message matches it, auto-add this user
+  const pairingCode = channel.metadata['pairingCode'] as string | undefined;
+  if (pairingCode && content.trim() === pairingCode && senderId !== undefined) {
+    const allowlist = (channel.metadata['allowedUsers'] as string[] || []);
+    const senderStr = String(senderId);
+    if (!allowlist.includes(senderStr)) {
+      allowlist.push(senderStr);
+      channel.metadata['allowedUsers'] = allowlist;
+    }
+    // Clear the pairing code (one-time use)
+    delete channel.metadata['pairingCode'];
+    // Persist the updated channel
+    const { removeChannel: rmCh, addChannel: addCh } = await import('../auth.ts');
+    await rmCh(session.userId, channelId);
+    await addCh(session.userId, channel);
+    logger.info('telegram', 'User paired via code', { channelId, senderId, from });
+
+    // Get bot token to send confirmation
+    let botToken = channel.metadata['botTokenPlain'] as string | undefined;
+    if (!botToken) {
+      const encrypted = channel.metadata['botToken'] as string | undefined;
+      if (encrypted) {
+        try {
+          const { decryptToken } = await import('../crypto.ts');
+          botToken = await decryptToken(encrypted);
+        } catch { /* */ }
+      }
+    }
+    if (botToken && chatId) {
+      await sendTelegramReply(botToken, chatId, `Paired successfully! You're now authorized to use this bot.`).catch(() => {});
+    }
+    return jsonResponse({ ok: true });
+  }
+
+  // ── Allowlist check ──
   const allowlist = channel.metadata['allowedUsers'] as string[] | undefined;
   if (allowlist && allowlist.length > 0 && senderId !== undefined) {
     const senderStr = String(senderId);
     if (!allowlist.includes(senderStr)) {
       logger.warn('telegram', 'Sender not in allowlist', { channelId, senderId, from });
-      // Send a rejection message if we have the bot token and chatId
       if (chatId) {
         let botToken = channel.metadata['botTokenPlain'] as string | undefined;
         if (!botToken) {
@@ -228,7 +262,7 @@ export async function handleTelegramWebhook(
           }
         }
         if (botToken) {
-          await sendTelegramReply(botToken, chatId, 'Sorry, you are not authorized to use this bot.').catch(() => {});
+          await sendTelegramReply(botToken, chatId, 'You are not authorized to use this bot. Ask the owner for a pairing code.').catch(() => {});
         }
       }
       return jsonResponse({ ok: true });
