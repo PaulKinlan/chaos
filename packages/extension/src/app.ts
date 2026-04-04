@@ -4124,6 +4124,78 @@ document.getElementById('btn-telegram-cancel')!.addEventListener('click', () => 
   document.getElementById('telegram-setup')!.style.display = 'none';
 });
 
+function showPairingDialog(botUsername: string, pairingCode: string): void {
+  // Remove any existing pairing dialog
+  document.getElementById('pairing-dialog')?.remove();
+
+  const dialog = document.createElement('dialog');
+  dialog.id = 'pairing-dialog';
+  dialog.style.cssText = `
+    background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default);
+    border-radius:12px;padding:0;max-width:440px;width:90%;font-family:var(--font-sans);
+  `;
+  dialog.innerHTML = `
+    <div style="padding:24px;">
+      <h2 style="font-size:var(--text-lg);margin-bottom:16px;">Pair with your Telegram bot</h2>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <div style="background:var(--bg-surface);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);">1</div>
+          <div>
+            <div style="font-weight:500;font-size:var(--text-sm);">Open Telegram</div>
+            <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Search for <strong>@${escapeHtml(botUsername)}</strong> or tap the link below</div>
+            <a href="https://t.me/${encodeURIComponent(botUsername)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:4px;font-size:var(--text-xs);color:var(--text-link, #58a6ff);">t.me/${escapeHtml(botUsername)}</a>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <div style="background:var(--bg-surface);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);">2</div>
+          <div>
+            <div style="font-weight:500;font-size:var(--text-sm);">Send the pairing code</div>
+            <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Copy and paste this code as a message to the bot:</div>
+            <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+              <code style="font-size:var(--text-lg);font-weight:600;background:var(--bg-base);padding:6px 12px;border-radius:6px;border:1px solid var(--border-default);letter-spacing:2px;">${escapeHtml(pairingCode)}</code>
+              <button class="btn btn-ghost btn-xs" id="btn-copy-pairing-code" style="white-space:nowrap;">Copy</button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <div style="background:var(--bg-surface);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);">3</div>
+          <div>
+            <div style="font-weight:500;font-size:var(--text-sm);">You're paired!</div>
+            <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">The bot will confirm authorization. You can then send messages and your CHAOS agent will respond.</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:20px;display:flex;justify-content:flex-end;">
+        <button class="btn btn-primary" id="btn-close-pairing-dialog">Done</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(dialog);
+  dialog.showModal();
+
+  // Style the backdrop
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) dialog.close();
+  });
+
+  dialog.querySelector('#btn-copy-pairing-code')!.addEventListener('click', () => {
+    navigator.clipboard.writeText(pairingCode).then(() => {
+      const btn = dialog.querySelector('#btn-copy-pairing-code')!;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    });
+  });
+
+  dialog.querySelector('#btn-close-pairing-dialog')!.addEventListener('click', () => {
+    dialog.close();
+  });
+
+  dialog.addEventListener('close', () => {
+    dialog.remove();
+  });
+}
+
 document.getElementById('btn-telegram-validate')!.addEventListener('click', async () => {
   const settings = await getRelaySettings();
   if (!settings) return;
@@ -4147,18 +4219,18 @@ document.getElementById('btn-telegram-validate')!.addEventListener('click', asyn
   try {
     const result = await registerTelegramChannel(config, botToken) as { channelId: string; botUsername: string; pairingCode?: string };
     channelLog(`Telegram bot connected: @${result.botUsername}`);
-
-    if (result.pairingCode) {
-      statusSpan.innerHTML = `Connected as @${result.botUsername}<br><strong style="font-size:var(--text-sm);color:var(--text-primary);">Send this code to your bot in Telegram to pair: <code style="background:var(--bg-base);padding:2px 6px;border-radius:4px;font-size:var(--text-md);">${result.pairingCode}</code></strong>`;
-      statusSpan.style.color = 'var(--success, #4caf50)';
-      channelLog(`Pairing code: ${result.pairingCode} — send this to @${result.botUsername} in Telegram`);
-    } else {
-      statusSpan.textContent = `Connected as @${result.botUsername}`;
-      statusSpan.style.color = 'var(--success, #4caf50)';
-    }
+    statusSpan.textContent = `Connected as @${result.botUsername}`;
+    statusSpan.style.color = 'var(--success, #4caf50)';
     tokenInput.value = '';
 
-    // Refresh channels list (keep setup visible so user can see pairing code)
+    // Show pairing dialog with step-by-step instructions
+    if (result.pairingCode) {
+      channelLog(`Pairing code: ${result.pairingCode} — send this to @${result.botUsername} in Telegram`);
+      showPairingDialog(result.botUsername, result.pairingCode);
+    }
+
+    // Hide setup form and refresh
+    document.getElementById('telegram-setup')!.style.display = 'none';
     await renderChannelsUI();
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
