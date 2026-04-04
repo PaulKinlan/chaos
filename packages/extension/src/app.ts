@@ -1215,8 +1215,8 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
   if (!activeAgentId) {
     updateViewVisibility();
   } else {
-    const anyViewActive = document.querySelector('.view-panel.active') !== null;
-    if (!anyViewActive) {
+    const anyRealViewActive = document.querySelector('.view-panel.active:not(#view-no-agent)') !== null;
+    if (!anyRealViewActive) {
       updateViewVisibility();
       loadCurrentViewData(); // Only load data on first render
     }
