@@ -377,16 +377,21 @@ async function buildAgenticSystemPrompt(
   agentId: string,
   claudeMd: string,
   pageContext?: AgenticLoopOptions['pageContext'],
-): Promise<string> {
+): Promise<{ prompt: string; skillNames: string[] }> {
   const parts: string[] = [];
 
   parts.push(claudeMd);
 
   // Installed skills
+  let loadedSkillNames: string[] = [];
   try {
+    const { listSkills: getSkills } = await import('./skills.js');
+    const skillsList = await getSkills(agentId);
     const skillsSection = await buildSkillsPromptSection(agentId);
-    if (skillsSection) {
+    if (skillsSection && skillsList.length > 0) {
       parts.push(skillsSection);
+      loadedSkillNames = skillsList.map(s => s.name);
+      console.log(`[agentic-loop] Agent ${agentId} loaded ${skillsList.length} skill(s): ${loadedSkillNames.join(', ')}`);
     }
   } catch {
     // No skills or error reading them — continue without
@@ -449,7 +454,7 @@ without calling any more tools.`);
     parts.push(content);
   }
 
-  return parts.join('\n');
+  return { prompt: parts.join('\n'), skillNames: loadedSkillNames };
 }
 
 // ── Shared message reading ──
@@ -523,7 +528,17 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
   }
 
   // 2. Build system prompt
-  const systemPrompt = await buildAgenticSystemPrompt(agentId, claudeMd, pageContext);
+  const { prompt: systemPrompt, skillNames } = await buildAgenticSystemPrompt(agentId, claudeMd, pageContext);
+
+  // Report loaded skills to the UI
+  if (skillNames.length > 0 && onProgress) {
+    onProgress({
+      type: 'thinking',
+      content: `Loaded skills: ${skillNames.join(', ')}`,
+      iteration: 0,
+      totalIterations: maxIterations,
+    });
+  }
 
   // 3. Get provider configuration
   const settings = await getSettings();
