@@ -1294,6 +1294,14 @@ async function handleOneShotMessage(
       return { meta, claudeMd, journal, bookmarks };
     }
 
+    case 'setClaudeMd': {
+      const agentId = msg.agentId as string;
+      const content = msg.content as string;
+      await opfs.writeFile(`agents/${agentId}/CLAUDE.md`, content);
+      console.log(`[background] CLAUDE.md saved for agent ${agentId}`);
+      return { ok: true };
+    }
+
     case 'updateAgentVisibility': {
       await updateAgentMeta(msg.agentId as string, {
         visibility: msg.visibility as 'private' | 'visible' | 'open',
