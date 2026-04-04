@@ -11,6 +11,33 @@
  * Dashboard views use chrome.runtime.sendMessage (one-shot request/response).
  */
 
+// ── Single-instance guard ──
+// Only one CHAOS dashboard tab should be active at a time to prevent
+// duplicate WebSocket connections, poll handlers, and agentic loop races.
+const singleInstanceChannel = new BroadcastChannel('chaos-single-instance');
+let isBlocked = false;
+
+// Ask if anyone else is running
+singleInstanceChannel.postMessage({ type: 'ping' });
+
+singleInstanceChannel.onmessage = (event) => {
+  if (event.data.type === 'ping' && !isBlocked) {
+    // Another tab is checking — tell it we're here
+    singleInstanceChannel.postMessage({ type: 'pong' });
+  } else if (event.data.type === 'pong' && !isBlocked) {
+    // Another tab is already running — block this one
+    isBlocked = true;
+    document.body.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui,sans-serif;background:var(--bg-base, #0f1117);color:var(--text-primary, #e1e4e8);">
+        <div style="text-align:center;max-width:400px;padding:32px;">
+          <h2 style="margin-bottom:12px;">CHAOS is already open</h2>
+          <p style="color:var(--text-secondary, #8b949e);margin-bottom:16px;">Another tab is already running the CHAOS dashboard. Only one instance can be active at a time to prevent conflicts.</p>
+          <button onclick="location.reload()" style="padding:8px 16px;background:var(--bg-raised, #161b22);border:1px solid var(--border-default, #30363d);border-radius:6px;color:var(--text-primary, #e1e4e8);cursor:pointer;">Retry</button>
+        </div>
+      </div>`;
+  }
+};
+
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
