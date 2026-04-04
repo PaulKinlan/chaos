@@ -1,8 +1,8 @@
 // In-memory message store for the relay server
 // Phase 2: adds message expiry (24 hours) and periodic cleanup
 
-import { logger } from './logger.ts';
-import { pushToUser } from './ws.ts';
+import { logger } from "./logger.ts";
+import { pushToUser } from "./ws.ts";
 
 export interface StoredMessage {
   id: string;
@@ -17,7 +17,7 @@ export interface StoredMessage {
 
 const MAX_MESSAGES_PER_USER = 100;
 const MESSAGE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;  // 10 minutes
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
 // userId -> messages (most recent last)
 const messageStore: Map<string, StoredMessage[]> = new Map();
@@ -58,7 +58,9 @@ export function cleanupExpiredMessages(): number {
 
   for (const [userId, msgs] of messageStore) {
     const before = msgs.length;
-    const filtered = msgs.filter((m) => new Date(m.timestamp).getTime() > cutoff);
+    const filtered = msgs.filter((m) =>
+      new Date(m.timestamp).getTime() > cutoff
+    );
     if (filtered.length < before) {
       removed += before - filtered.length;
       if (filtered.length === 0) {
@@ -71,7 +73,9 @@ export function cleanupExpiredMessages(): number {
 
   for (const [channelId, msgs] of responseStore) {
     const before = msgs.length;
-    const filtered = msgs.filter((m) => new Date(m.timestamp).getTime() > cutoff);
+    const filtered = msgs.filter((m) =>
+      new Date(m.timestamp).getTime() > cutoff
+    );
     if (filtered.length < before) {
       removed += before - filtered.length;
       if (filtered.length === 0) {
@@ -83,7 +87,7 @@ export function cleanupExpiredMessages(): number {
   }
 
   if (removed > 0) {
-    logger.debug('store', 'Cleaned up expired messages', { removed });
+    logger.debug("store", "Cleaned up expired messages", { removed });
   }
 
   return removed;
@@ -96,14 +100,19 @@ export function addMessage(userId: string, msg: StoredMessage): void {
     messageStore.set(userId, msgs);
   }
   msgs.push(msg);
-  logger.debug('store', 'Message stored', { userId, messageId: msg.id, channelType: msg.channelType, channelId: msg.channelId });
+  logger.debug("store", "Message stored", {
+    userId,
+    messageId: msg.id,
+    channelType: msg.channelType,
+    channelId: msg.channelId,
+  });
   // Keep only the last MAX_MESSAGES_PER_USER
   if (msgs.length > MAX_MESSAGES_PER_USER) {
     messageStore.set(userId, msgs.slice(-MAX_MESSAGES_PER_USER));
   }
 
   // Push to any connected WebSocket clients immediately
-  pushToUser(userId, { type: 'message', message: msg });
+  pushToUser(userId, { type: "message", message: msg });
 
   // Log to KV for durable admin visibility
   logMessageEvent(msg);
@@ -127,11 +136,14 @@ export function addResponse(channelId: string, msg: StoredMessage): void {
     responseStore.set(channelId, msgs);
   }
   msgs.push(msg);
-  logger.debug('store', 'Response stored', { channelId, messageId: msg.id });
+  logger.debug("store", "Response stored", { channelId, messageId: msg.id });
   logMessageEvent(msg);
 }
 
-export function getResponses(channelId: string, since?: string): StoredMessage[] {
+export function getResponses(
+  channelId: string,
+  since?: string,
+): StoredMessage[] {
   const msgs = responseStore.get(channelId) || [];
   if (!since) return [...msgs];
   const sinceTime = new Date(since).getTime();
@@ -145,18 +157,18 @@ export function clearResponses(channelId: string): void {
 /** Log a message event to KV for durable admin visibility (survives isolate restart). */
 export async function logMessageEvent(msg: StoredMessage): Promise<void> {
   try {
-    const { getKv, isKvAvailable } = await import('./kv.ts');
+    const { getKv, isKvAvailable } = await import("./kv.ts");
     if (!isKvAvailable() || !getKv()) return;
     const kv = getKv()!;
     // Store with timestamp key for ordering, expire after 24 hours
-    const key = ['events', msg.timestamp, msg.id];
+    const key = ["events", msg.timestamp, msg.id];
     await kv.set(key, {
       id: msg.id,
       userId: msg.userId,
       channelType: msg.channelType,
       channelId: msg.channelId,
       from: msg.from,
-      direction: msg.from === 'agent' ? 'out' : 'in',
+      direction: msg.from === "agent" ? "out" : "in",
       content: msg.content.slice(0, 200),
       timestamp: msg.timestamp,
     }, { expireIn: 24 * 60 * 60 * 1000 });
@@ -166,13 +178,15 @@ export async function logMessageEvent(msg: StoredMessage): Promise<void> {
 }
 
 /** Get recent events from KV (durable across restarts). */
-export async function getRecentEventsFromKv(limit = 50): Promise<Array<Record<string, unknown>>> {
+export async function getRecentEventsFromKv(
+  limit = 50,
+): Promise<Array<Record<string, unknown>>> {
   try {
-    const { getKv, isKvAvailable } = await import('./kv.ts');
+    const { getKv, isKvAvailable } = await import("./kv.ts");
     if (!isKvAvailable() || !getKv()) return [];
     const kv = getKv()!;
     const events: Array<Record<string, unknown>> = [];
-    const iter = kv.list({ prefix: ['events'] }, { limit, reverse: true });
+    const iter = kv.list({ prefix: ["events"] }, { limit, reverse: true });
     for await (const entry of iter) {
       events.push(entry.value as Record<string, unknown>);
     }
@@ -191,6 +205,8 @@ export function getAllRecentMessages(limit = 50): StoredMessage[] {
   for (const msgs of responseStore.values()) {
     all.push(...msgs);
   }
-  all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  all.sort((a, b) =>
+    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
   return all.slice(0, limit);
 }

@@ -1,21 +1,32 @@
 // CHAOS Relay Server
 // Handles message relay between external channels and the Chrome extension
 
-import { validateAuth, createSession, addChannel, removeChannel, getChannels, getSessionByApiKey, type UserSession } from './auth.ts';
-import { getMessages, getResponses, startMessageCleanup } from './store.ts';
-import { handleWebhook } from './channels/webhook.ts';
-import { handleReply, type ReplyPayload } from './channels/responder.ts';
-import { registerTelegramBot, handleTelegramWebhook } from './channels/telegram.ts';
-import { initServerKeyPair, getServerPublicKey } from './crypto.ts';
-import { initKv } from './kv.ts';
-import { RateLimiter, RATE_LIMITS } from './rate-limit.ts';
-import { sanitizeMessage } from './sanitize.ts';
-import { logger, requestLog } from './logger.ts';
-import { addConnection, removeConnection } from './ws.ts';
-import type { ChannelConfig } from '@chaos/shared';
+import {
+  addChannel,
+  createSession,
+  getChannels,
+  getSessionByApiKey,
+  removeChannel,
+  type UserSession,
+  validateAuth,
+} from "./auth.ts";
+import { getMessages, getResponses, startMessageCleanup } from "./store.ts";
+import { handleWebhook } from "./channels/webhook.ts";
+import { handleReply, type ReplyPayload } from "./channels/responder.ts";
+import {
+  handleTelegramWebhook,
+  registerTelegramBot,
+} from "./channels/telegram.ts";
+import { getServerPublicKey, initServerKeyPair } from "./crypto.ts";
+import { initKv } from "./kv.ts";
+import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
+import { sanitizeMessage } from "./sanitize.ts";
+import { logger, requestLog } from "./logger.ts";
+import { addConnection, removeConnection } from "./ws.ts";
+import type { ChannelConfig } from "@chaos/shared";
 
-const PORT = parseInt(Deno.env.get('PORT') || '8787');
-const VERSION = '0.1.0';
+const PORT = parseInt(Deno.env.get("PORT") || "8787");
+const VERSION = "0.1.0";
 
 // Lazy initialization — runs once on first request, not during module warmup
 let initialized = false;
@@ -35,15 +46,16 @@ const adminSessions = new Map<string, number>();
 
 // CORS headers for cross-origin requests from the extension
 const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Timestamp, X-Nonce, X-Signature',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Timestamp, X-Nonce, X-Signature",
 };
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    headers: { "Content-Type": "application/json", ...corsHeaders },
   });
 }
 
@@ -53,13 +65,13 @@ function error(message: string, status = 400): Response {
 
 function getClientIP(req: Request): string {
   // Check common proxy headers
-  return req.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
-    || req.headers.get('X-Real-IP')
-    || 'unknown';
+  return req.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ||
+    req.headers.get("X-Real-IP") ||
+    "unknown";
 }
 
 // On Deno Deploy, port is managed by the platform; locally use PORT env
-const serveOptions = Deno.env.get('DENO_DEPLOYMENT_ID') ? {} : { port: PORT };
+const serveOptions = Deno.env.get("DENO_DEPLOYMENT_ID") ? {} : { port: PORT };
 
 Deno.serve(serveOptions, async (req: Request) => {
   // Lazy init on first request (avoids blocking Deno Deploy warmup)
@@ -67,30 +79,36 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   const url = new URL(req.url);
   const method = req.method;
-  const reqData = requestLog(req, 'server', 'request');
+  const reqData = requestLog(req, "server", "request");
 
   // Log every incoming request
-  logger.info('server', 'Incoming request', reqData);
+  logger.info("server", "Incoming request", reqData);
 
   // Handle CORS preflight
-  if (method === 'OPTIONS') {
+  if (method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   // ── Public endpoints (no auth) ──
 
   // Favicon
-  if (url.pathname === '/favicon.ico') {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#238636"/><text x="16" y="22" text-anchor="middle" font-size="18" font-family="sans-serif" fill="white">C</text></svg>';
-    return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' } });
+  if (url.pathname === "/favicon.ico") {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#238636"/><text x="16" y="22" text-anchor="middle" font-size="18" font-family="sans-serif" fill="white">C</text></svg>';
+    return new Response(svg, {
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "public, max-age=86400",
+      },
+    });
   }
 
   // Health check / status page
-  if (url.pathname === '/health' && method === 'GET') {
-    const { isKvAvailable } = await import('./kv.ts');
-    const { getConnectionCount } = await import('./ws.ts');
+  if (url.pathname === "/health" && method === "GET") {
+    const { isKvAvailable } = await import("./kv.ts");
+    const { getConnectionCount } = await import("./ws.ts");
     return json({
-      status: 'ok',
+      status: "ok",
       version: VERSION,
       kv: isKvAvailable(),
       websockets: getConnectionCount(),
@@ -104,7 +122,7 @@ Deno.serve(serveOptions, async (req: Request) => {
   const ADMIN_SESSION_TTL = 4 * 60 * 60 * 1000; // 4 hours
 
   function verifyAdminSession(req: Request): boolean {
-    const cookie = req.headers.get('cookie') || '';
+    const cookie = req.headers.get("cookie") || "";
     const match = cookie.match(/chaos_admin=([^;]+)/);
     if (!match) return false;
     const token = match[1];
@@ -118,24 +136,26 @@ Deno.serve(serveOptions, async (req: Request) => {
   }
 
   // Login page
-  if (url.pathname === '/admin/login' && method === 'GET') {
-    const adminKey = Deno.env.get('CHAOS_ADMIN_KEY');
-    if (!adminKey) return error('Admin not configured (set CHAOS_ADMIN_KEY env var)', 503);
+  if (url.pathname === "/admin/login" && method === "GET") {
+    const adminKey = Deno.env.get("CHAOS_ADMIN_KEY");
+    if (!adminKey) {
+      return error("Admin not configured (set CHAOS_ADMIN_KEY env var)", 503);
+    }
     return new Response(ADMIN_LOGIN_HTML, {
-      headers: { 'Content-Type': 'text/html', ...corsHeaders },
+      headers: { "Content-Type": "text/html", ...corsHeaders },
     });
   }
 
   // Login POST
-  if (url.pathname === '/admin/login' && method === 'POST') {
-    const adminKey = Deno.env.get('CHAOS_ADMIN_KEY');
-    if (!adminKey) return error('Admin not configured', 503);
+  if (url.pathname === "/admin/login" && method === "POST") {
+    const adminKey = Deno.env.get("CHAOS_ADMIN_KEY");
+    if (!adminKey) return error("Admin not configured", 503);
     try {
       const body = await req.json();
       if (body.password !== adminKey) {
-        return new Response(JSON.stringify({ error: 'Invalid password' }), {
+        return new Response(JSON.stringify({ error: "Invalid password" }), {
           status: 401,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          headers: { "Content-Type": "application/json", ...corsHeaders },
         });
       }
       const token = crypto.randomUUID();
@@ -143,33 +163,39 @@ Deno.serve(serveOptions, async (req: Request) => {
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: {
-          'Content-Type': 'application/json',
-          'Set-Cookie': `chaos_admin=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=14400`,
+          "Content-Type": "application/json",
+          "Set-Cookie":
+            `chaos_admin=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=14400`,
           ...corsHeaders,
         },
       });
     } catch {
-      return error('Invalid request body');
+      return error("Invalid request body");
     }
   }
 
   // Admin dashboard page
-  if (url.pathname === '/admin' && method === 'GET') {
+  if (url.pathname === "/admin" && method === "GET") {
     if (!verifyAdminSession(req)) {
-      return new Response(null, { status: 302, headers: { Location: '/admin/login' } });
+      return new Response(null, {
+        status: 302,
+        headers: { Location: "/admin/login" },
+      });
     }
     return new Response(ADMIN_DASHBOARD_HTML, {
-      headers: { 'Content-Type': 'text/html', ...corsHeaders },
+      headers: { "Content-Type": "text/html", ...corsHeaders },
     });
   }
 
   // Admin status API (used by dashboard JS)
-  if (url.pathname === '/admin/status' && method === 'GET') {
-    if (!verifyAdminSession(req)) return error('Unauthorized', 401);
+  if (url.pathname === "/admin/status" && method === "GET") {
+    if (!verifyAdminSession(req)) return error("Unauthorized", 401);
 
-    const { isKvAvailable, getKv } = await import('./kv.ts');
-    const { getConnectionCount } = await import('./ws.ts');
-    const { getAllRecentMessages, getRecentEventsFromKv } = await import('./store.ts');
+    const { isKvAvailable, getKv } = await import("./kv.ts");
+    const { getConnectionCount } = await import("./ws.ts");
+    const { getAllRecentMessages, getRecentEventsFromKv } = await import(
+      "./store.ts"
+    );
 
     interface AdminChannel {
       id: string;
@@ -189,19 +215,19 @@ Deno.serve(serveOptions, async (req: Request) => {
     }> = [];
 
     if (isKvAvailable() && getKv()) {
-      const iter = getKv()!.list<UserSession>({ prefix: ['sessions'] });
+      const iter = getKv()!.list<UserSession>({ prefix: ["sessions"] });
       for await (const entry of iter) {
         const s = entry.value;
         sessions.push({
           userId: s.userId,
-          channels: s.channels.map(ch => ({
+          channels: s.channels.map((ch) => ({
             id: ch.id,
             type: ch.type,
-            agentId: ch.agentId || '(default)',
+            agentId: ch.agentId || "(default)",
             enabled: ch.enabled,
-            botUsername: ch.metadata['botUsername'] as string | undefined,
-            allowedUsers: ch.metadata['allowedUsers'] as string[] | undefined,
-            hasPairingCode: !!ch.metadata['pairingCode'],
+            botUsername: ch.metadata["botUsername"] as string | undefined,
+            allowedUsers: ch.metadata["allowedUsers"] as string[] | undefined,
+            hasPairingCode: !!ch.metadata["pairingCode"],
           })),
           createdAt: s.createdAt,
           wsConnections: getConnectionCount(s.userId),
@@ -211,25 +237,28 @@ Deno.serve(serveOptions, async (req: Request) => {
 
     // Get recent messages — use KV events (durable) as primary, in-memory as supplement
     const kvEvents = await getRecentEventsFromKv(30);
-    const memEvents = getAllRecentMessages(30).map(m => ({
+    const memEvents = getAllRecentMessages(30).map((m) => ({
       id: m.id,
       userId: m.userId.slice(0, 8),
       channelType: m.channelType,
       channelId: m.channelId.slice(0, 8),
       from: m.from,
-      direction: m.from === 'agent' ? 'out' : 'in',
-      content: m.content.slice(0, 100) + (m.content.length > 100 ? '...' : ''),
+      direction: m.from === "agent" ? "out" : "in",
+      content: m.content.slice(0, 100) + (m.content.length > 100 ? "..." : ""),
       timestamp: m.timestamp,
     }));
     // Merge and deduplicate by id, prefer KV events
-    const seenIds = new Set(kvEvents.map(e => e.id));
+    const seenIds = new Set(kvEvents.map((e) => e.id));
     const recentMessages = [
       ...kvEvents,
-      ...memEvents.filter(m => !seenIds.has(m.id)),
-    ].sort((a, b) => new Date(b.timestamp as string).getTime() - new Date(a.timestamp as string).getTime()).slice(0, 30);
+      ...memEvents.filter((m) => !seenIds.has(m.id)),
+    ].sort((a, b) =>
+      new Date(b.timestamp as string).getTime() -
+      new Date(a.timestamp as string).getTime()
+    ).slice(0, 30);
 
     return json({
-      status: 'ok',
+      status: "ok",
       version: VERSION,
       kv: isKvAvailable(),
       websockets: getConnectionCount(),
@@ -240,49 +269,55 @@ Deno.serve(serveOptions, async (req: Request) => {
   }
 
   // Admin: delete a session
-  if (url.pathname.startsWith('/admin/sessions/') && method === 'DELETE') {
-    if (!verifyAdminSession(req)) return error('Unauthorized', 401);
-    const targetUserId = url.pathname.split('/').pop()!;
-    const { isKvAvailable: kvOk, getKv } = await import('./kv.ts');
+  if (url.pathname.startsWith("/admin/sessions/") && method === "DELETE") {
+    if (!verifyAdminSession(req)) return error("Unauthorized", 401);
+    const targetUserId = url.pathname.split("/").pop()!;
+    const { isKvAvailable: kvOk, getKv } = await import("./kv.ts");
     if (kvOk() && getKv()) {
       // Find and delete the session by userId
-      const iter = getKv()!.list<UserSession>({ prefix: ['sessions'] });
+      const iter = getKv()!.list<UserSession>({ prefix: ["sessions"] });
       for await (const entry of iter) {
         if (entry.value.userId === targetUserId) {
           await getKv()!.delete(entry.key);
-          await getKv()!.delete(['users', targetUserId]);
+          await getKv()!.delete(["users", targetUserId]);
           for (const ch of entry.value.channels) {
-            await getKv()!.delete(['channels', ch.id]);
+            await getKv()!.delete(["channels", ch.id]);
           }
-          logger.info('admin', 'Session deleted', { userId: targetUserId });
+          logger.info("admin", "Session deleted", { userId: targetUserId });
           return json({ ok: true, deleted: targetUserId });
         }
       }
     }
-    return error('Session not found', 404);
+    return error("Session not found", 404);
   }
 
   // Admin logout
-  if (url.pathname === '/admin/logout' && method === 'POST') {
-    const cookie = req.headers.get('cookie') || '';
+  if (url.pathname === "/admin/logout" && method === "POST") {
+    const cookie = req.headers.get("cookie") || "";
     const match = cookie.match(/chaos_admin=([^;]+)/);
     if (match) adminSessions.delete(match[1]);
     return new Response(null, {
       status: 302,
       headers: {
-        Location: '/admin/login',
-        'Set-Cookie': 'chaos_admin=; Path=/admin; HttpOnly; Max-Age=0',
+        Location: "/admin/login",
+        "Set-Cookie": "chaos_admin=; Path=/admin; HttpOnly; Max-Age=0",
       },
     });
   }
 
   // Auth registration
-  if (url.pathname === '/auth/register' && method === 'POST') {
+  if (url.pathname === "/auth/register" && method === "POST") {
     // Rate limit: 5/hour per IP
     const ip = getClientIP(req);
-    if (!rateLimiter.check(`register:${ip}`, RATE_LIMITS.register.limit, RATE_LIMITS.register.windowMs)) {
-      logger.warn('server', 'Rate limit hit for registration', { ip });
-      return error('Too many registration attempts. Try again later.', 429);
+    if (
+      !rateLimiter.check(
+        `register:${ip}`,
+        RATE_LIMITS.register.limit,
+        RATE_LIMITS.register.windowMs,
+      )
+    ) {
+      logger.warn("server", "Rate limit hit for registration", { ip });
+      return error("Too many registration attempts. Try again later.", 429);
     }
 
     let publicKey: JsonWebKey | undefined;
@@ -298,7 +333,10 @@ Deno.serve(serveOptions, async (req: Request) => {
     const session = await createSession(publicKey);
     const serverPublicKey = getServerPublicKey();
 
-    logger.info('server', 'New session registered', { userId: session.userId, hasPublicKey: !!publicKey });
+    logger.info("server", "New session registered", {
+      userId: session.userId,
+      hasPublicKey: !!publicKey,
+    });
 
     return json({
       userId: session.userId,
@@ -309,66 +347,95 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   // Webhook ingestion (auth via URL token, not Bearer)
   const webhookMatch = url.pathname.match(/^\/webhook\/([^/]+)$/);
-  if (webhookMatch && method === 'POST') {
+  if (webhookMatch && method === "POST") {
     const channelId = webhookMatch[1];
 
     // Rate limit: 60/min per channel
-    if (!rateLimiter.check(`webhook:${channelId}`, RATE_LIMITS.webhook.limit, RATE_LIMITS.webhook.windowMs)) {
-      logger.warn('server', 'Rate limit hit for webhook', { channelId });
-      return error('Too many webhook requests. Try again later.', 429);
+    if (
+      !rateLimiter.check(
+        `webhook:${channelId}`,
+        RATE_LIMITS.webhook.limit,
+        RATE_LIMITS.webhook.windowMs,
+      )
+    ) {
+      logger.warn("server", "Rate limit hit for webhook", { channelId });
+      return error("Too many webhook requests. Try again later.", 429);
     }
 
     const resp = await handleWebhook(channelId, req);
     // Add CORS headers to webhook responses too
     const body = await resp.text();
-    logger.info('server', 'Webhook response', { channelId, status: resp.status });
+    logger.info("server", "Webhook response", {
+      channelId,
+      status: resp.status,
+    });
     return new Response(body, {
       status: resp.status,
-      headers: { ...Object.fromEntries(resp.headers.entries()), ...corsHeaders },
+      headers: {
+        ...Object.fromEntries(resp.headers.entries()),
+        ...corsHeaders,
+      },
     });
   }
 
   // Responses endpoint (for external services to poll for agent replies)
   const responsesMatch = url.pathname.match(/^\/responses\/([^/]+)$/);
-  if (responsesMatch && method === 'GET') {
+  if (responsesMatch && method === "GET") {
     const channelId = responsesMatch[1];
-    const since = url.searchParams.get('since') || undefined;
+    const since = url.searchParams.get("since") || undefined;
     const responses = getResponses(channelId, since);
-    logger.info('server', 'Responses polled', { channelId, count: responses.length });
+    logger.info("server", "Responses polled", {
+      channelId,
+      count: responses.length,
+    });
     return json({ responses, since: new Date().toISOString() });
   }
 
   // Telegram webhook ingestion (auth via URL secret, not Bearer)
   const telegramMatch = url.pathname.match(/^\/telegram\/([^/]+)$/);
-  if (telegramMatch && method === 'POST') {
+  if (telegramMatch && method === "POST") {
     const channelId = telegramMatch[1];
 
     // Rate limit: 60/min per channel (same as webhooks)
-    if (!rateLimiter.check(`webhook:${channelId}`, RATE_LIMITS.webhook.limit, RATE_LIMITS.webhook.windowMs)) {
-      logger.warn('server', 'Rate limit hit for Telegram webhook', { channelId });
-      return error('Too many webhook requests. Try again later.', 429);
+    if (
+      !rateLimiter.check(
+        `webhook:${channelId}`,
+        RATE_LIMITS.webhook.limit,
+        RATE_LIMITS.webhook.windowMs,
+      )
+    ) {
+      logger.warn("server", "Rate limit hit for Telegram webhook", {
+        channelId,
+      });
+      return error("Too many webhook requests. Try again later.", 429);
     }
 
     const resp = await handleTelegramWebhook(channelId, req);
     const body = await resp.text();
-    logger.info('server', 'Telegram webhook response', { channelId, status: resp.status });
+    logger.info("server", "Telegram webhook response", {
+      channelId,
+      status: resp.status,
+    });
     return new Response(body, {
       status: resp.status,
-      headers: { ...Object.fromEntries(resp.headers.entries()), ...corsHeaders },
+      headers: {
+        ...Object.fromEntries(resp.headers.entries()),
+        ...corsHeaders,
+      },
     });
   }
 
   // ── WebSocket upgrade ──
 
-  if (url.pathname === '/ws' && req.headers.get('upgrade') === 'websocket') {
-    const token = url.searchParams.get('token');
+  if (url.pathname === "/ws" && req.headers.get("upgrade") === "websocket") {
+    const token = url.searchParams.get("token");
     if (!token) {
-      return error('Missing token query parameter', 401);
+      return error("Missing token query parameter", 401);
     }
 
     const wsSession = await getSessionByApiKey(token);
     if (!wsSession) {
-      return error('Invalid token', 401);
+      return error("Invalid token", 401);
     }
 
     const { socket, response } = Deno.upgradeWebSocket(req);
@@ -376,13 +443,13 @@ Deno.serve(serveOptions, async (req: Request) => {
 
     socket.onopen = () => {
       addConnection(wsUserId, socket);
-      logger.info('server', 'WebSocket connected', { userId: wsUserId });
+      logger.info("server", "WebSocket connected", { userId: wsUserId });
     };
 
     socket.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'reply') {
+        if (data.type === "reply") {
           const payload: ReplyPayload = {
             channelType: data.channelType,
             channelId: data.channelId,
@@ -391,33 +458,47 @@ Deno.serve(serveOptions, async (req: Request) => {
             metadata: data.metadata,
           };
           if (!payload.channelId || !payload.content) {
-            socket.send(JSON.stringify({ type: 'error', error: 'Missing channelId or content' }));
+            socket.send(
+              JSON.stringify({
+                type: "error",
+                error: "Missing channelId or content",
+              }),
+            );
             return;
           }
           const sanitized = sanitizeMessage(payload.content);
           if (!sanitized.valid) {
-            socket.send(JSON.stringify({ type: 'error', error: sanitized.error || 'Invalid message content' }));
+            socket.send(
+              JSON.stringify({
+                type: "error",
+                error: sanitized.error || "Invalid message content",
+              }),
+            );
             return;
           }
           payload.content = sanitized.content;
           const result = handleReply(wsUserId, payload);
-          socket.send(JSON.stringify({ type: 'reply_ack', ...result }));
-        } else if (data.type === 'ping') {
-          socket.send(JSON.stringify({ type: 'pong' }));
+          socket.send(JSON.stringify({ type: "reply_ack", ...result }));
+        } else if (data.type === "ping") {
+          socket.send(JSON.stringify({ type: "pong" }));
         }
       } catch {
-        socket.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }));
+        socket.send(JSON.stringify({ type: "error", error: "Invalid JSON" }));
       }
     };
 
     socket.onclose = () => {
       removeConnection(wsUserId, socket);
-      logger.info('server', 'WebSocket disconnected', { userId: wsUserId });
+      logger.info("server", "WebSocket disconnected", { userId: wsUserId });
     };
 
     socket.onerror = (err: Event | ErrorEvent) => {
-      const msg = (err as ErrorEvent).message || (err as ErrorEvent).error || err.type || 'unknown';
-      logger.error('server', 'WebSocket error', { userId: wsUserId, error: String(msg) });
+      const msg = (err as ErrorEvent).message || (err as ErrorEvent).error ||
+        err.type || "unknown";
+      logger.error("server", "WebSocket error", {
+        userId: wsUserId,
+        error: String(msg),
+      });
       removeConnection(wsUserId, socket);
     };
 
@@ -428,70 +509,110 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   const authResult = await validateAuth(req);
   if (!authResult) {
-    logger.warn('server', 'Unauthorized request', reqData);
-    return error('Unauthorized. Include Authorization: Bearer <apiKey>', 401);
+    logger.warn("server", "Unauthorized request", reqData);
+    return error("Unauthorized. Include Authorization: Bearer <apiKey>", 401);
   }
 
   const { session } = authResult;
 
   // Poll for messages
-  if (url.pathname === '/messages' && method === 'GET') {
+  if (url.pathname === "/messages" && method === "GET") {
     // Rate limit: 120/min per user
-    if (!rateLimiter.check(`messages:${session.userId}`, RATE_LIMITS.messages.limit, RATE_LIMITS.messages.windowMs)) {
-      logger.warn('server', 'Rate limit hit for messages poll', { userId: session.userId });
-      return error('Too many poll requests. Try again later.', 429);
+    if (
+      !rateLimiter.check(
+        `messages:${session.userId}`,
+        RATE_LIMITS.messages.limit,
+        RATE_LIMITS.messages.windowMs,
+      )
+    ) {
+      logger.warn("server", "Rate limit hit for messages poll", {
+        userId: session.userId,
+      });
+      return error("Too many poll requests. Try again later.", 429);
     }
 
-    const since = url.searchParams.get('since') || undefined;
+    const since = url.searchParams.get("since") || undefined;
     const messages = getMessages(session.userId, since);
-    logger.info('server', 'Messages polled', { userId: session.userId, count: messages.length });
+    logger.info("server", "Messages polled", {
+      userId: session.userId,
+      count: messages.length,
+    });
     return json({ messages, since: new Date().toISOString() });
   }
 
   // Send a reply
-  if (url.pathname === '/reply' && method === 'POST') {
+  if (url.pathname === "/reply" && method === "POST") {
     // Rate limit: 30/min per user
-    if (!rateLimiter.check(`reply:${session.userId}`, RATE_LIMITS.reply.limit, RATE_LIMITS.reply.windowMs)) {
-      logger.warn('server', 'Rate limit hit for reply', { userId: session.userId });
-      return error('Too many reply requests. Try again later.', 429);
+    if (
+      !rateLimiter.check(
+        `reply:${session.userId}`,
+        RATE_LIMITS.reply.limit,
+        RATE_LIMITS.reply.windowMs,
+      )
+    ) {
+      logger.warn("server", "Rate limit hit for reply", {
+        userId: session.userId,
+      });
+      return error("Too many reply requests. Try again later.", 429);
     }
 
     try {
       const payload: ReplyPayload = await req.json();
       if (!payload.channelId || !payload.content) {
-        logger.warn('server', 'Reply missing required fields', { userId: session.userId });
-        return error('Missing channelId or content');
+        logger.warn("server", "Reply missing required fields", {
+          userId: session.userId,
+        });
+        return error("Missing channelId or content");
       }
 
       // Sanitize reply content
       const sanitized = sanitizeMessage(payload.content);
       if (!sanitized.valid) {
-        logger.warn('server', 'Reply content failed sanitization', { userId: session.userId });
-        return error(sanitized.error || 'Invalid message content');
+        logger.warn("server", "Reply content failed sanitization", {
+          userId: session.userId,
+        });
+        return error(sanitized.error || "Invalid message content");
       }
       payload.content = sanitized.content;
 
       const result = handleReply(session.userId, payload);
-      logger.info('server', 'Reply sent', { userId: session.userId, channelId: payload.channelId, channelType: payload.channelType });
+      logger.info("server", "Reply sent", {
+        userId: session.userId,
+        channelId: payload.channelId,
+        channelType: payload.channelType,
+      });
       return json(result);
     } catch {
-      return error('Invalid JSON body');
+      return error("Invalid JSON body");
     }
   }
 
   // Register a Telegram bot channel
-  if (url.pathname === '/channels/telegram/register' && method === 'POST') {
+  if (url.pathname === "/channels/telegram/register" && method === "POST") {
     // Rate limit: 10/hour per user (same as channels)
-    if (!rateLimiter.check(`channels:${session.userId}`, RATE_LIMITS.channels.limit, RATE_LIMITS.channels.windowMs)) {
-      logger.warn('server', 'Rate limit hit for Telegram channel registration', { userId: session.userId });
-      return error('Too many channel registration requests. Try again later.', 429);
+    if (
+      !rateLimiter.check(
+        `channels:${session.userId}`,
+        RATE_LIMITS.channels.limit,
+        RATE_LIMITS.channels.windowMs,
+      )
+    ) {
+      logger.warn(
+        "server",
+        "Rate limit hit for Telegram channel registration",
+        { userId: session.userId },
+      );
+      return error(
+        "Too many channel registration requests. Try again later.",
+        429,
+      );
     }
 
     try {
       const body = await req.json();
       const botToken = body.botToken;
-      if (!botToken || typeof botToken !== 'string') {
-        return error('Missing or invalid botToken');
+      if (!botToken || typeof botToken !== "string") {
+        return error("Missing or invalid botToken");
       }
 
       const channelId = crypto.randomUUID();
@@ -505,7 +626,7 @@ Deno.serve(serveOptions, async (req: Request) => {
       );
 
       // Encrypt the bot token before storing
-      const { encryptToken } = await import('./crypto.ts');
+      const { encryptToken } = await import("./crypto.ts");
       const encryptedToken = await encryptToken(botToken);
 
       // Generate a pairing code for the owner to send to the bot
@@ -513,12 +634,12 @@ Deno.serve(serveOptions, async (req: Request) => {
 
       const channel: ChannelConfig = {
         id: channelId,
-        type: 'telegram',
-        agentId: body.agentId || '',
+        type: "telegram",
+        agentId: body.agentId || "",
         enabled: true,
         metadata: {
-          botToken: encryptedToken,  // Encrypted at rest
-          botTokenPlain: botToken,   // Kept in memory only, not persisted
+          botToken: encryptedToken, // Encrypted at rest
+          botTokenPlain: botToken, // Kept in memory only, not persisted
           botUsername,
           webhookSecret,
           pairingCode,
@@ -527,104 +648,147 @@ Deno.serve(serveOptions, async (req: Request) => {
 
       await addChannel(session.userId, channel);
 
-      logger.info('server', 'Telegram bot channel registered', { userId: session.userId, channelId, botUsername, pairingCode });
+      logger.info("server", "Telegram bot channel registered", {
+        userId: session.userId,
+        channelId,
+        botUsername,
+        pairingCode,
+      });
       return json({ channelId, botUsername, pairingCode }, 201);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.error('server', 'Telegram registration failed', { userId: session.userId, error: message });
+      logger.error("server", "Telegram registration failed", {
+        userId: session.userId,
+        error: message,
+      });
       return error(`Telegram registration failed: ${message}`);
     }
   }
 
   // Register a channel
-  if (url.pathname === '/channels' && method === 'POST') {
+  if (url.pathname === "/channels" && method === "POST") {
     // Rate limit: 10/hour per user
-    if (!rateLimiter.check(`channels:${session.userId}`, RATE_LIMITS.channels.limit, RATE_LIMITS.channels.windowMs)) {
-      logger.warn('server', 'Rate limit hit for channel registration', { userId: session.userId });
-      return error('Too many channel registration requests. Try again later.', 429);
+    if (
+      !rateLimiter.check(
+        `channels:${session.userId}`,
+        RATE_LIMITS.channels.limit,
+        RATE_LIMITS.channels.windowMs,
+      )
+    ) {
+      logger.warn("server", "Rate limit hit for channel registration", {
+        userId: session.userId,
+      });
+      return error(
+        "Too many channel registration requests. Try again later.",
+        429,
+      );
     }
 
     try {
       const body = await req.json();
       const channel: ChannelConfig = {
         id: body.id || crypto.randomUUID(),
-        type: body.type || 'webhook',
-        agentId: body.agentId || '',
+        type: body.type || "webhook",
+        agentId: body.agentId || "",
         enabled: body.enabled !== false,
         metadata: body.metadata || {},
       };
 
       // For webhook channels, generate a secret token
-      if (channel.type === 'webhook' && !channel.metadata['webhookSecret']) {
-        channel.metadata['webhookSecret'] = crypto.randomUUID();
+      if (channel.type === "webhook" && !channel.metadata["webhookSecret"]) {
+        channel.metadata["webhookSecret"] = crypto.randomUUID();
       }
 
       await addChannel(session.userId, channel);
 
       // Build the webhook URL for the user
-      const webhookUrl = channel.type === 'webhook'
-        ? `${url.origin}/webhook/${channel.id}?token=${channel.metadata['webhookSecret']}`
+      const webhookUrl = channel.type === "webhook"
+        ? `${url.origin}/webhook/${channel.id}?token=${
+          channel.metadata["webhookSecret"]
+        }`
         : undefined;
 
-      logger.info('server', 'Channel registered', { userId: session.userId, channelId: channel.id, type: channel.type });
+      logger.info("server", "Channel registered", {
+        userId: session.userId,
+        channelId: channel.id,
+        type: channel.type,
+      });
       return json({ channel, webhookUrl }, 201);
     } catch {
-      return error('Invalid JSON body');
+      return error("Invalid JSON body");
     }
   }
 
   // List channels
-  if (url.pathname === '/channels' && method === 'GET') {
+  if (url.pathname === "/channels" && method === "GET") {
     const channels = await getChannels(session.userId);
-    logger.info('server', 'Channels listed', { userId: session.userId, count: channels.length });
+    logger.info("server", "Channels listed", {
+      userId: session.userId,
+      count: channels.length,
+    });
     return json({ channels });
   }
 
   // Update channel metadata (e.g. allowlist)
   const channelPatchMatch = url.pathname.match(/^\/channels\/([^/]+)$/);
-  if (channelPatchMatch && method === 'PATCH') {
+  if (channelPatchMatch && method === "PATCH") {
     try {
       const channelId = channelPatchMatch[1];
       const body = await req.json();
       const channels = await getChannels(session.userId);
       const channel = channels.find((ch) => ch.id === channelId);
       if (!channel) {
-        return error('Channel not found', 404);
+        return error("Channel not found", 404);
       }
       // Merge metadata updates (only allow safe fields)
       if (body.metadata) {
         if (Array.isArray(body.metadata.allowedUsers)) {
-          channel.metadata['allowedUsers'] = body.metadata.allowedUsers.map(String);
+          channel.metadata["allowedUsers"] = body.metadata.allowedUsers.map(
+            String,
+          );
         }
       }
       // Persist the updated channel by re-adding it
       await removeChannel(session.userId, channelId);
       await addChannel(session.userId, channel);
-      logger.info('server', 'Channel updated', { userId: session.userId, channelId, allowedUsers: channel.metadata['allowedUsers'] });
+      logger.info("server", "Channel updated", {
+        userId: session.userId,
+        channelId,
+        allowedUsers: channel.metadata["allowedUsers"],
+      });
       return json({ ok: true, channel });
     } catch {
-      return error('Invalid JSON body');
+      return error("Invalid JSON body");
     }
   }
 
   // Delete a channel
   const channelDeleteMatch = url.pathname.match(/^\/channels\/([^/]+)$/);
-  if (channelDeleteMatch && method === 'DELETE') {
+  if (channelDeleteMatch && method === "DELETE") {
     const channelId = channelDeleteMatch[1];
     const removed = await removeChannel(session.userId, channelId);
     if (!removed) {
-      logger.warn('server', 'Channel not found for deletion', { userId: session.userId, channelId });
-      return error('Channel not found', 404);
+      logger.warn("server", "Channel not found for deletion", {
+        userId: session.userId,
+        channelId,
+      });
+      return error("Channel not found", 404);
     }
-    logger.info('server', 'Channel deleted', { userId: session.userId, channelId });
+    logger.info("server", "Channel deleted", {
+      userId: session.userId,
+      channelId,
+    });
     return json({ ok: true });
   }
 
-  logger.warn('server', 'Route not found', reqData);
-  return error('Not found', 404);
+  logger.warn("server", "Route not found", reqData);
+  return error("Not found", 404);
 });
 
-logger.info('server', 'CHAOS relay server started', { port: PORT, version: VERSION });
+logger.info("server", "CHAOS relay server started", {
+  port: PORT,
+  version: VERSION,
+});
 
 // ── Admin HTML templates ──
 

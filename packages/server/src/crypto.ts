@@ -1,17 +1,18 @@
 // ECDSA P-256 signature verification and crypto utilities for the relay server
 // Handles request signature verification, nonce tracking, and body hashing
 
-const ALGORITHM = { name: 'ECDSA', namedCurve: 'P-256' } as const;
-const VERIFY_ALGORITHM = { name: 'ECDSA', hash: 'SHA-256' } as const;
+const ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const;
+const VERIFY_ALGORITHM = { name: "ECDSA", hash: "SHA-256" } as const;
 
 // Default max age for timestamps: 5 minutes
 const DEFAULT_MAX_AGE_MS = 5 * 60 * 1000;
 
-import { isKvAvailable, kvGetServerKeyPair, kvSetServerKeyPair } from './kv.ts';
-import { logger } from './logger.ts';
+import { isKvAvailable, kvGetServerKeyPair, kvSetServerKeyPair } from "./kv.ts";
+import { logger } from "./logger.ts";
 
 // Server keypair — persisted in KV, cached in memory
-let serverKeyPair: { privateKey: CryptoKey; publicKey: CryptoKey } | null = null;
+let serverKeyPair: { privateKey: CryptoKey; publicKey: CryptoKey } | null =
+  null;
 let serverPublicKeyJwk: JsonWebKey | null = null;
 
 /**
@@ -23,13 +24,21 @@ export async function initServerKeyPair(): Promise<void> {
   if (isKvAvailable()) {
     const stored = await kvGetServerKeyPair();
     if (stored) {
-      logger.info('crypto', 'Loaded server keypair from KV');
+      logger.info("crypto", "Loaded server keypair from KV");
       serverKeyPair = {
         privateKey: await crypto.subtle.importKey(
-          'jwk', stored.privateKey, ALGORITHM, true, ['sign'],
+          "jwk",
+          stored.privateKey,
+          ALGORITHM,
+          true,
+          ["sign"],
         ),
         publicKey: await crypto.subtle.importKey(
-          'jwk', stored.publicKey, ALGORITHM, true, ['verify'],
+          "jwk",
+          stored.publicKey,
+          ALGORITHM,
+          true,
+          ["verify"],
         ),
       };
       serverPublicKeyJwk = stored.publicKey;
@@ -41,20 +50,26 @@ export async function initServerKeyPair(): Promise<void> {
   serverKeyPair = await crypto.subtle.generateKey(
     ALGORITHM,
     true, // extractable for JWK export
-    ['sign', 'verify'],
+    ["sign", "verify"],
   );
-  serverPublicKeyJwk = await crypto.subtle.exportKey('jwk', serverKeyPair.publicKey);
+  serverPublicKeyJwk = await crypto.subtle.exportKey(
+    "jwk",
+    serverKeyPair.publicKey,
+  );
 
   // Persist to KV
   if (isKvAvailable()) {
-    const privateKeyJwk = await crypto.subtle.exportKey('jwk', serverKeyPair.privateKey);
+    const privateKeyJwk = await crypto.subtle.exportKey(
+      "jwk",
+      serverKeyPair.privateKey,
+    );
     await kvSetServerKeyPair({
       privateKey: privateKeyJwk,
       publicKey: serverPublicKeyJwk!,
     });
-    logger.info('crypto', 'Generated and persisted new server keypair to KV');
+    logger.info("crypto", "Generated and persisted new server keypair to KV");
   } else {
-    logger.warn('crypto', 'Generated server keypair (in-memory only, no KV)');
+    logger.warn("crypto", "Generated server keypair (in-memory only, no KV)");
   }
 }
 
@@ -69,7 +84,7 @@ export function getServerPublicKey(): JsonWebKey | null {
  * Import a JWK public key for verification
  */
 async function importPublicKey(jwk: JsonWebKey): Promise<CryptoKey> {
-  return crypto.subtle.importKey('jwk', jwk, ALGORITHM, false, ['verify']);
+  return crypto.subtle.importKey("jwk", jwk, ALGORITHM, false, ["verify"]);
 }
 
 /**
@@ -90,7 +105,12 @@ export async function verifyRequestSignature(
     const payloadBytes = new TextEncoder().encode(payload);
     const signatureBytes = base64ToBuffer(signature);
 
-    return crypto.subtle.verify(VERIFY_ALGORITHM, cryptoKey, signatureBytes, payloadBytes);
+    return crypto.subtle.verify(
+      VERIFY_ALGORITHM,
+      cryptoKey,
+      signatureBytes,
+      payloadBytes,
+    );
   } catch {
     return false;
   }
@@ -99,7 +119,10 @@ export async function verifyRequestSignature(
 /**
  * Check timestamp freshness. Rejects timestamps older than maxAgeMs (default 5 minutes).
  */
-export function isTimestampFresh(timestamp: string, maxAgeMs: number = DEFAULT_MAX_AGE_MS): boolean {
+export function isTimestampFresh(
+  timestamp: string,
+  maxAgeMs: number = DEFAULT_MAX_AGE_MS,
+): boolean {
   const ts = new Date(timestamp).getTime();
   if (isNaN(ts)) return false;
   const now = Date.now();
@@ -168,7 +191,7 @@ export class NonceTracker {
  */
 export async function hashBody(body: string): Promise<string> {
   const bytes = new TextEncoder().encode(body);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
   return bufferToHex(hashBuffer);
 }
 
@@ -177,8 +200,8 @@ export async function hashBody(body: string): Promise<string> {
 function bufferToHex(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function base64ToBuffer(base64: string): ArrayBuffer {
@@ -199,30 +222,37 @@ let encryptionKey: CryptoKey | null = null;
 async function getEncryptionKey(): Promise<CryptoKey> {
   if (encryptionKey) return encryptionKey;
 
-  const envKey = (typeof Deno !== 'undefined') ? Deno.env.get('CHAOS_ENCRYPTION_KEY') : undefined;
+  const envKey = (typeof Deno !== "undefined")
+    ? Deno.env.get("CHAOS_ENCRYPTION_KEY")
+    : undefined;
 
   if (envKey) {
     // Derive key from env var using PBKDF2
     const keyMaterial = await crypto.subtle.importKey(
-      'raw',
+      "raw",
       new TextEncoder().encode(envKey),
-      'PBKDF2',
+      "PBKDF2",
       false,
-      ['deriveKey'],
+      ["deriveKey"],
     );
     encryptionKey = await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt: new TextEncoder().encode('chaos-relay-salt'), iterations: 100000, hash: 'SHA-256' },
+      {
+        name: "PBKDF2",
+        salt: new TextEncoder().encode("chaos-relay-salt"),
+        iterations: 100000,
+        hash: "SHA-256",
+      },
       keyMaterial,
-      { name: 'AES-GCM', length: 256 },
+      { name: "AES-GCM", length: 256 },
       false,
-      ['encrypt', 'decrypt'],
+      ["encrypt", "decrypt"],
     );
   } else {
     // Generate a random key (will be lost on restart — for dev only)
     encryptionKey = await crypto.subtle.generateKey(
-      { name: 'AES-GCM', length: 256 },
+      { name: "AES-GCM", length: 256 },
       false,
-      ['encrypt', 'decrypt'],
+      ["encrypt", "decrypt"],
     );
   }
 
@@ -235,7 +265,7 @@ export async function encryptToken(plaintext: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: "AES-GCM", iv },
     key,
     encoded,
   );
@@ -247,11 +277,11 @@ export async function encryptToken(plaintext: string): Promise<string> {
 /** Decrypt a string previously encrypted with encryptToken. */
 export async function decryptToken(encrypted: string): Promise<string> {
   const key = await getEncryptionKey();
-  const [ivB64, ctB64] = encrypted.split(':');
+  const [ivB64, ctB64] = encrypted.split(":");
   const iv = base64ToBuffer(ivB64);
   const ciphertext = base64ToBuffer(ctB64);
   const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: new Uint8Array(iv) },
+    { name: "AES-GCM", iv: new Uint8Array(iv) },
     key,
     ciphertext,
   );

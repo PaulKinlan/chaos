@@ -2,33 +2,38 @@
 // Phase 2: API key auth + ECDSA P-256 request signing
 // Phase 3: Deno KV persistence with in-memory cache
 
-import type { ChannelConfig } from '@chaos/shared';
-import { verifyRequestSignature, isTimestampFresh, NonceTracker, hashBody } from './crypto.ts';
-import { logger } from './logger.ts';
+import type { ChannelConfig } from "@chaos/shared";
+import {
+  hashBody,
+  isTimestampFresh,
+  NonceTracker,
+  verifyRequestSignature,
+} from "./crypto.ts";
+import { logger } from "./logger.ts";
 import {
   isKvAvailable,
-  kvSetSession,
+  kvDeleteChannelIndex,
+  kvGetChannelOwner,
+  kvGetPubKeyIndex,
   kvGetSession,
-  kvSetUserIndex,
   kvGetUserIndex,
   kvSetChannelIndex,
-  kvGetChannelOwner,
-  kvDeleteChannelIndex,
   kvSetPubKeyIndex,
-  kvGetPubKeyIndex,
-} from './kv.ts';
+  kvSetSession,
+  kvSetUserIndex,
+} from "./kv.ts";
 
 export interface UserSession {
   userId: string;
   apiKey: string;
-  publicKey?: JsonWebKey;  // stored during registration
+  publicKey?: JsonWebKey; // stored during registration
   createdAt: string;
   channels: ChannelConfig[];
 }
 
 export interface AuthResult {
   session: UserSession;
-  verified: boolean;  // true if signature was valid
+  verified: boolean; // true if signature was valid
 }
 
 // In-memory caches — act as primary store when KV is unavailable,
@@ -64,7 +69,7 @@ async function persistSession(session: UserSession): Promise<void> {
  * the request is still allowed but `verified` is false.
  */
 export async function validateAuth(req: Request): Promise<AuthResult | null> {
-  const authHeader = req.headers.get('Authorization');
+  const authHeader = req.headers.get("Authorization");
   if (!authHeader) return null;
 
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
@@ -88,15 +93,17 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   if (!session) return null;
 
   // Check for signature headers
-  const timestamp = req.headers.get('X-Timestamp');
-  const nonce = req.headers.get('X-Nonce');
-  const signature = req.headers.get('X-Signature');
+  const timestamp = req.headers.get("X-Timestamp");
+  const nonce = req.headers.get("X-Nonce");
+  const signature = req.headers.get("X-Signature");
 
   // Signature is REQUIRED when the session has a public key
   if (!timestamp || !nonce || !signature) {
     if (session.publicKey) {
       // Client registered with a public key but isn't signing — reject
-      logger.warn('auth', 'Request missing required signature headers', { userId: session.userId });
+      logger.warn("auth", "Request missing required signature headers", {
+        userId: session.userId,
+      });
       return null;
     }
     // Legacy session without public key — allow unsigned (temporary migration)
@@ -106,19 +113,24 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   // Verify the signature
   if (!session.publicKey) {
     // Signed request but no public key stored — reject
-    logger.warn('auth', 'Signed request but no stored public key', { userId: session.userId });
+    logger.warn("auth", "Signed request but no stored public key", {
+      userId: session.userId,
+    });
     return null;
   }
 
   // Check timestamp freshness (< 5 minutes)
   if (!isTimestampFresh(timestamp)) {
-    logger.warn('auth', 'Stale timestamp', { userId: session.userId, timestamp });
+    logger.warn("auth", "Stale timestamp", {
+      userId: session.userId,
+      timestamp,
+    });
     return null; // reject stale requests
   }
 
   // Check nonce hasn't been used
   if (!nonceTracker.check(nonce)) {
-    logger.warn('auth', 'Replay detected', { userId: session.userId, nonce });
+    logger.warn("auth", "Replay detected", { userId: session.userId, nonce });
     return null; // reject replayed requests
   }
 
@@ -127,12 +139,12 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   const path = url.pathname;
 
   // Read body for hash — we need to clone since body can only be read once
-  let bodyText = '';
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  let bodyText = "";
+  if (req.method !== "GET" && req.method !== "HEAD") {
     try {
       bodyText = await req.clone().text();
     } catch {
-      bodyText = '';
+      bodyText = "";
     }
   }
   const bodyHashHex = await hashBody(bodyText);
@@ -148,18 +160,21 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
   );
 
   if (!verified) {
-    logger.warn('auth', 'Invalid signature', {
+    logger.warn("auth", "Invalid signature", {
       userId: session.userId,
       path,
       method: req.method,
       timestamp,
       bodyLength: bodyText.length,
-      bodyHashHex: bodyHashHex.slice(0, 16) + '...',
+      bodyHashHex: bodyHashHex.slice(0, 16) + "...",
     });
     return null; // reject invalid signatures
   }
 
-  logger.debug('auth', 'Auth successful', { userId: session.userId, verified: true });
+  logger.debug("auth", "Auth successful", {
+    userId: session.userId,
+    verified: true,
+  });
   return { session, verified: true };
 }
 
@@ -168,7 +183,7 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
  */
 function pubKeyFingerprint(publicKey: JsonWebKey): string {
   // Use the x and y coordinates of the P-256 key as a stable fingerprint
-  return `${publicKey.x || ''}:${publicKey.y || ''}`;
+  return `${publicKey.x || ""}:${publicKey.y || ""}`;
 }
 
 /**
@@ -176,7 +191,9 @@ function pubKeyFingerprint(publicKey: JsonWebKey): string {
  * If a session with the same public key already exists (reclaim),
  * returns the existing session instead of creating a new one.
  */
-export async function createSession(publicKey?: JsonWebKey): Promise<{ userId: string; apiKey: string }> {
+export async function createSession(
+  publicKey?: JsonWebKey,
+): Promise<{ userId: string; apiKey: string }> {
   // Check if this public key already has a session (reclaim after server restart)
   if (publicKey && isKvAvailable()) {
     const fingerprint = pubKeyFingerprint(publicKey);
@@ -190,7 +207,10 @@ export async function createSession(publicKey?: JsonWebKey): Promise<{ userId: s
         for (const ch of existingSession.channels) {
           channelIndexCache.set(ch.id, existingSession.userId);
         }
-        logger.info('auth', 'Session reclaimed', { userId: existingSession.userId, channels: existingSession.channels.length });
+        logger.info("auth", "Session reclaimed", {
+          userId: existingSession.userId,
+          channels: existingSession.channels.length,
+        });
         return { userId: existingSession.userId, apiKey: existingApiKey };
       }
     }
@@ -215,14 +235,16 @@ export async function createSession(publicKey?: JsonWebKey): Promise<{ userId: s
     await kvSetPubKeyIndex(fingerprint, apiKey);
   }
 
-  logger.info('auth', 'Session created', { userId, hasPublicKey: !!publicKey });
+  logger.info("auth", "Session created", { userId, hasPublicKey: !!publicKey });
   return { userId, apiKey };
 }
 
 /**
  * Look up a session by API key (for WebSocket auth where Bearer headers aren't available).
  */
-export async function getSessionByApiKey(apiKey: string): Promise<UserSession | null> {
+export async function getSessionByApiKey(
+  apiKey: string,
+): Promise<UserSession | null> {
   let session = sessionCache.get(apiKey) ?? null;
   if (!session && isKvAvailable()) {
     session = await kvGetSession(apiKey);
@@ -237,7 +259,9 @@ export async function getSessionByApiKey(apiKey: string): Promise<UserSession | 
   return session;
 }
 
-export async function getSessionByUserId(userId: string): Promise<UserSession | null> {
+export async function getSessionByUserId(
+  userId: string,
+): Promise<UserSession | null> {
   // Try cache first
   let apiKey = userIndexCache.get(userId) ?? null;
   if (!apiKey && isKvAvailable()) {
@@ -261,7 +285,9 @@ export async function getSessionByUserId(userId: string): Promise<UserSession | 
   return session;
 }
 
-export async function getSessionByChannelId(channelId: string): Promise<UserSession | null> {
+export async function getSessionByChannelId(
+  channelId: string,
+): Promise<UserSession | null> {
   // Try channel index cache first
   let userId = channelIndexCache.get(channelId) ?? null;
   if (!userId && isKvAvailable()) {
@@ -275,7 +301,10 @@ export async function getSessionByChannelId(channelId: string): Promise<UserSess
   return getSessionByUserId(userId);
 }
 
-export async function addChannel(userId: string, channel: ChannelConfig): Promise<void> {
+export async function addChannel(
+  userId: string,
+  channel: ChannelConfig,
+): Promise<void> {
   const session = await getSessionByUserId(userId);
   if (!session) return;
   session.channels.push(channel);
@@ -290,7 +319,10 @@ export async function addChannel(userId: string, channel: ChannelConfig): Promis
   await persistSession(session);
 }
 
-export async function removeChannel(userId: string, channelId: string): Promise<boolean> {
+export async function removeChannel(
+  userId: string,
+  channelId: string,
+): Promise<boolean> {
   const session = await getSessionByUserId(userId);
   if (!session) return false;
   const idx = session.channels.findIndex((ch) => ch.id === channelId);

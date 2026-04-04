@@ -1,7 +1,7 @@
 // WebSocket connection manager
 // Maintains per-user WebSocket connections for real-time message push
 
-import { logger } from './logger.ts';
+import { logger } from "./logger.ts";
 
 // userId -> Set of active WebSocket connections
 const connections: Map<string, Set<WebSocket>> = new Map();
@@ -16,7 +16,7 @@ export function addConnection(userId: string, ws: WebSocket): void {
     connections.set(userId, userSockets);
   }
   userSockets.add(ws);
-  logger.info('ws', 'Connection added', { userId, total: userSockets.size });
+  logger.info("ws", "Connection added", { userId, total: userSockets.size });
 }
 
 /**
@@ -29,7 +29,10 @@ export function removeConnection(userId: string, ws: WebSocket): void {
   if (userSockets.size === 0) {
     connections.delete(userId);
   }
-  logger.info('ws', 'Connection removed', { userId, total: userSockets?.size ?? 0 });
+  logger.info("ws", "Connection removed", {
+    userId,
+    total: userSockets?.size ?? 0,
+  });
 }
 
 /**
@@ -46,10 +49,16 @@ export function pushToUser(userId: string, message: unknown): void {
         ws.send(data);
       }
     } catch (err) {
-      logger.error('ws', 'Failed to send message', { userId, error: String(err) });
+      logger.error("ws", "Failed to send message", {
+        userId,
+        error: String(err),
+      });
     }
   }
-  logger.debug('ws', 'Pushed message to user', { userId, connections: userSockets.size });
+  logger.debug("ws", "Pushed message to user", {
+    userId,
+    connections: userSockets.size,
+  });
 }
 
 /**
