@@ -412,6 +412,7 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 
   port.onMessage.addListener(async (msg) => {
+    console.log(`[background] port message: ${msg.type}`);
     try {
       switch (msg.type) {
         case 'chat':
@@ -1087,9 +1088,19 @@ async function handleRemoveHook(
 
 chrome.runtime.onMessage.addListener(
   (msg: Record<string, unknown>, _sender, sendResponse) => {
+    const msgType = msg.type as string;
+    // Skip messages handled by other listeners
+    if (msgType === 'filesystemChanged' || msgType === 'channelLog') {
+      return false; // Not ours
+    }
+    console.log(`[background] one-shot message: ${msgType}`);
     handleOneShotMessage(msg)
-      .then(sendResponse)
+      .then((result) => {
+        console.log(`[background] one-shot response: ${msgType}`, result ? 'ok' : 'empty');
+        sendResponse(result);
+      })
       .catch((err) => {
+        console.error(`[background] one-shot error: ${msgType}`, err);
         sendResponse({ error: err instanceof Error ? err.message : String(err) });
       });
     return true; // keep the message channel open for async response

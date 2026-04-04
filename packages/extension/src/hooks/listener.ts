@@ -296,18 +296,24 @@ function registerClipboardListener(): void {
 // The app page starts observations and notifies via chrome.runtime.sendMessage.
 
 function registerFileSystemListener(): void {
-  // Listen for filesystem change events forwarded from the app page
-  chrome.runtime.onMessage.addListener(async (msg) => {
-    if (msg.type !== 'filesystemChanged') return;
-    const hooks = await getEnabledHooks();
-    const matching = hooks.filter((h) => h.trigger.type === 'filesystem-changed');
-    for (const hook of matching) {
-      const trigger = hook.trigger as Extract<HookTrigger, { type: 'filesystem-changed' }>;
-      // If hook has a specific path filter, check it
-      if (trigger.path && !msg.path?.includes(trigger.path)) continue;
-      const context = `File system change detected: ${msg.changeType || 'modified'} — ${msg.path || 'unknown path'}`;
-      executeHook(hook, context);
-    }
+  // Listen for filesystem change events forwarded from the app page.
+  // IMPORTANT: Must not be async and must return false/undefined for
+  // messages we don't handle, otherwise we block other onMessage listeners.
+  chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
+    if (msg.type !== 'filesystemChanged') return false; // Not ours, let other listeners handle it
+
+    // Handle async without making the listener async (which would return a Promise)
+    (async () => {
+      const hooks = await getEnabledHooks();
+      const matching = hooks.filter((h) => h.trigger.type === 'filesystem-changed');
+      for (const hook of matching) {
+        const trigger = hook.trigger as Extract<HookTrigger, { type: 'filesystem-changed' }>;
+        if (trigger.path && !msg.path?.includes(trigger.path)) continue;
+        const context = `File system change detected: ${msg.changeType || 'modified'} — ${msg.path || 'unknown path'}`;
+        executeHook(hook, context);
+      }
+    })();
+    return false; // Don't hold the message channel open
   });
   console.log('[hooks] FileSystem observer hook listener registered');
 }

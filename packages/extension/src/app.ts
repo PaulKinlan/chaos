@@ -707,8 +707,10 @@ function connectPort(): chrome.runtime.Port {
 
 function sendPortMessage(msg: Record<string, unknown>): void {
   if (!port) {
+    console.log(`[app] Port disconnected, reconnecting for: ${msg.type}`);
     port = connectPort();
   }
+  console.log(`[app] sendPortMessage: ${msg.type}`);
   port.postMessage(msg);
 }
 
