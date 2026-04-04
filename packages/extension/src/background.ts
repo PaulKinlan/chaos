@@ -232,7 +232,11 @@ chrome.runtime.onStartup?.addListener(() => {
 // ── Initialize hooks event listeners ──
 initHooksListeners();
 setHookUiPortGetter(() => activeUiPort);
-setTaskExecutor((agentId, taskId) => executeAssignedTask(agentId, taskId));
+setTaskExecutor((agentId, taskId) => {
+  executeAssignedTask(agentId, taskId).catch(
+    (err) => console.error(`[background] executeAssignedTask failed:`, err),
+  );
+});
 
 // ── Context menus ──
 

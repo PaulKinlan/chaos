@@ -49,19 +49,12 @@ export function createAssignTaskTool(_masterAgentId: string) {
           },
         });
 
-        // Trigger the sub-agent directly (fire-and-forget, runs in parallel)
+        // Trigger the sub-agent directly. Don't await — runs in parallel
+        // with the master's loop. The executor calls startKeepalive() internally
+        // to prevent the service worker from suspending during execution.
         if (taskExecutor) {
-          // Use setTimeout to not block the master's current step
-          setTimeout(() => taskExecutor!(agentId, taskId), 0);
-        } else {
-          // Fallback to message passing
-          try {
-            chrome.runtime.sendMessage({
-              type: 'executeAssignedTask',
-              agentId,
-              taskId,
-            });
-          } catch { /* */ }
+          console.log(`[assign-task] Triggering sub-agent ${agentId} for task ${taskId}`);
+          taskExecutor(agentId, taskId);
         }
 
         return {
