@@ -1131,13 +1131,8 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
 
     case 'conversationCleared': {
-      const clearAgentId = msg.agentId as string | undefined;
-      const col = clearAgentId ? getColumnForAgent(clearAgentId) : getFocusedColumn();
-      if (col) {
-        col.conversationHistory = [];
-        col.messagesEl.innerHTML = '';
-        addChatSystemMessageToColumn(col, 'Conversation cleared.');
-      }
+      // Clear is now handled directly in the clear button click handler
+      // This message from the background just confirms storage was cleared
       break;
     }
 
@@ -1380,6 +1375,10 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
   });
 
   clearBtn.addEventListener('click', () => {
+    // Clear only THIS column's conversation, not all columns for this agent
+    column.conversationHistory = [];
+    column.messagesEl.innerHTML = '';
+    addChatSystemMessageToColumn(column, 'Conversation cleared.');
     sendPortMessage({ type: 'clearConversation', agentId: column.agentId });
   });
 
