@@ -50,6 +50,10 @@ export type MessageHandler = (message: ChannelMessage) => Promise<string | null>
 
 let messageHandler: MessageHandler | null = null;
 
+export function getMessageHandler(): MessageHandler | null {
+  return messageHandler;
+}
+
 export function setMessageHandler(handler: MessageHandler): void {
   messageHandler = handler;
 

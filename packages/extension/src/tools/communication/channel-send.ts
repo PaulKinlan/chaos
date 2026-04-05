@@ -44,12 +44,47 @@ export function createChannelSendTool(_agentId: string) {
         apiKey: relaySettings.apiKey,
       };
 
-      // Handle filesystem channels locally
+      // Handle filesystem channels locally (operations happen in the app page context)
       if (channelType === 'filesystem') {
-        return {
-          ok: false,
-          error: 'Filesystem channels are not yet supported via channel_send. Use local file tools instead.',
-        };
+        const action = (metadata?.action as string) || 'write';
+        const path = (metadata?.path as string) || '';
+        if (!path && action !== 'list') {
+          return { ok: false, error: 'metadata.path is required for filesystem operations (except list)' };
+        }
+
+        // Find the matching local channel
+        const localResult = await chrome.storage.local.get('chaos-local-channels');
+        const localChannels = (localResult['chaos-local-channels'] || []) as Array<{
+          id: string; name: string; type: string; directoryName: string;
+        }>;
+
+        let localMatch = channelName
+          ? localChannels.find((c: { name: string }) => c.name.toLowerCase() === channelName.toLowerCase())
+          : localChannels[0];
+
+        if (!localMatch) {
+          return {
+            ok: false,
+            error: `No filesystem channel found. Available: ${localChannels.map((c: { name: string }) => c.name).join(', ') || 'none'}`,
+          };
+        }
+
+        // Send the operation to the app page via runtime message
+        try {
+          const result = await chrome.runtime.sendMessage({
+            type: 'fsChannelOperation',
+            channelId: localMatch.id,
+            action,
+            path,
+            content,
+          });
+          return result || { ok: false, error: 'No response from app page (is the extension page open?)' };
+        } catch (err) {
+          return {
+            ok: false,
+            error: `Filesystem operation failed: ${err instanceof Error ? err.message : String(err)}. Make sure the extension page is open.`,
+          };
+        }
       }
 
       // List channels from relay

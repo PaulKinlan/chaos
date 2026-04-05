@@ -3229,6 +3229,7 @@
                   <button class="btn btn-ghost" id="btn-add-telegram">Telegram Bot</button>
                   <button class="btn btn-ghost" id="btn-add-discord">Discord Bot</button>
                   <button class="btn btn-ghost" id="btn-add-email">Email</button>
+                  <button class="btn btn-ghost" id="btn-add-filesystem">File System</button>
                 </div>
               </div>
               <div id="telegram-setup" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
@@ -3270,6 +3271,13 @@
                 </div>
               </div>
               <div id="channels-list" style="display:grid;gap:8px;"></div>
+            </div>
+            <div style="margin-top:12px;">
+              <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:8px;">
+                <span style="font-size:var(--text-xs);color:var(--text-secondary);">Local Channels</span>
+                <button class="btn btn-ghost btn-sm" id="btn-add-filesystem-standalone">+ File System</button>
+              </div>
+              <div id="local-channels-list" style="display:grid;gap:8px;"></div>
             </div>
             <details id="channel-log-details" style="margin-top:12px;">
               <summary style="cursor:pointer;font-size:var(--text-xs);color:var(--text-secondary);user-select:none;">Channel Logs</summary>

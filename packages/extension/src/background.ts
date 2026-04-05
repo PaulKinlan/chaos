@@ -74,6 +74,7 @@ import {
   startWebSocket,
   stopWebSocket,
   setMessageHandler,
+  getMessageHandler,
 } from './channels/poller.js';
 import { getRelaySettings } from './channels/config.js';
 
@@ -1285,6 +1286,38 @@ chrome.runtime.onMessage.addListener(
     // Skip messages handled by other listeners
     if (msgType === 'filesystemChanged' || msgType === 'channelLog') {
       return false; // Not ours
+    }
+    // Handle filesystem channel inbound events (from app page FileSystemObserver)
+    if (msgType === 'fsChannelEvent') {
+      // Route as a channel message through the message handler
+      (async () => {
+        try {
+          const handler = getMessageHandler();
+          if (!handler) return;
+          const channelMessage: import('./channels/types.js').ChannelMessage = {
+            id: `fs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            channelType: 'filesystem',
+            channelId: msg.channelId as string,
+            from: 'filesystem',
+            content: `File system change detected: ${msg.changeType} — ${msg.path} (in ${msg.directory})`,
+            timestamp: new Date().toISOString(),
+            metadata: {
+              changeType: msg.changeType,
+              path: msg.path,
+              directory: msg.directory,
+              channelDirection: 'bidirectional',
+            },
+          };
+          await handler(channelMessage);
+        } catch (err) {
+          console.error('[fs-channel] Failed to process filesystem event:', err);
+        }
+      })();
+      return false;
+    }
+    // Forward filesystem channel operations to the app page (pass-through)
+    if (msgType === 'fsChannelOperation') {
+      return false; // Handled by the app page listener
     }
     // Handle assigned task execution (fire-and-forget, no response needed)
     if (msgType === 'executeAssignedTask') {

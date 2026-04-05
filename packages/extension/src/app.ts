@@ -4274,6 +4274,8 @@ async function renderChannelsUI(): Promise<void> {
     connectedDiv.style.display = 'none';
   }
   updateRelayUrlLabel();
+  // Also render local filesystem channels (always visible, not relay-dependent)
+  renderLocalChannels();
 }
 
 function renderChannelsList(channels: Array<{ id: string; type: string; agentId: string; enabled: boolean; metadata: Record<string, unknown> }>, config: RelayConfig, serverUrl: string): void {
@@ -4563,6 +4565,331 @@ document.getElementById('btn-add-email')!.addEventListener('click', () => {
 
 document.getElementById('btn-email-cancel')!.addEventListener('click', () => {
   document.getElementById('email-setup')!.style.display = 'none';
+});
+
+// ── Local Filesystem Channel ──
+
+const LOCAL_CHANNELS_KEY = 'chaos-local-channels';
+
+interface LocalChannelConfig {
+  id: string;
+  name: string;
+  type: 'filesystem';
+  direction: 'bidirectional';
+  directoryName: string;
+  createdAt: string;
+}
+
+async function getLocalChannels(): Promise<LocalChannelConfig[]> {
+  const result = await chrome.storage.local.get(LOCAL_CHANNELS_KEY);
+  return (result[LOCAL_CHANNELS_KEY] as LocalChannelConfig[]) || [];
+}
+
+async function setLocalChannels(channels: LocalChannelConfig[]): Promise<void> {
+  await chrome.storage.local.set({ [LOCAL_CHANNELS_KEY]: channels });
+}
+
+// Store filesystem channel handles in a dedicated IndexedDB store (separate from fs-watch-handles)
+const FS_CHANNEL_DB = 'chaos-fs-channels';
+const FS_CHANNEL_STORE = 'handles';
+
+function openFsChannelDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FS_CHANNEL_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(FS_CHANNEL_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function storeFsChannelHandle(channelId: string, handle: FileSystemDirectoryHandle): Promise<void> {
+  const db = await openFsChannelDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FS_CHANNEL_STORE, 'readwrite');
+    tx.objectStore(FS_CHANNEL_STORE).put(handle, channelId);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function loadFsChannelHandle(channelId: string): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openFsChannelDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(FS_CHANNEL_STORE, 'readonly');
+      const req = tx.objectStore(FS_CHANNEL_STORE).get(channelId);
+      req.onsuccess = () => { db.close(); resolve(req.result || null); };
+      req.onerror = () => { db.close(); resolve(null); };
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function removeFsChannelHandle(channelId: string): Promise<void> {
+  try {
+    const db = await openFsChannelDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(FS_CHANNEL_STORE, 'readwrite');
+      tx.objectStore(FS_CHANNEL_STORE).delete(channelId);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); resolve(); };
+    });
+  } catch {
+    // ignore
+  }
+}
+
+async function loadAllFsChannelHandles(): Promise<Map<string, FileSystemDirectoryHandle>> {
+  const handles = new Map<string, FileSystemDirectoryHandle>();
+  try {
+    const db = await openFsChannelDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(FS_CHANNEL_STORE, 'readonly');
+      const store = tx.objectStore(FS_CHANNEL_STORE);
+      const req = store.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (cursor) {
+          handles.set(cursor.key as string, cursor.value);
+          cursor.continue();
+        } else {
+          db.close();
+          resolve(handles);
+        }
+      };
+      req.onerror = () => { db.close(); resolve(handles); };
+    });
+  } catch {
+    return handles;
+  }
+}
+
+// Filesystem channel operations (called from background via message passing)
+async function handleFsChannelOperation(
+  channelId: string,
+  action: string,
+  path: string,
+  content?: string,
+): Promise<{ ok: boolean; data?: string; entries?: string[]; error?: string }> {
+  const handle = await loadFsChannelHandle(channelId);
+  if (!handle) {
+    return { ok: false, error: `No directory handle found for channel ${channelId}` };
+  }
+
+  // Verify permission
+  const perm = await (handle as any).queryPermission({ mode: 'readwrite' });
+  if (perm !== 'granted') {
+    const requested = await (handle as any).requestPermission({ mode: 'readwrite' });
+    if (requested !== 'granted') {
+      return { ok: false, error: 'Permission denied for directory access' };
+    }
+  }
+
+  try {
+    switch (action) {
+      case 'write': {
+        // Support nested paths by navigating subdirectories
+        const parts = path.split('/').filter(Boolean);
+        const fileName = parts.pop()!;
+        let dir: FileSystemDirectoryHandle = handle;
+        for (const part of parts) {
+          dir = await dir.getDirectoryHandle(part, { create: true });
+        }
+        const fileHandle = await dir.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(content || '');
+        await writable.close();
+        return { ok: true, data: `Written to ${path}` };
+      }
+      case 'read': {
+        const parts = path.split('/').filter(Boolean);
+        const fileName = parts.pop()!;
+        let dir: FileSystemDirectoryHandle = handle;
+        for (const part of parts) {
+          dir = await dir.getDirectoryHandle(part);
+        }
+        const fileHandle = await dir.getFileHandle(fileName);
+        const file = await fileHandle.getFile();
+        const text = await file.text();
+        return { ok: true, data: text };
+      }
+      case 'list': {
+        const entries: string[] = [];
+        // If path is provided, navigate to that subdirectory
+        let dir: FileSystemDirectoryHandle = handle;
+        if (path) {
+          const parts = path.split('/').filter(Boolean);
+          for (const part of parts) {
+            dir = await dir.getDirectoryHandle(part);
+          }
+        }
+        for await (const [name, entry] of (dir as any).entries()) {
+          entries.push(`${entry.kind === 'directory' ? 'd' : 'f'} ${name}`);
+        }
+        return { ok: true, entries };
+      }
+      case 'delete': {
+        const parts = path.split('/').filter(Boolean);
+        const entryName = parts.pop()!;
+        let dir: FileSystemDirectoryHandle = handle;
+        for (const part of parts) {
+          dir = await dir.getDirectoryHandle(part);
+        }
+        await dir.removeEntry(entryName, { recursive: true });
+        return { ok: true, data: `Deleted ${path}` };
+      }
+      default:
+        return { ok: false, error: `Unknown action: ${action}` };
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// Start FileSystemObserver on a channel directory
+function startFsChannelObservation(channelId: string, name: string, handle: FileSystemDirectoryHandle): void {
+  if (typeof (globalThis as any).FileSystemObserver === 'undefined') {
+    console.warn('[fs-channel] FileSystemObserver not available in this browser');
+    return;
+  }
+  try {
+    const observer = new (globalThis as any).FileSystemObserver(
+      (records: Array<{ type: string; changedHandle?: { name: string } }>) => {
+        for (const record of records) {
+          const filePath = record.changedHandle?.name || name;
+          console.log(`[fs-channel] Change detected: ${record.type} in ${filePath}`);
+          // Route as an inbound channel message through the background
+          chrome.runtime.sendMessage({
+            type: 'fsChannelEvent',
+            channelId,
+            changeType: record.type,
+            path: filePath,
+            directory: name,
+          });
+        }
+      },
+    );
+    observer.observe(handle, { recursive: true });
+    console.log(`[fs-channel] Observing directory for channel ${channelId}: ${name}`);
+  } catch (err) {
+    console.error('[fs-channel] Failed to start observation:', err);
+  }
+}
+
+// On startup, restore filesystem channel observations
+loadAllFsChannelHandles().then(async (handles) => {
+  for (const [channelId, handle] of handles) {
+    try {
+      const perm = await (handle as any).queryPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        startFsChannelObservation(channelId, handle.name, handle);
+      } else {
+        console.log(`[fs-channel] Permission not granted for channel ${channelId}, skipping observation`);
+      }
+    } catch {
+      console.log(`[fs-channel] Could not check permission for channel ${channelId}`);
+    }
+  }
+}).catch((err) => console.warn('[fs-channel] Failed to restore channel handles:', err));
+
+// Render local filesystem channels
+async function renderLocalChannels(): Promise<void> {
+  const listDiv = document.getElementById('local-channels-list')!;
+  const channels = await getLocalChannels();
+
+  if (channels.length === 0) {
+    listDiv.innerHTML = '';
+    return;
+  }
+
+  listDiv.innerHTML = '';
+  for (const ch of channels) {
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);';
+
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <strong style="font-size:var(--text-sm);">${escapeHtml(ch.name || 'File System')}: ${escapeHtml(ch.directoryName)}</strong>
+        <button class="btn btn-ghost btn-remove-local-channel" data-channel-id="${ch.id}" style="color:var(--danger, red);font-size:var(--text-xs);">Remove</button>
+      </div>
+      <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">Directory: <code>${escapeHtml(ch.directoryName)}</code></div>
+      <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Local | Bidirectional | File System channel</div>
+    `;
+    listDiv.appendChild(card);
+  }
+
+  // Attach remove handlers
+  listDiv.querySelectorAll('.btn-remove-local-channel').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const channelId = (btn as HTMLElement).dataset.channelId!;
+      const channels = await getLocalChannels();
+      const updated = channels.filter((c) => c.id !== channelId);
+      await setLocalChannels(updated);
+      await removeFsChannelHandle(channelId);
+      channelLog(`Removed local filesystem channel ${channelId.slice(0, 8)}`);
+      await renderLocalChannels();
+    });
+  });
+}
+
+// Render local channels on startup and when channels UI refreshes
+renderLocalChannels();
+
+async function addFilesystemChannel(): Promise<void> {
+  // Hide setup forms if open
+  document.getElementById('channel-type-picker')!.style.display = 'none';
+  document.getElementById('telegram-setup')!.style.display = 'none';
+  document.getElementById('discord-setup')!.style.display = 'none';
+  document.getElementById('email-setup')!.style.display = 'none';
+
+  try {
+    const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+    if (!handle) return;
+
+    const channelId = crypto.randomUUID();
+    const channel: LocalChannelConfig = {
+      id: channelId,
+      name: `File System: ${handle.name}`,
+      type: 'filesystem',
+      direction: 'bidirectional',
+      directoryName: handle.name,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Store handle in IndexedDB
+    await storeFsChannelHandle(channelId, handle);
+
+    // Store channel config in chrome.storage.local
+    const existing = await getLocalChannels();
+    existing.push(channel);
+    await setLocalChannels(existing);
+
+    // Start observing
+    startFsChannelObservation(channelId, handle.name, handle);
+
+    channelLog(`Added filesystem channel: ${handle.name}`);
+    await renderLocalChannels();
+  } catch (err) {
+    if ((err as Error).name !== 'AbortError') {
+      console.error('[fs-channel] Directory picker failed:', err);
+      channelLog(`Failed to add filesystem channel: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
+document.getElementById('btn-add-filesystem')!.addEventListener('click', addFilesystemChannel);
+document.getElementById('btn-add-filesystem-standalone')!.addEventListener('click', addFilesystemChannel);
+
+// Listen for fsChannelOperation requests from the background service worker
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'fsChannelOperation') {
+    handleFsChannelOperation(msg.channelId, msg.action, msg.path, msg.content)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true; // async response
+  }
+  return false;
 });
 
 function showPairingDialog(botUsername: string, pairingCode: string): void {
