@@ -40,7 +40,7 @@ singleInstanceChannel.onmessage = (event) => {
 
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import type { AgentMeta, AgentMessage, Task, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
+import type { AgentMeta, AgentMessage, Task, TaskEvent, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
@@ -59,6 +59,7 @@ marked.setOptions({
 
 let agents: AgentMeta[] = [];
 let tasks: Task[] = [];
+let taskEvents: TaskEvent[] = [];
 let scheduledTasks: ScheduledTask[] = [];
 let messages: AgentMessage[] = [];
 let artifacts: ArtifactMeta[] = [];
@@ -1057,6 +1058,40 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       } else if (progressType === 'error') {
         addChatErrorMessageToColumn(col, progressContent);
       }
+
+      // Feature: Show sub-agent activity in master's chat column
+      if (msgAgentId) {
+        const subAgent = agents.find((a) => a.id === msgAgentId);
+        if (subAgent && !subAgent.master) {
+          const masterAgent = agents.find((a) => a.master);
+          if (masterAgent && masterAgent.id !== msgAgentId) {
+            const masterCol = getColumnForAgent(masterAgent.id);
+            if (masterCol) {
+              // Update or create inline status card for this sub-agent
+              const cardId = `sub-agent-status-${msgAgentId}`;
+              let card = masterCol.messagesEl.querySelector(`#${CSS.escape(cardId)}`) as HTMLDivElement | null;
+              if (!card) {
+                card = document.createElement('div');
+                card.id = cardId;
+                card.className = 'sub-agent-status-card';
+                masterCol.messagesEl.appendChild(card);
+              }
+              const subName = escapeHtml(subAgent.name);
+              let statusText = 'working...';
+              if (progressType === 'tool-call') {
+                const tn = msg.toolName as string || '';
+                statusText = `using ${escapeHtml(tn)}`;
+              } else if (progressType === 'thinking') {
+                statusText = `thinking (Step ${iteration})`;
+              } else if (progressType === 'text') {
+                statusText = 'processing response';
+              }
+              card.innerHTML = `<svg class="sub-agent-status-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span class="sub-agent-status-name">${subName}</span> <span class="sub-agent-status-text">${statusText}</span>`;
+              columnScrollToBottom(masterCol);
+            }
+          }
+        }
+      }
       break;
     }
 
@@ -1098,6 +1133,31 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         col.currentStepNumber = 0;
         col.currentProgressEntries = [];
         columnScrollToBottom(col);
+      }
+
+      // Feature: Show sub-agent completion in master's chat column
+      if (msgAgentId) {
+        const subAgent = agents.find((a) => a.id === msgAgentId);
+        if (subAgent && !subAgent.master) {
+          const masterAgent = agents.find((a) => a.master);
+          if (masterAgent && masterAgent.id !== msgAgentId) {
+            const masterCol = getColumnForAgent(masterAgent.id);
+            if (masterCol) {
+              // Remove the "working" status card
+              const cardId = `sub-agent-status-${msgAgentId}`;
+              const card = masterCol.messagesEl.querySelector(`#${CSS.escape(cardId)}`);
+              if (card) card.remove();
+
+              // Add a completion notification
+              const resultPreview = msg.result ? (msg.result as string).slice(0, 100) : '';
+              const doneEl = document.createElement('div');
+              doneEl.className = 'sub-agent-done-card';
+              doneEl.innerHTML = `<svg class="sub-agent-status-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span class="sub-agent-status-name">${escapeHtml(subAgent.name)}</span> <span class="sub-agent-done-text">completed task${resultPreview ? ': ' + escapeHtml(resultPreview) : ''}</span>`;
+              masterCol.messagesEl.appendChild(doneEl);
+              columnScrollToBottom(masterCol);
+            }
+          }
+        }
       }
 
       // If this was a "Run Now" scheduled task, update its run record
@@ -1336,6 +1396,13 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
 
   inputArea.appendChild(inputWrapper);
 
+  // Delegate button — wraps input with delegation instruction
+  const delegateBtn = document.createElement('button');
+  delegateBtn.className = 'chat-btn-delegate';
+  delegateBtn.title = 'Delegate to sub-agent';
+  delegateBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>';
+  inputArea.appendChild(delegateBtn);
+
   const sendBtn = document.createElement('button');
   sendBtn.className = 'chat-btn-send';
   sendBtn.title = 'Send';
@@ -1387,6 +1454,13 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
   }
 
   // Wire up event handlers
+  delegateBtn.addEventListener('click', () => {
+    const text = column.inputEl.value.trim();
+    if (!text || column.isStreaming) return;
+    column.inputEl.value = `Delegate this task to an appropriate sub-agent: ${text}`;
+    sendColumnMessage(column);
+  });
+
   sendBtn.addEventListener('click', () => sendColumnMessage(column));
 
   textareaEl.addEventListener('keydown', (e) => {
@@ -2432,12 +2506,16 @@ async function loadTasks(filterByAgentId?: string): Promise<void> {
   }
   showPanelLoading('view-tasks');
   try {
-    const [collabResult, schedResult] = await Promise.all([
+    const [collabResult, schedResult, eventsResult, msgsResult] = await Promise.all([
       sendMsg<{ tasks: Task[] }>({ type: 'getTaskState' }),
       sendMsg<{ tasks: ScheduledTask[] }>({ type: 'getScheduledTasks' }),
+      sendMsg<{ events: TaskEvent[] }>({ type: 'getTaskEvents' }),
+      sendMsg<{ messages: AgentMessage[] }>({ type: 'getMessages' }),
     ]);
     tasks = collabResult.tasks;
     scheduledTasks = schedResult.tasks || [];
+    taskEvents = eventsResult.events || [];
+    messages = msgsResult.messages || [];
     renderTasks();
   } catch (err) {
     showPanelError('view-tasks', `Failed to load tasks: ${err instanceof Error ? err.message : String(err)}`);
@@ -2530,6 +2608,9 @@ function renderTasks(): void {
     html += `</tbody></table>`;
   }
   html += `</div>`;
+
+  // ── Task Timeline ──
+  html += renderTaskTimeline(taskEvents, messages);
 
   container.innerHTML = html;
 
@@ -2632,6 +2713,120 @@ function renderTasks(): void {
 function taskSubject(taskId: string): string {
   const t = tasks.find((task) => task.id === taskId);
   return t ? t.subject : taskId;
+}
+
+function renderTaskTimeline(events: TaskEvent[], msgs: AgentMessage[]): string {
+  // Build a unified timeline from task events and inter-agent messages
+  interface TimelineEntry {
+    timestamp: string;
+    agentName: string;
+    text: string;
+    type: 'created' | 'updated' | 'deleted' | 'message';
+  }
+
+  const entries: TimelineEntry[] = [];
+
+  // Add task events
+  for (const evt of events) {
+    const ownerName = evt.data.owner ? agentName(evt.data.owner) : 'System';
+    const subject = evt.data.subject || taskSubject(evt.taskId);
+
+    if (evt.type === 'created') {
+      entries.push({
+        timestamp: evt.timestamp,
+        agentName: ownerName,
+        text: `Created task "${escapeHtml(subject)}"`,
+        type: 'created',
+      });
+    } else if (evt.type === 'updated') {
+      let detail = '';
+      if (evt.data.status === 'in_progress') {
+        detail = `Started working on "${escapeHtml(subject)}" (in_progress)`;
+      } else if (evt.data.status === 'completed') {
+        const resultPreview = evt.data.result ? ': ' + escapeHtml(evt.data.result.slice(0, 80)) : '';
+        detail = `Completed "${escapeHtml(subject)}"${resultPreview}`;
+      } else if (evt.data.status === 'failed') {
+        detail = `Failed on "${escapeHtml(subject)}"`;
+      } else if (evt.data.owner) {
+        detail = `Assigned "${escapeHtml(subject)}" to ${escapeHtml(agentName(evt.data.owner))}`;
+      } else {
+        detail = `Updated "${escapeHtml(subject)}"`;
+      }
+      entries.push({
+        timestamp: evt.timestamp,
+        agentName: ownerName,
+        text: detail,
+        type: 'updated',
+      });
+    } else if (evt.type === 'deleted') {
+      entries.push({
+        timestamp: evt.timestamp,
+        agentName: ownerName,
+        text: `Deleted task "${escapeHtml(subject)}"`,
+        type: 'deleted',
+      });
+    }
+  }
+
+  // Add inter-agent messages (only those that look task-related)
+  for (const m of msgs) {
+    if (m.to !== 'broadcast') {
+      const preview = m.body.length > 100 ? m.body.slice(0, 100) + '...' : m.body;
+      entries.push({
+        timestamp: m.timestamp,
+        agentName: agentName(m.from),
+        text: `<svg style="display:inline;vertical-align:middle;margin-right:2px;" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>${escapeHtml(agentName(m.from))} &rarr; ${escapeHtml(agentName(m.to))}: "${escapeHtml(preview)}"`,
+        type: 'message',
+      });
+    }
+  }
+
+  // Sort by timestamp
+  entries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  if (entries.length === 0) return '';
+
+  // Only show last 50 entries to avoid massive DOM
+  const visible = entries.slice(-50);
+
+  let html = `<div class="tasks-section" style="margin-top:24px;">`;
+  html += `<div class="tasks-section-header">
+    <h3>Task Timeline</h3>
+    <p class="tasks-section-subtitle">Execution flow across agents.</p>
+  </div>`;
+  html += `<div class="task-timeline">`;
+
+  for (const entry of visible) {
+    const d = new Date(entry.timestamp);
+    const timeStr = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+    let iconSvg = '';
+    let cardClass = 'timeline-entry';
+    if (entry.type === 'created') {
+      iconSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+      cardClass += ' timeline-created';
+    } else if (entry.type === 'updated') {
+      iconSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+      cardClass += ' timeline-updated';
+    } else if (entry.type === 'deleted') {
+      iconSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+      cardClass += ' timeline-deleted';
+    } else {
+      iconSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+      cardClass += ' timeline-message';
+    }
+
+    html += `<div class="${cardClass}">
+      <span class="timeline-time">${escapeHtml(dateStr)} ${escapeHtml(timeStr)}</span>
+      <span class="timeline-icon">${iconSvg}</span>
+      <span class="timeline-agent">${escapeHtml(entry.agentName)}</span>
+      <span class="timeline-text">${entry.text}</span>
+    </div>`;
+  }
+
+  html += `</div></div>`;
+  return html;
 }
 
 function showTaskDetail(taskId: string): void {

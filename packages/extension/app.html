@@ -1407,6 +1407,129 @@
     .chat-btn-send:disabled { background: var(--bg-surface); color: var(--text-muted); cursor: not-allowed; }
     .chat-btn-send:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+    /* ── Delegate Button ── */
+    .chat-btn-delegate {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border-default);
+      border-radius: 10px;
+      padding: var(--sp-2) var(--sp-3);
+      font-size: var(--text-xs);
+      cursor: pointer;
+      min-height: 44px;
+      min-width: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--duration-fast) var(--ease-out);
+    }
+    .chat-btn-delegate:hover {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border-color: var(--border-focus);
+    }
+    .chat-btn-delegate:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ── Sub-agent Status Cards ── */
+    .sub-agent-status-card {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      margin: 4px 0;
+      background: var(--bg-raised);
+      border-left: 2px solid var(--accent);
+      border-radius: 4px;
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      animation: fadeInSlide 0.2s ease-out;
+    }
+    .sub-agent-done-card {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      margin: 4px 0;
+      background: var(--bg-raised);
+      border-left: 2px solid var(--success, #3fb950);
+      border-radius: 4px;
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      animation: fadeInSlide 0.2s ease-out;
+    }
+    .sub-agent-status-icon {
+      flex-shrink: 0;
+      color: var(--text-muted);
+    }
+    .sub-agent-done-card .sub-agent-status-icon {
+      color: var(--success, #3fb950);
+    }
+    .sub-agent-status-name {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .sub-agent-status-text {
+      color: var(--text-muted);
+    }
+    .sub-agent-done-text {
+      color: var(--success, #3fb950);
+    }
+    @keyframes fadeInSlide {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Task Timeline ── */
+    .task-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 0;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .timeline-entry {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 5px 10px;
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      border-radius: 4px;
+      transition: background var(--duration-fast) var(--ease-out);
+    }
+    .timeline-entry:hover {
+      background: var(--bg-raised);
+    }
+    .timeline-time {
+      flex-shrink: 0;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 110px;
+    }
+    .timeline-icon {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      color: var(--text-muted);
+    }
+    .timeline-agent {
+      flex-shrink: 0;
+      font-weight: 600;
+      color: var(--text-primary);
+      min-width: 80px;
+    }
+    .timeline-text {
+      color: var(--text-secondary);
+    }
+    .timeline-created .timeline-icon { color: var(--accent); }
+    .timeline-updated .timeline-icon { color: var(--warning, #d29922); }
+    .timeline-deleted .timeline-icon { color: var(--danger); }
+    .timeline-message .timeline-icon { color: var(--text-muted); }
+
     /* ══════════════════════════════════════
        Mention Autocomplete Dropdown
        ══════════════════════════════════════ */

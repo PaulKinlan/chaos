@@ -1421,6 +1421,12 @@ async function handleOneShotMessage(
       return { tasks };
     }
 
+    case 'getTaskEvents': {
+      const { getTaskEvents } = await import('./storage/shared.js');
+      const events = await getTaskEvents();
+      return { events };
+    }
+
     case 'getArtifacts': {
       const artifacts = await listArtifacts();
       return { artifacts };

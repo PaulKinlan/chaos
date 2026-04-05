@@ -136,6 +136,19 @@ export async function getTaskState(): Promise<Task[]> {
 }
 
 /**
+ * Get the raw task event log for timeline rendering.
+ */
+export async function getTaskEvents(): Promise<TaskEvent[]> {
+  let lines: string[];
+  try {
+    lines = await opfs.readLines(TASKS_PATH);
+  } catch {
+    return [];
+  }
+  return lines.map((line) => JSON.parse(line) as TaskEvent);
+}
+
+/**
  * Get tasks that are not blocked (all blockedBy tasks are completed).
  */
 export async function getUnblockedTasks(): Promise<Task[]> {
