@@ -4,6 +4,8 @@
 import { addResponse, type StoredMessage } from "../store.ts";
 import { getSessionByUserId } from "../auth.ts";
 import { sendTelegramReply } from "./telegram.ts";
+import { sendDiscordReply } from "./discord.ts";
+import { sendEmailReply } from "./email.ts";
 import { logger } from "../logger.ts";
 
 export interface ReplyPayload {
@@ -47,6 +49,16 @@ export async function handleReply(
     sendTelegramReplyAsync(userId, payload);
   }
 
+  // For Discord channels, also send the reply immediately via Discord API
+  if (payload.channelType === "discord") {
+    sendDiscordReplyAsync(userId, payload);
+  }
+
+  // For Email channels, send the reply immediately via Resend API
+  if (payload.channelType === "email") {
+    sendEmailReplyAsync(userId, payload);
+  }
+
   return { ok: true, responseId: response.id };
 }
 
@@ -83,6 +95,97 @@ async function sendTelegramReplyAsync(
     await sendTelegramReply(botToken, chatId, payload.content);
   } catch (err) {
     logger.error("responder", "Failed to send Telegram reply", {
+      userId,
+      channelId: payload.channelId,
+      error: String(err),
+    });
+  }
+}
+
+async function sendDiscordReplyAsync(
+  userId: string,
+  payload: ReplyPayload,
+): Promise<void> {
+  try {
+    const session = await getSessionByUserId(userId);
+    if (!session) return;
+
+    const channel = session.channels.find((ch) => ch.id === payload.channelId);
+    if (!channel || channel.type !== "discord") return;
+
+    // Use plaintext token if available (in-memory), otherwise decrypt
+    let botToken = channel.metadata["botTokenPlain"] as string | undefined;
+    if (!botToken) {
+      const encrypted = channel.metadata["botToken"] as string | undefined;
+      if (encrypted) {
+        const { decryptToken } = await import("../crypto.ts");
+        botToken = await decryptToken(encrypted);
+      }
+    }
+    const discordChannelId = payload.metadata?.["discordChannelId"] as
+      | string
+      | undefined;
+
+    if (!botToken || !discordChannelId) {
+      logger.error(
+        "responder",
+        "Discord reply missing botToken or discordChannelId",
+        {
+          userId,
+          channelId: payload.channelId,
+        },
+      );
+      return;
+    }
+
+    await sendDiscordReply(botToken, discordChannelId, payload.content);
+  } catch (err) {
+    logger.error("responder", "Failed to send Discord reply", {
+      userId,
+      channelId: payload.channelId,
+      error: String(err),
+    });
+  }
+}
+
+async function sendEmailReplyAsync(
+  userId: string,
+  payload: ReplyPayload,
+): Promise<void> {
+  try {
+    const session = await getSessionByUserId(userId);
+    if (!session) return;
+
+    const channel = session.channels.find((ch) => ch.id === payload.channelId);
+    if (!channel || channel.type !== "email") return;
+
+    const fromAddress = channel.metadata["fromAddress"] as string | undefined;
+    const toAddress = payload.metadata?.["senderAddress"] as
+      | string
+      | undefined;
+    const originalSubject = payload.metadata?.["subject"] as
+      | string
+      | undefined;
+
+    if (!fromAddress || !toAddress) {
+      logger.error(
+        "responder",
+        "Email reply missing fromAddress or toAddress",
+        {
+          userId,
+          channelId: payload.channelId,
+        },
+      );
+      return;
+    }
+
+    const subject = originalSubject
+      ? `Re: ${originalSubject.replace(/^Re:\s*/i, "")}`
+      : "Re: (no subject)";
+
+    await sendEmailReply(fromAddress, toAddress, subject, payload.content);
+  } catch (err) {
+    logger.error("responder", "Failed to send email reply", {
       userId,
       channelId: payload.channelId,
       error: String(err),

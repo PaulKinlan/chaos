@@ -22,6 +22,11 @@ import {
   handleTelegramWebhook,
   registerTelegramBot,
 } from "./channels/telegram.ts";
+import {
+  handleDiscordWebhook,
+  registerDiscordBot,
+} from "./channels/discord.ts";
+import { handleEmailWebhook, registerEmailChannel } from "./channels/email.ts";
 import { getServerPublicKey, initServerKeyPair } from "./crypto.ts";
 import { getKv, initKv, isKvAvailable } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
@@ -525,6 +530,74 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
+  // Email webhook ingestion (no Bearer auth — Resend posts directly)
+  const emailMatch = url.pathname.match(/^\/email\/([^/]+)$/);
+  if (emailMatch && method === "POST") {
+    const channelId = emailMatch[1];
+
+    // Rate limit: 60/min per channel (same as webhooks)
+    if (
+      !rateLimiter.check(
+        `webhook:${channelId}`,
+        RATE_LIMITS.webhook.limit,
+        RATE_LIMITS.webhook.windowMs,
+      )
+    ) {
+      logger.warn("server", "Rate limit hit for email webhook", {
+        channelId,
+      });
+      return error("Too many webhook requests. Try again later.", 429);
+    }
+
+    const resp = await handleEmailWebhook(channelId, req);
+    const body = await resp.text();
+    logger.info("server", "Email webhook response", {
+      channelId,
+      status: resp.status,
+    });
+    return new Response(body, {
+      status: resp.status,
+      headers: {
+        ...Object.fromEntries(resp.headers.entries()),
+        ...corsHeaders,
+      },
+    });
+  }
+
+  // Discord webhook ingestion (auth via URL secret, not Bearer)
+  const discordMatch = url.pathname.match(/^\/discord\/([^/]+)$/);
+  if (discordMatch && method === "POST") {
+    const channelId = discordMatch[1];
+
+    // Rate limit: 60/min per channel (same as webhooks)
+    if (
+      !rateLimiter.check(
+        `webhook:${channelId}`,
+        RATE_LIMITS.webhook.limit,
+        RATE_LIMITS.webhook.windowMs,
+      )
+    ) {
+      logger.warn("server", "Rate limit hit for Discord webhook", {
+        channelId,
+      });
+      return error("Too many webhook requests. Try again later.", 429);
+    }
+
+    const resp = await handleDiscordWebhook(channelId, req);
+    const body = await resp.text();
+    logger.info("server", "Discord webhook response", {
+      channelId,
+      status: resp.status,
+    });
+    return new Response(body, {
+      status: resp.status,
+      headers: {
+        ...Object.fromEntries(resp.headers.entries()),
+        ...corsHeaders,
+      },
+    });
+  }
+
   // ── WebSocket upgrade ──
 
   if (url.pathname === "/ws" && req.headers.get("upgrade") === "websocket") {
@@ -776,6 +849,160 @@ Deno.serve(serveOptions, async (req: Request) => {
         error: message,
       });
       return error(`Telegram registration failed: ${message}`);
+    }
+  }
+
+  // Register a Discord bot channel
+  if (url.pathname === "/channels/discord/register" && method === "POST") {
+    // Rate limit: 10/hour per user (same as channels)
+    if (
+      !rateLimiter.check(
+        `channels:${session.userId}`,
+        RATE_LIMITS.channels.limit,
+        RATE_LIMITS.channels.windowMs,
+      )
+    ) {
+      logger.warn(
+        "server",
+        "Rate limit hit for Discord channel registration",
+        { userId: session.userId },
+      );
+      return error(
+        "Too many channel registration requests. Try again later.",
+        429,
+      );
+    }
+
+    try {
+      const body = await req.json();
+      const botToken = body.botToken;
+      if (!botToken || typeof botToken !== "string") {
+        return error("Missing or invalid botToken");
+      }
+
+      const channelId = crypto.randomUUID();
+      const serverBaseUrl = url.origin;
+
+      const { botUsername, webhookSecret } = await registerDiscordBot(
+        session.userId,
+        botToken,
+        serverBaseUrl,
+        channelId,
+      );
+
+      // Encrypt the bot token before storing
+      const { encryptToken } = await import("./crypto.ts");
+      const encryptedToken = await encryptToken(botToken);
+
+      // Generate a pairing code for the owner to send to the bot
+      const pairingCode = crypto.randomUUID().slice(0, 8).toUpperCase();
+
+      const channel: ChannelConfig = {
+        id: channelId,
+        type: "discord",
+        direction: "bidirectional",
+        agentId: body.agentId || "",
+        enabled: true,
+        metadata: {
+          botToken: encryptedToken, // Encrypted at rest
+          botTokenPlain: botToken, // Kept in memory only, not persisted
+          botUsername,
+          webhookSecret,
+          pairingCode,
+        },
+      };
+
+      await addChannel(session.userId, channel);
+
+      logger.info("server", "Discord bot channel registered", {
+        userId: session.userId,
+        channelId,
+        botUsername,
+        pairingCode,
+      });
+      return json({ channelId, botUsername, pairingCode }, 201);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("server", "Discord registration failed", {
+        userId: session.userId,
+        error: message,
+      });
+      return error(`Discord registration failed: ${message}`);
+    }
+  }
+
+  // Register an Email channel
+  if (url.pathname === "/channels/email/register" && method === "POST") {
+    // Rate limit: 10/hour per user (same as channels)
+    if (
+      !rateLimiter.check(
+        `channels:${session.userId}`,
+        RATE_LIMITS.channels.limit,
+        RATE_LIMITS.channels.windowMs,
+      )
+    ) {
+      logger.warn(
+        "server",
+        "Rate limit hit for email channel registration",
+        { userId: session.userId },
+      );
+      return error(
+        "Too many channel registration requests. Try again later.",
+        429,
+      );
+    }
+
+    try {
+      const body = await req.json();
+      const fromAddress = body.fromAddress;
+      if (!fromAddress || typeof fromAddress !== "string") {
+        return error("Missing or invalid fromAddress");
+      }
+
+      const domain = Deno.env.get("CHAOS_EMAIL_DOMAIN");
+      if (!domain) {
+        return error(
+          "Email not configured (set CHAOS_EMAIL_DOMAIN env var)",
+          503,
+        );
+      }
+
+      const channelId = crypto.randomUUID();
+      const { inboundAddress } = await registerEmailChannel(
+        session.userId,
+        fromAddress,
+        domain,
+      );
+
+      const channel: ChannelConfig = {
+        id: channelId,
+        type: "email",
+        direction: "bidirectional",
+        agentId: body.agentId || "",
+        enabled: true,
+        metadata: {
+          fromAddress,
+          inboundAddress,
+          allowedSenders: body.allowedSenders || [],
+        },
+      };
+
+      await addChannel(session.userId, channel);
+
+      logger.info("server", "Email channel registered", {
+        userId: session.userId,
+        channelId,
+        fromAddress,
+        inboundAddress,
+      });
+      return json({ channelId, inboundAddress }, 201);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("server", "Email registration failed", {
+        userId: session.userId,
+        error: message,
+      });
+      return error(`Email registration failed: ${message}`);
     }
   }
 
