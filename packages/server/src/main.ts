@@ -29,8 +29,8 @@ import {
   registerDiscordBot,
 } from "./channels/discord.ts";
 import {
+  handleEmailInbound,
   handleEmailVerification,
-  handleEmailWebhook,
   registerEmailChannel,
 } from "./channels/email.ts";
 import { getServerPublicKey, initServerKeyPair } from "./crypto.ts";
@@ -563,31 +563,21 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
-  // Email webhook ingestion (no Bearer auth — Resend posts directly)
-  const emailMatch = url.pathname.match(/^\/email\/([^/]+)$/);
-  if (emailMatch && method === "POST") {
-    const channelId = emailMatch[1];
-
-    // Rate limit: 60/min per channel (same as webhooks)
+  // Email inbound — single webhook endpoint, routes by "to" address
+  if (url.pathname === "/email/inbound" && method === "POST") {
     if (
       !rateLimiter.check(
-        `webhook:${channelId}`,
+        "email-inbound",
         RATE_LIMITS.webhook.limit,
         RATE_LIMITS.webhook.windowMs,
       )
     ) {
-      logger.warn("server", "Rate limit hit for email webhook", {
-        channelId,
-      });
-      return error("Too many webhook requests. Try again later.", 429);
+      logger.warn("server", "Rate limit hit for email inbound");
+      return error("Too many requests. Try again later.", 429);
     }
 
-    const resp = await handleEmailWebhook(channelId, req);
+    const resp = await handleEmailInbound(req);
     const body = await resp.text();
-    logger.info("server", "Email webhook response", {
-      channelId,
-      status: resp.status,
-    });
     return new Response(body, {
       status: resp.status,
       headers: {

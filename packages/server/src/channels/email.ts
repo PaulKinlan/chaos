@@ -1,8 +1,10 @@
 // Email channel handler
-// Registers email inbound addresses, handles Resend inbound webhooks, and sends replies
+// Single inbound webhook routes by "to" address. Sender allowlist filtering.
+// Uses Resend for sending verification emails and replies.
 
 import { addMessage, type StoredMessage } from "../store.ts";
 import { getSessionByChannelId } from "../auth.ts";
+import { getKv, isKvAvailable } from "../kv.ts";
 import { logger } from "../logger.ts";
 
 // ── Resend inbound webhook types ──
@@ -15,12 +17,8 @@ interface ResendInboundEmail {
   html?: string;
 }
 
-// ── Registration ──
+// ── Address generation ──
 
-/**
- * Sanitize a channel name into a valid email local part.
- * Lowercases, strips spaces, removes characters not suitable for email addresses.
- */
 function sanitizeChannelName(name: string): string {
   return name
     .toLowerCase()
@@ -29,6 +27,70 @@ function sanitizeChannelName(name: string): string {
     .replace(/[^a-z0-9._-]/g, "")
     .replace(/^[-._]+|[-._]+$/g, "");
 }
+
+function generateSuffix(): string {
+  // 10 alphanumeric chars — low collision risk
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = new Uint8Array(10);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => chars[b % chars.length]).join("");
+}
+
+/**
+ * Generate a unique inbound address and check KV for collisions.
+ */
+async function generateUniqueAddress(
+  name: string,
+  domain: string,
+): Promise<string> {
+  const sanitized = sanitizeChannelName(name);
+  if (!sanitized) {
+    throw new Error(
+      "Invalid channel name — must contain at least one alphanumeric character",
+    );
+  }
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const suffix = generateSuffix();
+    const address = `${sanitized}-${suffix}@${domain}`;
+
+    // Check KV for collision
+    if (isKvAvailable() && getKv()) {
+      const existing = await getKv()!.get(["email_addresses", address]);
+      if (existing.value) continue; // Collision, try again
+    }
+
+    return address;
+  }
+
+  throw new Error("Failed to generate unique email address after 5 attempts");
+}
+
+/**
+ * Store the inbound address → channelId mapping in KV for webhook routing.
+ */
+async function storeAddressMapping(
+  address: string,
+  channelId: string,
+): Promise<void> {
+  if (isKvAvailable() && getKv()) {
+    await getKv()!.set(["email_addresses", address], channelId);
+    logger.info("email", "Address mapping stored", { address, channelId });
+  }
+}
+
+/**
+ * Look up a channelId by inbound address.
+ */
+export async function lookupChannelByAddress(
+  address: string,
+): Promise<string | null> {
+  if (!isKvAvailable() || !getKv()) return null;
+  const result = await getKv()!.get<string>(["email_addresses", address]);
+  return result.value;
+}
+
+// ── Registration ──
 
 export async function registerEmailChannel(
   userId: string,
@@ -47,15 +109,11 @@ export async function registerEmailChannel(
     channelName,
   });
 
-  const sanitized = sanitizeChannelName(channelName);
-  if (!sanitized) {
-    throw new Error(
-      "Invalid channel name — must contain at least one alphanumeric character",
-    );
-  }
-
-  const inboundAddress = `${sanitized}@${domain}`;
+  const inboundAddress = await generateUniqueAddress(channelName, domain);
   const verificationToken = crypto.randomUUID();
+
+  // Store the address → channelId mapping in KV
+  await storeAddressMapping(inboundAddress, channelId);
 
   // Send verification email via Resend
   const verifyUrl =
@@ -128,15 +186,13 @@ export async function handleEmailVerification(
     allowedSenders,
   });
 
-  logger.info("email", "Email channel verified", {
-    channelId,
-    userEmail,
-  });
+  logger.info("email", "Email channel verified", { channelId, userEmail });
 
   return htmlResponse(
     `<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
       <div style="text-align:center;">
         <h1 style="color:#22c55e;">Email verified!</h1>
+        <p>Your email address has been verified. You can now send emails to your CHAOS agent.</p>
         <p>You can close this tab.</p>
       </div>
     </body></html>`,
@@ -144,87 +200,110 @@ export async function handleEmailVerification(
   );
 }
 
-// ── Webhook handler ──
+// ── Single inbound webhook — routes by "to" address ──
 
-export async function handleEmailWebhook(
-  channelId: string,
+export async function handleEmailInbound(
   req: Request,
 ): Promise<Response> {
-  logger.info("email", "Incoming email webhook", { channelId });
+  logger.info("email", "Incoming email inbound webhook");
 
-  // Look up the channel owner
-  const session = await getSessionByChannelId(channelId);
-  if (!session) {
-    logger.error("email", "Unknown channel for email webhook", { channelId });
-    return jsonResponse({ error: "Unknown channel" }, 404);
-  }
-
-  // Find the channel config
-  const channel = session.channels.find((ch) => ch.id === channelId);
-  if (!channel || channel.type !== "email") {
-    logger.error("email", "Channel is not an email type", { channelId });
-    return jsonResponse({ error: "Channel is not an email channel" }, 400);
-  }
-
-  // Reject unverified channels
-  if (!channel.metadata["verified"]) {
-    logger.warn("email", "Rejecting webhook for unverified channel", {
-      channelId,
-    });
-    return jsonResponse({ error: "Channel not verified" }, 403);
-  }
-
-  // Parse the Resend inbound webhook payload
   let inbound: ResendInboundEmail;
   try {
     inbound = await req.json();
   } catch {
-    logger.error("email", "Invalid JSON body in email webhook", { channelId });
+    logger.error("email", "Invalid JSON body in email inbound webhook");
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
-  // Extract sender, subject, body
-  const senderAddress = inbound.from || "unknown";
-  const subject = inbound.subject || "(no subject)";
-  const bodyText = inbound.text || "";
+  // Extract the "to" address(es)
+  const toAddresses = Array.isArray(inbound.to) ? inbound.to : [inbound.to];
+  logger.info("email", "Email received", {
+    from: inbound.from,
+    to: toAddresses,
+    subject: inbound.subject,
+  });
 
-  if (!bodyText && !inbound.html) {
+  // Try each "to" address to find a matching channel
+  let channelId: string | null = null;
+  let matchedAddress: string | null = null;
+
+  for (const addr of toAddresses) {
+    const normalized = extractEmail(addr).toLowerCase();
+    channelId = await lookupChannelByAddress(normalized);
+    if (channelId) {
+      matchedAddress = normalized;
+      break;
+    }
+  }
+
+  if (!channelId || !matchedAddress) {
+    logger.warn("email", "No channel found for inbound address", {
+      to: toAddresses,
+    });
+    return jsonResponse({ ok: true }); // Acknowledge but don't process
+  }
+
+  // Look up the channel
+  const session = await getSessionByChannelId(channelId);
+  if (!session) {
+    logger.error("email", "Channel owner session not found", { channelId });
     return jsonResponse({ ok: true });
   }
 
-  // ── Allowlist check ──
+  const channel = session.channels.find((ch) => ch.id === channelId);
+  if (!channel || channel.type !== "email") {
+    return jsonResponse({ ok: true });
+  }
+
+  // Reject unverified channels
+  if (!channel.metadata["verified"]) {
+    logger.warn("email", "Rejecting email for unverified channel", {
+      channelId,
+    });
+    return jsonResponse({ ok: true });
+  }
+
+  // Sender allowlist check
+  const senderAddress = inbound.from || "unknown";
+  const senderEmail = extractEmail(senderAddress).toLowerCase();
   const allowlist = channel.metadata["allowedSenders"] as string[] | undefined;
+
   if (allowlist && allowlist.length > 0) {
-    // Normalize: extract email from "Name <email>" format
-    const senderEmail = extractEmail(senderAddress);
-    if (!allowlist.includes(senderEmail)) {
+    const allowed = allowlist.some((a) => a.toLowerCase() === senderEmail);
+    if (!allowed) {
       logger.warn("email", "Sender not in allowlist", {
         channelId,
         sender: senderAddress,
         senderEmail,
+        allowedCount: allowlist.length,
       });
-      return jsonResponse({ ok: true });
+      return jsonResponse({ ok: true }); // Silently drop
     }
   }
 
-  // Build content from subject + body
-  const content = bodyText || stripHtml(inbound.html || "");
+  // Extract content
+  const subject = inbound.subject || "(no subject)";
+  const content = inbound.text || stripHtml(inbound.html || "");
+
+  if (!content) {
+    return jsonResponse({ ok: true });
+  }
 
   const metadata: Record<string, unknown> = {
     channelDirection: channel.direction || "bidirectional",
-    senderAddress,
+    channelName: channel.name,
+    senderAddress: senderEmail,
     subject,
-    toAddress: Array.isArray(inbound.to) ? inbound.to[0] : inbound.to,
+    toAddress: matchedAddress,
   };
 
-  // Store as a ChannelMessage
   const message: StoredMessage = {
     id: crypto.randomUUID(),
     userId: session.userId,
     channelType: "email",
     channelId,
-    from: senderAddress,
-    content,
+    from: senderEmail,
+    content: `Subject: ${subject}\n\n${content}`,
     timestamp: new Date().toISOString(),
     metadata,
   };
@@ -235,7 +314,7 @@ export async function handleEmailWebhook(
     channelId,
     messageId: message.id,
     userId: session.userId,
-    from: senderAddress,
+    from: senderEmail,
     subject,
   });
 
@@ -266,11 +345,14 @@ async function sendVerificationEmail(
     body: JSON.stringify({
       from: fromAddress,
       to: toAddress,
-      subject: "Verify your email channel",
+      subject: "Verify your CHAOS email channel",
       text:
-        `Click the link below to verify your email address for the inbound address ${inboundAddress}:\n\n${verifyUrl}\n\nIf you did not request this, you can ignore this email.`,
-      html:
-        `<p>Click the link below to verify your email address for the inbound address <strong>${inboundAddress}</strong>:</p><p><a href="${verifyUrl}">Verify Email</a></p><p>If you did not request this, you can ignore this email.</p>`,
+        `Click the link below to verify your email address for CHAOS.\n\nYour inbound address: ${inboundAddress}\n\n${verifyUrl}\n\nAfter verification, emails you send to ${inboundAddress} will be processed by your CHAOS agent.\n\nIf you did not request this, you can ignore this email.`,
+      html: `<p>Click the link below to verify your email address for CHAOS.</p>
+        <p>Your inbound address: <strong>${inboundAddress}</strong></p>
+        <p><a href="${verifyUrl}" style="display:inline-block;padding:10px 20px;background:#238636;color:white;text-decoration:none;border-radius:6px;">Verify Email</a></p>
+        <p>After verification, emails you send to <strong>${inboundAddress}</strong> will be processed by your CHAOS agent.</p>
+        <p style="color:#888;">If you did not request this, you can ignore this email.</p>`,
     }),
   });
 
@@ -352,7 +434,7 @@ function htmlResponse(html: string, status = 200): Response {
 /** Extract bare email from "Display Name <email@example.com>" format */
 function extractEmail(address: string): string {
   const match = address.match(/<([^>]+)>/);
-  return match ? match[1] : address.trim();
+  return match ? match[1].toLowerCase() : address.trim().toLowerCase();
 }
 
 /** Strip HTML tags for plain-text fallback */

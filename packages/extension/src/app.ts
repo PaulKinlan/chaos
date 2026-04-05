@@ -4804,9 +4804,13 @@ document.getElementById('btn-email-register')!.addEventListener('click', async (
     // Show verification info
     const infoDiv = document.createElement('div');
     infoDiv.style.cssText = 'margin-top:8px;padding:10px;background:var(--bg-surface, #1a1a2e);border-radius:6px;font-size:var(--text-xs);';
+    const mailtoSubject = encodeURIComponent('Test from CHAOS');
+    const mailtoBody = encodeURIComponent('Hello! This is a test email to my CHAOS agent.');
+    const mailtoHref = `mailto:${encodeURIComponent(result.inboundAddress)}?subject=${mailtoSubject}&body=${mailtoBody}`;
     infoDiv.innerHTML = `
       <p style="margin:0 0 6px 0;color:var(--text-primary);font-weight:500;">Check your email for a verification link.</p>
-      <p style="margin:0;color:var(--text-secondary);">Your inbound address will be: <strong style="color:var(--text-primary);">${escapeHtml(result.inboundAddress)}</strong></p>
+      <p style="margin:0 0 6px 0;color:var(--text-secondary);">Your inbound address: <a href="${mailtoHref}" style="color:var(--text-link, #58a6ff);font-weight:500;">${escapeHtml(result.inboundAddress)}</a></p>
+      <p style="margin:0;color:var(--text-muted);font-size:10px;">After verifying, click the address above to send a test email.</p>
     `;
     statusSpan.parentElement!.appendChild(infoDiv);
 
