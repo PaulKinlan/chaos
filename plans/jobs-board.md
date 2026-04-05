@@ -30,10 +30,10 @@
 - [x] Background handlers for archive/restore
 - [x] Tests for `getNewlyUnblockedTasks` and archive/restore
 
-### Phase 4: Polish — TODO
-- [ ] Sub-agent activity visible from master's chat (inline status updates)
-- [ ] "Delegate" button in chat UI
-- [ ] Job/task timeline view
+### Phase 4: Polish — DONE
+- [x] Sub-agent activity visible from master's chat (inline status cards that update in place)
+- [x] "Delegate" button in chat UI (ghost button next to send, prepends delegation instruction)
+- [x] Job/task timeline view (chronological timeline below jobs table with color-coded events)
 
 ---
 
