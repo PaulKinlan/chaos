@@ -1,42 +1,77 @@
 # Plan: External Channels
 
-## Status (audited 2026-04-04)
+## Status (audited 2026-04-05)
 
 ### Monorepo Architecture — DONE
-- [x] `packages/` directory structure created (extension, server, shared, web)
+- [x] `packages/` directory structure (extension, server, shared, web)
 - [x] npm workspaces configured in root `package.json`
-- [x] `packages/shared/src/types.ts` exists with shared types
-- [x] `packages/server/` with Deno runtime, main.ts, auth, channels, KV, rate limiting, WebSocket support
-- [x] `packages/web/` scaffolded
+- [x] `packages/shared/src/types.ts` with shared types (ChannelConfig, ChannelMessage, ChannelResponse, etc.)
+- [x] `packages/server/` — Deno runtime with KV persistence, WebSocket, kv.watch(), admin dashboard
+- [x] `packages/web/` scaffolded (not yet built out)
 
-### Phase 1: Core channel infrastructure — IN PROGRESS
-- [x] `src/channels/` module in extension with types.ts, config.ts, crypto.ts, poller.ts, relay-client.ts, ws-client.ts
-- [x] `ChannelConfig`, `ChannelMessage`, `ChannelResponse` types defined
-- [ ] Channel config UI in sidebar — NOT VERIFIED in app.ts
-- [x] Alarm-based polling (`poller.ts`)
-- [ ] Generic message handling (channel message -> agentic loop -> response) — PARTIALLY (relay-client exists, end-to-end flow unverified)
+### Phase 1: Core channel infrastructure — DONE
+- [x] `src/channels/` module: types.ts, config.ts, crypto.ts, poller.ts, relay-client.ts, ws-client.ts
+- [x] Channel config UI in sidebar (dedicated Channels view with connect/disconnect, add webhook/telegram)
+- [x] Alarm-based polling with WebSocket as fast path (ws-client.ts)
+- [x] Full message flow: channel message → relay → WS/poll → processMessage → agentic loop → sendReply → relay → channel
+- [x] Channel direction: inbound (webhooks) vs bidirectional (Telegram)
+- [x] Per-channel name, prompt (agent instructions), and allowlist
+- [x] Channel log viewer in UI
+- [x] Deduplication of messages (persisted in chrome.storage.local)
+- [x] Auto-reconnect with session reclaim (pubkey fingerprint in KV)
 
-### Phase 2: Discord relay worker — TODO
-- [ ] No `discord.ts` in server channels (only `responder.ts`, `telegram.ts`, `webhook.ts`)
-- [ ] Discord-specific message formatting not found
+### Phase 2: Discord — TODO
+- [ ] No Discord handler on server
+- [ ] Could follow same pattern as Telegram (webhook + bot token)
 
-### Phase 3: Telegram relay worker — IN PROGRESS
-- [x] `packages/server/src/channels/telegram.ts` exists
-- [ ] Telegram message formatting completeness unverified
+### Phase 3: Telegram — DONE
+- [x] `packages/server/src/channels/telegram.ts` — bot registration, webhook handler, reply sender
+- [x] Pairing code flow: register bot → get code → send to bot → auto-add to allowlist
+- [x] Step-by-step pairing dialog in extension UI
+- [x] Per-channel allowlist with Telegram user IDs
+- [x] Bidirectional: agent receives messages AND replies via Telegram API
 
-### Phase 4: Email channel — TODO
-- [ ] No email channel implementation found
+### Phase 4: Email — TODO
+- [ ] No email implementation (Resend planned)
 
-### Phase 5: Advanced features — TODO
-- [ ] Rich message formatting, file handling, multi-channel coordination, rate limiting per channel, channel-specific hooks
+### Phase 5: Webhooks — DONE
+- [x] Generic webhook ingestion (`/webhook/:channelId?token=secret`)
+- [x] Inbound-only (no reply path)
+- [x] Per-webhook prompt for agent instructions
+- [x] Refine button for prompts (same as hooks)
 
-### Authentication & Channel Ownership — IN PROGRESS
-- [x] `packages/server/src/auth.ts` exists
-- [x] `packages/server/src/crypto.ts` exists
-- [x] `packages/extension/src/channels/crypto.ts` exists
-- [ ] chrome.identity OAuth flow — NOT VERIFIED
-- [ ] JWT session tokens — NOT VERIFIED
-- [ ] Channel ownership verification — NOT VERIFIED
+### Phase 6: Advanced features — PARTIAL
+- [x] Rate limiting per endpoint (rate-limit.ts)
+- [x] Channel-specific hooks (clipboard, filesystem observer registered as hook types)
+- [ ] Rich message formatting per channel (not started)
+- [ ] File/image handling across channels (not started)
+- [ ] Multi-channel coordination (not started)
+
+### Authentication & Security — DONE (different from plan)
+**Note: We did NOT implement chrome.identity OAuth or JWT. Instead:**
+- [x] ECDSA P-256 keypair generated on extension, public key sent during registration
+- [x] Every request signed: `X-Timestamp | X-Nonce | path | bodyHash` → ECDSA-SHA256 signature
+- [x] Nonce tracking prevents replay attacks (5-minute window)
+- [x] Timestamp freshness check (5-minute max age)
+- [x] Session reclaim by public key fingerprint (KV index)
+- [x] Bot tokens encrypted at rest (AES-GCM, CHAOS_ENCRYPTION_KEY env var)
+- [x] Server keypair persisted in KV (survives isolate restarts)
+- [x] Admin dashboard with session cookie auth (24hr TTL, HttpOnly, SameSite=Strict)
+
+### Server Persistence — DONE (different from plan)
+**Note: We chose Deno Deploy + KV, not Cloudflare Workers + D1:**
+- [x] Deno KV for: sessions, messages, responses, server keypair, admin sessions, pubkey index, event log
+- [x] Messages stored with 24hr TTL (expireIn)
+- [x] In-memory Maps as cache only, KV is source of truth
+- [x] kv.watch() for cross-isolate WebSocket message delivery
+- [x] Lazy initialization to avoid blocking Deno Deploy warmup
+
+### Real-time Delivery — DONE
+- [x] WebSocket endpoint (`/ws?token=apiKey`)
+- [x] kv.watch() on `["last_message", userId]` — works across Deploy isolates
+- [x] On WS connect: sends missed messages from last 5 minutes
+- [x] Alarm-based polling as fallback (5-minute interval when WS connected)
+- [x] Auto-reconnect with exponential backoff (5s-60s)
 
 ---
 
@@ -100,18 +135,26 @@ Use email as the universal channel, like emaila.gent does. External services (Di
 **Pros**: Simple. Email is universal. emaila.gent already has the pattern.
 **Cons**: Slow (email delivery + polling). Not real-time. Email-specific formatting issues.
 
-## Recommended: Option B with Cloudflare Workers
+## Implemented: Option B with Deno Deploy
 
-### Relay Server Design
+### Relay Server (packages/server/)
 
-A Cloudflare Worker that:
-- Receives Discord/Telegram webhook events
-- Stores pending messages in KV (keyed by user/agent)
-- Exposes a REST API for the extension:
-  - `GET /messages?since=timestamp` - poll for new messages
-  - `POST /reply` - send a response back to the channel
-  - `POST /register` - register a channel connection
-- Handles auth via a shared secret (stored in extension settings)
+A Deno server deployed on Deno Deploy:
+- Receives webhook and Telegram events
+- Stores messages in Deno KV (24hr TTL)
+- Real-time delivery via WebSocket + kv.watch() (cross-isolate)
+- REST API:
+  - `POST /auth/register` — register with ECDSA public key, get apiKey + userId
+  - `GET /messages?since=timestamp` — poll for new messages (reads from KV)
+  - `POST /reply` — send a response back through the channel
+  - `GET /ws?token=apiKey` — WebSocket for real-time push
+  - `POST /webhook/:channelId?token=secret` — generic webhook ingestion
+  - `POST /telegram/:channelId?secret=...` — Telegram webhook
+  - `POST /channels` / `GET /channels` / `PATCH /channels/:id` / `DELETE /channels/:id` — channel CRUD
+  - `POST /channels/telegram/register` — register Telegram bot (validates token, sets webhook, generates pairing code)
+  - `GET /health` — status (KV, WebSocket count, uptime)
+  - `GET /admin` — admin dashboard (session cookie auth)
+- Auth via ECDSA P-256 request signing (not shared secrets)
 
 ### Extension Integration
 
