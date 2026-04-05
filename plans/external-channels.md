@@ -1,5 +1,45 @@
 # Plan: External Channels
 
+## Status (audited 2026-04-04)
+
+### Monorepo Architecture — DONE
+- [x] `packages/` directory structure created (extension, server, shared, web)
+- [x] npm workspaces configured in root `package.json`
+- [x] `packages/shared/src/types.ts` exists with shared types
+- [x] `packages/server/` with Deno runtime, main.ts, auth, channels, KV, rate limiting, WebSocket support
+- [x] `packages/web/` scaffolded
+
+### Phase 1: Core channel infrastructure — IN PROGRESS
+- [x] `src/channels/` module in extension with types.ts, config.ts, crypto.ts, poller.ts, relay-client.ts, ws-client.ts
+- [x] `ChannelConfig`, `ChannelMessage`, `ChannelResponse` types defined
+- [ ] Channel config UI in sidebar — NOT VERIFIED in app.ts
+- [x] Alarm-based polling (`poller.ts`)
+- [ ] Generic message handling (channel message -> agentic loop -> response) — PARTIALLY (relay-client exists, end-to-end flow unverified)
+
+### Phase 2: Discord relay worker — TODO
+- [ ] No `discord.ts` in server channels (only `responder.ts`, `telegram.ts`, `webhook.ts`)
+- [ ] Discord-specific message formatting not found
+
+### Phase 3: Telegram relay worker — IN PROGRESS
+- [x] `packages/server/src/channels/telegram.ts` exists
+- [ ] Telegram message formatting completeness unverified
+
+### Phase 4: Email channel — TODO
+- [ ] No email channel implementation found
+
+### Phase 5: Advanced features — TODO
+- [ ] Rich message formatting, file handling, multi-channel coordination, rate limiting per channel, channel-specific hooks
+
+### Authentication & Channel Ownership — IN PROGRESS
+- [x] `packages/server/src/auth.ts` exists
+- [x] `packages/server/src/crypto.ts` exists
+- [x] `packages/extension/src/channels/crypto.ts` exists
+- [ ] chrome.identity OAuth flow — NOT VERIFIED
+- [ ] JWT session tokens — NOT VERIFIED
+- [ ] Channel ownership verification — NOT VERIFIED
+
+---
+
 ## Problem
 
 Right now CHAOS agents can only be triggered by:

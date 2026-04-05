@@ -47,6 +47,10 @@ npm test             # Run unit + integration tests (288 tests)
 npm run test:e2e     # Run Puppeteer e2e tests (requires build)
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, how to run tests, build the extension, and submit PRs. Development guidelines and code style rules are in [CLAUDE.md](CLAUDE.md).
+
 ## Status
 
 Active development. Functional as a Chrome extension. Opens via icon click or Ctrl+Shift+C hotkey in a regular tab (not a new tab page override).

@@ -1,5 +1,35 @@
 # Plan: Skills Import
 
+## Status (audited 2026-04-04)
+
+### Phase 1: Manual skill import — DONE
+- [x] `src/agents/skills.ts` with `SkillMeta`, `installSkill()`, `removeSkill()`, `listSkills()`, `getSkillContent()`, `getSkillManifest()`, `parseFrontmatter()`, `buildSkillsPromptSection()`
+- [x] Agent loop integration in both `agentic-loop.ts` and `loop.ts` (calls `buildSkillsPromptSection()`)
+- [x] Agent tools: `install_skill`, `remove_skill`, `list_skills`, `fetch_skill` in `src/tools/skills/`
+- [x] Background port handlers: `listSkills`, `installSkill`, `removeSkill`, `importSkillFromUrl`, `fetchSkillPreview`
+- [x] Background one-shot handlers: `listSkills`, `installSkill`, `removeSkill`, `fetchSkillPreviewOneShot`, `importSkillFromUrlOneShot`
+- [x] Tests: 13 tests in `src/agents/__tests__/skills.test.ts`
+
+### Phase 2: URL-based import — DONE
+- [x] `src/agents/skill-fetcher.ts` with `fetchSkillFromGitHub()`, `fetchSkillFromDirectUrl()`, `fetchSkillFromUrl()`
+- [x] GitHub API support: owner/repo/branch/path parsing, `/repos/contents` API, recursive reference discovery
+- [x] Fallback to `raw.githubusercontent.com` and direct URL fetch
+- [x] `src/tools/skills/fetch-skill.ts` uses skill-fetcher module
+- [x] Background handler `importSkillFromUrl` updated
+- [x] Preview-before-install flow (`fetchSkillPreview` handlers)
+- [x] UI: "Browse Skills" section with curated featured skills
+- [x] Tests: 13 tests in `src/agents/__tests__/skill-fetcher.test.ts`
+
+### Phase 3: Skill registry / marketplace — TODO
+- [ ] No JSON registry or marketplace API found
+- [ ] No skill browser with search/filter by tags (only curated featured list in UI)
+
+### Phase 4: Agent self-discovery — TODO
+- [ ] No `search_skills` tool found
+- [ ] No automatic skill installation based on task context
+
+---
+
 ## Problem
 
 Agents are currently configured only through their CLAUDE.md template and the tools we've built in. There's no way to give an agent specialised knowledge or capabilities from external sources. Meanwhile, there's a growing ecosystem of skills/prompts/tool packs:

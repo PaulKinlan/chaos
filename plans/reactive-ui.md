@@ -1,5 +1,31 @@
 # Plan: Reactive UI with Preact Signals
 
+## Status (audited 2026-04-04)
+
+### Phase 1: Install and Wire Core State — TODO
+- [ ] `@preact/signals-core` not in package.json dependencies
+- [ ] No signal/computed/effect imports found anywhere in src/
+- [ ] Core globals still mutable in app.ts (171 occurrences of innerHTML/classList.toggle/activeView/activeAgentId)
+
+### Phase 2: DOM Binding Helpers — TODO
+- [ ] No bindText/bindVisible/bindClass/bindList utilities found
+
+### Phase 3: Migrate Sidebar — TODO
+- [ ] Sidebar still uses imperative rendering
+
+### Phase 4: Migrate View Panels — TODO
+- [ ] View panels still use imperative DOM manipulation
+
+### Phase 5: Migrate Chat Columns — TODO
+- [ ] Chat columns still use innerHTML manipulation
+
+### Phase 6: Remove Dead Code — TODO
+- [ ] All legacy imperative code still in place
+
+**Summary: This plan has not been started. The entire UI remains imperative with no reactive state layer.**
+
+---
+
 ## Problem
 
 The current UI uses imperative DOM manipulation (`innerHTML`, `classList.toggle`, manual element creation). State changes trigger full re-renders that lose user context: selected files reset, views jump, scroll positions lost. Every `onAgentListReceived`, hook trigger, or port reconnect risks blowing away the current view.

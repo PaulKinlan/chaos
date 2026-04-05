@@ -1,5 +1,42 @@
 # Plan: Master Agent + Shared Workspace
 
+## Status (audited 2026-04-04)
+
+### Phase 1: Mark master agent + shared views — DONE
+- [x] `master: boolean` on AgentMeta (`storage/types.ts`)
+- [x] First agent marked as master on install (`background.ts`)
+- [x] Master tools gated by `isMaster` check (`tools/master/index.ts`)
+- [ ] Tasks/Messages/Artifacts views show ALL agents' data with filter dropdown — NOT VERIFIED in UI code (app.ts still imperative)
+- [ ] Master agent tab visual indicator in UI — NOT VERIFIED
+
+### Phase 2: Master tools — DONE
+- [x] `create_agent` tool (`tools/master/create-agent.ts`)
+- [x] `delete_agent` tool (`tools/master/delete-agent.ts`)
+- [x] `assign_task` tool (`tools/master/assign-task.ts`)
+- [x] `get_agent_status` tool (`tools/master/get-agent-status.ts`)
+- [x] `find_agent` tool (`tools/master/find-agent.ts`, available to all agents)
+- [x] Master template with orchestration instructions (`agents/templates/master.ts`)
+- [x] Tests for master tools (`tools/master/__tests__/master-tools.test.ts`)
+- [ ] `broadcast_message` tool — NOT IMPLEMENTED (no file found)
+- [ ] `set_agent_hook` / `set_agent_schedule` tools — NOT IMPLEMENTED
+
+### Phase 3: Automatic sub-agent management — DONE
+- [x] `getNewlyUnblockedTasks()` in `storage/shared.ts`
+- [x] `task_update` triggers unblocked downstream agents via Chrome alarms
+- [x] `archiveAgent()`, `listArchivedAgents()`, `restoreAgent()` in `agents/manager.ts`
+- [x] `delete_agent` uses `archiveAgent()` when `preserveMemory=true`
+- [x] Master template "Delegation Strategy" section
+- [x] UI: Archived Agents section with Restore/Delete Permanently
+- [x] Background handlers for archive/restore
+- [x] Tests for `getNewlyUnblockedTasks` and archive/restore
+
+### Phase 4: Polish — TODO
+- [ ] Sub-agent activity visible from master's chat (inline status updates)
+- [ ] "Delegate" button in chat UI
+- [ ] Job/task timeline view
+
+---
+
 ## Summary
 
 One master agent is the primary interface. Most users only ever interact with this agent. The master can create specialist sub-agents when work requires it. Artifacts and tasks are shared across all agents as a common workspace. Each agent keeps its own private memory.

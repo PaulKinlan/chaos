@@ -65,3 +65,7 @@ When in doubt:
 - Chrome permissions should be optional where possible
 - All Chrome API tools should check permissions before use
 - Use inline SVG icons, never emoji, for UI elements
+
+## Contributor setup
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup steps, how to run tests, build, and submit PRs. Point new contributors there rather than duplicating instructions.
