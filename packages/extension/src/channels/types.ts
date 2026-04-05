@@ -3,7 +3,7 @@
 
 export interface ChannelMessage {
   id: string;
-  channelType: 'discord' | 'telegram' | 'email' | 'webhook' | 'slack';
+  channelType: 'discord' | 'telegram' | 'email' | 'webhook' | 'slack' | 'filesystem';
   channelId: string;
   from: string;
   content: string;
@@ -24,7 +24,7 @@ export type ChannelDirection = 'inbound' | 'bidirectional';
 export interface ChannelConfig {
   id: string;
   name?: string;
-  type: 'discord' | 'telegram' | 'email' | 'webhook' | 'slack';
+  type: 'discord' | 'telegram' | 'email' | 'webhook' | 'slack' | 'filesystem';
   direction: ChannelDirection;
   prompt?: string;
   agentId: string;
@@ -35,4 +35,13 @@ export interface ChannelConfig {
 export interface RelayPollResponse {
   messages: ChannelMessage[];
   since: string;
+}
+
+export interface LocalChannelConfig {
+  id: string;
+  name: string;
+  type: 'filesystem';
+  direction: 'bidirectional';
+  directoryName: string;
+  createdAt: string;
 }

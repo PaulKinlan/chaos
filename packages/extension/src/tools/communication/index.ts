@@ -15,6 +15,7 @@ import { createArtifactPublishTool } from './artifact-publish.js';
 import { createArtifactListTool } from './artifact-list.js';
 import { createArtifactReadTool } from './artifact-read.js';
 import { createAgentDiscoverTool } from './agent-discover.js';
+import { createChannelSendTool } from './channel-send.js';
 
 /**
  * Get all communication tools for an agent, with the agentId pre-bound.
@@ -30,5 +31,6 @@ export function getCommunicationTools(agentId: string): ToolSet {
     artifact_list: createArtifactListTool(agentId),
     artifact_read: createArtifactReadTool(agentId),
     agent_discover: createAgentDiscoverTool(agentId),
+    channel_send: createChannelSendTool(agentId),
   };
 }
