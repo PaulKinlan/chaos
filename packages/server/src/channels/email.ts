@@ -9,12 +9,33 @@ import { logger } from "../logger.ts";
 
 // ── Resend inbound webhook types ──
 
+interface ResendEmailHeader {
+  name: string;
+  value: string;
+}
+
 interface ResendInboundEmail {
   from: string;
   to: string | string[];
   subject: string;
   text?: string;
   html?: string;
+  headers?: ResendEmailHeader[];
+}
+
+interface ResendWebhookPayload {
+  type: string;
+  data: ResendInboundEmail & { id?: string };
+}
+
+interface ResendFetchedEmail {
+  id: string;
+  from: string;
+  to: string[];
+  subject: string;
+  text?: string;
+  html?: string;
+  headers?: ResendEmailHeader[];
 }
 
 // ── Address generation ──
@@ -207,12 +228,46 @@ export async function handleEmailInbound(
 ): Promise<Response> {
   logger.info("email", "Incoming email inbound webhook");
 
-  let inbound: ResendInboundEmail;
+  let rawPayload: unknown;
   try {
-    inbound = await req.json();
+    rawPayload = await req.json();
   } catch {
     logger.error("email", "Invalid JSON body in email inbound webhook");
     return jsonResponse({ error: "Invalid JSON body" }, 400);
+  }
+
+  // Resend sends { type, data: { id, from, to, ... } } for email.received events.
+  // Also support the flat format for backwards compatibility.
+  let inbound: ResendInboundEmail;
+  let resendEmailId: string | undefined;
+
+  const payload = rawPayload as Record<string, unknown>;
+  if (
+    payload.type && payload.data &&
+    typeof payload.data === "object"
+  ) {
+    const webhookPayload = rawPayload as ResendWebhookPayload;
+    inbound = webhookPayload.data;
+    resendEmailId = webhookPayload.data.id;
+  } else {
+    inbound = rawPayload as ResendInboundEmail;
+  }
+
+  // If text and html are both empty but we have an email ID, fetch full content from Resend API
+  if (!inbound.text && !inbound.html && resendEmailId) {
+    logger.info("email", "Body empty in webhook, fetching from Resend API", {
+      emailId: resendEmailId,
+    });
+    const fetched = await fetchEmailFromResend(resendEmailId);
+    if (fetched) {
+      inbound.text = fetched.text;
+      inbound.html = fetched.html;
+      if (
+        fetched.headers && (!inbound.headers || inbound.headers.length === 0)
+      ) {
+        inbound.headers = fetched.headers;
+      }
+    }
   }
 
   // Extract the "to" address(es)
@@ -289,12 +344,28 @@ export async function handleEmailInbound(
     return jsonResponse({ ok: true });
   }
 
+  // Extract email threading headers
+  const emailMessageId = getHeader(inbound.headers, "Message-ID") ||
+    getHeader(inbound.headers, "Message-Id") || "";
+  const inReplyTo = getHeader(inbound.headers, "In-Reply-To") || "";
+  const references = getHeader(inbound.headers, "References") || "";
+
+  // threadId: use In-Reply-To to tie to existing thread, otherwise start new thread with Message-ID
+  const threadId = inReplyTo || emailMessageId;
+  const isReply = !!inReplyTo;
+
   const metadata: Record<string, unknown> = {
     channelDirection: channel.direction || "bidirectional",
     channelName: channel.name,
     senderAddress: senderEmail,
     subject,
     toAddress: matchedAddress,
+    // Threading metadata
+    threadId,
+    isReply,
+    emailMessageId,
+    inReplyTo,
+    references,
   };
 
   const message: StoredMessage = {
@@ -316,6 +387,8 @@ export async function handleEmailInbound(
     userId: session.userId,
     from: senderEmail,
     subject,
+    threadId,
+    isReply,
   });
 
   return jsonResponse({ ok: true, messageId: message.id });
@@ -381,10 +454,34 @@ export async function sendEmailReply(
   toAddress: string,
   subject: string,
   content: string,
+  threadingHeaders?: {
+    inReplyTo?: string;
+    references?: string;
+  },
 ): Promise<void> {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   if (!apiKey) {
     throw new Error("RESEND_API_KEY environment variable is not set");
+  }
+
+  // Build custom headers for email threading
+  const customHeaders: Record<string, string> = {};
+  if (threadingHeaders?.inReplyTo) {
+    customHeaders["In-Reply-To"] = threadingHeaders.inReplyTo;
+  }
+  if (threadingHeaders?.references) {
+    customHeaders["References"] = threadingHeaders.references;
+  }
+
+  const body: Record<string, unknown> = {
+    from: fromAddress,
+    to: toAddress,
+    subject,
+    text: content,
+  };
+
+  if (Object.keys(customHeaders).length > 0) {
+    body.headers = customHeaders;
   }
 
   const resp = await fetch("https://api.resend.com/emails", {
@@ -393,26 +490,76 @@ export async function sendEmailReply(
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      from: fromAddress,
-      to: toAddress,
-      subject,
-      text: content,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!resp.ok) {
-    const body = await resp.text();
+    const respBody = await resp.text();
     logger.error("email", "Resend send failed", {
       fromAddress,
       toAddress,
       status: resp.status,
-      body,
+      body: respBody,
     });
-    throw new Error(`Resend send failed: ${resp.status} ${body}`);
+    throw new Error(`Resend send failed: ${resp.status} ${respBody}`);
   }
 
   logger.info("email", "Email reply sent", { fromAddress, toAddress, subject });
+}
+
+// ── Resend API helpers ──
+
+/**
+ * Fetch full email content from Resend API by email ID.
+ */
+async function fetchEmailFromResend(
+  emailId: string,
+): Promise<ResendFetchedEmail | null> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (!apiKey) {
+    logger.warn("email", "Cannot fetch email: RESEND_API_KEY not set");
+    return null;
+  }
+
+  try {
+    const resp = await fetch(`https://api.resend.com/emails/${emailId}`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text();
+      logger.error("email", "Failed to fetch email from Resend", {
+        emailId,
+        status: resp.status,
+        body,
+      });
+      return null;
+    }
+
+    return await resp.json() as ResendFetchedEmail;
+  } catch (err) {
+    logger.error("email", "Error fetching email from Resend", {
+      emailId,
+      error: String(err),
+    });
+    return null;
+  }
+}
+
+/**
+ * Extract a header value from the headers array by name (case-insensitive).
+ */
+function getHeader(
+  headers: ResendEmailHeader[] | undefined,
+  name: string,
+): string | undefined {
+  if (!headers) return undefined;
+  const lower = name.toLowerCase();
+  const header = headers.find((h) => h.name.toLowerCase() === lower);
+  return header?.value;
 }
 
 // ── Utility ──

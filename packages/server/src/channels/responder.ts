@@ -183,7 +183,31 @@ async function sendEmailReplyAsync(
       ? `Re: ${originalSubject.replace(/^Re:\s*/i, "")}`
       : "Re: (no subject)";
 
-    await sendEmailReply(fromAddress, toAddress, subject, payload.content);
+    // Build threading headers from the original message metadata
+    const originalMessageId = payload.metadata?.["emailMessageId"] as
+      | string
+      | undefined;
+    const originalReferences = payload.metadata?.["references"] as
+      | string
+      | undefined;
+
+    const threadingHeaders = originalMessageId
+      ? {
+        inReplyTo: originalMessageId,
+        // Append original Message-ID to existing References chain
+        references: originalReferences
+          ? `${originalReferences} ${originalMessageId}`
+          : originalMessageId,
+      }
+      : undefined;
+
+    await sendEmailReply(
+      fromAddress,
+      toAddress,
+      subject,
+      payload.content,
+      threadingHeaders,
+    );
   } catch (err) {
     logger.error("responder", "Failed to send email reply", {
       userId,
