@@ -4150,6 +4150,8 @@ import {
   registerWithRelay,
   registerChannel as relayRegisterChannel,
   registerTelegramChannel,
+  registerDiscordChannel,
+  registerEmailChannel as relayRegisterEmailChannel,
   listChannels as relayListChannels,
   updateChannel as relayUpdateChannel,
   removeChannel as relayRemoveChannel,
@@ -4498,8 +4500,10 @@ document.getElementById('btn-relay-url-reset')!.addEventListener('click', () => 
 document.getElementById('btn-add-channel')!.addEventListener('click', () => {
   const picker = document.getElementById('channel-type-picker')!;
   picker.style.display = picker.style.display === 'none' ? '' : 'none';
-  // Hide telegram setup if open
+  // Hide setup forms if open
   document.getElementById('telegram-setup')!.style.display = 'none';
+  document.getElementById('discord-setup')!.style.display = 'none';
+  document.getElementById('email-setup')!.style.display = 'none';
 });
 
 document.getElementById('btn-add-webhook')!.addEventListener('click', async () => {
@@ -4524,12 +4528,41 @@ document.getElementById('btn-add-webhook')!.addEventListener('click', async () =
 document.getElementById('btn-add-telegram')!.addEventListener('click', () => {
   document.getElementById('channel-type-picker')!.style.display = 'none';
   document.getElementById('telegram-setup')!.style.display = '';
+  document.getElementById('discord-setup')!.style.display = 'none';
+  document.getElementById('email-setup')!.style.display = 'none';
   (document.getElementById('telegram-bot-token') as HTMLInputElement).value = '';
   document.getElementById('telegram-status')!.textContent = '';
 });
 
 document.getElementById('btn-telegram-cancel')!.addEventListener('click', () => {
   document.getElementById('telegram-setup')!.style.display = 'none';
+});
+
+document.getElementById('btn-add-discord')!.addEventListener('click', () => {
+  document.getElementById('channel-type-picker')!.style.display = 'none';
+  document.getElementById('telegram-setup')!.style.display = 'none';
+  document.getElementById('discord-setup')!.style.display = '';
+  document.getElementById('email-setup')!.style.display = 'none';
+  (document.getElementById('discord-bot-token') as HTMLInputElement).value = '';
+  document.getElementById('discord-status')!.textContent = '';
+});
+
+document.getElementById('btn-discord-cancel')!.addEventListener('click', () => {
+  document.getElementById('discord-setup')!.style.display = 'none';
+});
+
+document.getElementById('btn-add-email')!.addEventListener('click', () => {
+  document.getElementById('channel-type-picker')!.style.display = 'none';
+  document.getElementById('telegram-setup')!.style.display = 'none';
+  document.getElementById('discord-setup')!.style.display = 'none';
+  document.getElementById('email-setup')!.style.display = '';
+  (document.getElementById('email-user-address') as HTMLInputElement).value = '';
+  (document.getElementById('email-channel-name') as HTMLInputElement).value = '';
+  document.getElementById('email-status')!.textContent = '';
+});
+
+document.getElementById('btn-email-cancel')!.addEventListener('click', () => {
+  document.getElementById('email-setup')!.style.display = 'none';
 });
 
 function showPairingDialog(botUsername: string, pairingCode: string): void {
@@ -4686,6 +4719,106 @@ document.getElementById('btn-telegram-validate')!.addEventListener('click', asyn
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     channelLog(`Telegram registration failed: ${errMsg}`);
+    statusSpan.textContent = `Failed: ${errMsg}`;
+    statusSpan.style.color = 'var(--danger, red)';
+  }
+});
+
+document.getElementById('btn-discord-validate')!.addEventListener('click', async () => {
+  const settings = await getRelaySettings();
+  if (!settings) return;
+
+  const tokenInput = document.getElementById('discord-bot-token') as HTMLInputElement;
+  const statusSpan = document.getElementById('discord-status')!;
+  const botToken = tokenInput.value.trim();
+
+  if (!botToken) {
+    statusSpan.textContent = 'Enter a bot token';
+    statusSpan.style.color = 'var(--danger, red)';
+    return;
+  }
+
+  statusSpan.textContent = 'Validating...';
+  statusSpan.style.color = 'var(--text-secondary)';
+  channelLog('Registering Discord bot...');
+
+  const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
+
+  try {
+    const result = await registerDiscordChannel(config, botToken);
+    channelLog(`Discord bot connected: @${result.botUsername}`);
+    statusSpan.textContent = `Connected as @${result.botUsername}`;
+    statusSpan.style.color = 'var(--success, #4caf50)';
+    tokenInput.value = '';
+
+    // Show pairing dialog with step-by-step instructions
+    if (result.pairingCode) {
+      channelLog(`Pairing code: ${result.pairingCode} — send this to @${result.botUsername} in Discord`);
+      showPairingDialog(result.botUsername, result.pairingCode);
+    }
+
+    // Hide setup form and refresh
+    document.getElementById('discord-setup')!.style.display = 'none';
+    await renderChannelsUI();
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    channelLog(`Discord registration failed: ${errMsg}`);
+    statusSpan.textContent = `Failed: ${errMsg}`;
+    statusSpan.style.color = 'var(--danger, red)';
+  }
+});
+
+document.getElementById('btn-email-register')!.addEventListener('click', async () => {
+  const settings = await getRelaySettings();
+  if (!settings) return;
+
+  const emailInput = document.getElementById('email-user-address') as HTMLInputElement;
+  const nameInput = document.getElementById('email-channel-name') as HTMLInputElement;
+  const statusSpan = document.getElementById('email-status')!;
+  const userEmail = emailInput.value.trim();
+  const channelName = nameInput.value.trim();
+
+  if (!userEmail) {
+    statusSpan.textContent = 'Enter your email address';
+    statusSpan.style.color = 'var(--danger, red)';
+    return;
+  }
+  if (!channelName) {
+    statusSpan.textContent = 'Enter a channel name';
+    statusSpan.style.color = 'var(--danger, red)';
+    return;
+  }
+
+  statusSpan.textContent = 'Registering...';
+  statusSpan.style.color = 'var(--text-secondary)';
+  channelLog('Registering email channel...');
+
+  const config: RelayConfig = { serverUrl: settings.serverUrl, apiKey: settings.apiKey };
+
+  try {
+    const result = await relayRegisterEmailChannel(config, userEmail, channelName);
+    channelLog(`Email channel created: ${result.inboundAddress}`);
+    statusSpan.innerHTML = '';
+    statusSpan.style.color = 'var(--success, #4caf50)';
+
+    // Show verification info
+    const infoDiv = document.createElement('div');
+    infoDiv.style.cssText = 'margin-top:8px;padding:10px;background:var(--bg-surface, #1a1a2e);border-radius:6px;font-size:var(--text-xs);';
+    infoDiv.innerHTML = `
+      <p style="margin:0 0 6px 0;color:var(--text-primary);font-weight:500;">Check your email for a verification link.</p>
+      <p style="margin:0;color:var(--text-secondary);">Your inbound address will be: <strong style="color:var(--text-primary);">${escapeHtml(result.inboundAddress)}</strong></p>
+    `;
+    statusSpan.parentElement!.appendChild(infoDiv);
+
+    emailInput.value = '';
+    nameInput.value = '';
+
+    // Hide setup form and refresh
+    document.getElementById('email-setup')!.style.display = 'none';
+    await renderChannelsUI();
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    channelLog(`Email registration failed: ${errMsg}`);
     statusSpan.textContent = `Failed: ${errMsg}`;
     statusSpan.style.color = 'var(--danger, red)';
   }

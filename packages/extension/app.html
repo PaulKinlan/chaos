@@ -3224,9 +3224,11 @@
               </div>
               <div id="channel-type-picker" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
                 <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:8px;">Choose channel type:</p>
-                <div style="display:flex;gap:var(--sp-2);">
+                <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
                   <button class="btn btn-ghost" id="btn-add-webhook">Webhook</button>
                   <button class="btn btn-ghost" id="btn-add-telegram">Telegram Bot</button>
+                  <button class="btn btn-ghost" id="btn-add-discord">Discord Bot</button>
+                  <button class="btn btn-ghost" id="btn-add-email">Email</button>
                 </div>
               </div>
               <div id="telegram-setup" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
@@ -3238,6 +3240,33 @@
                   <button class="btn btn-primary" id="btn-telegram-validate">Validate & Connect</button>
                   <button class="btn btn-ghost" id="btn-telegram-cancel">Cancel</button>
                   <span id="telegram-status" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
+                </div>
+              </div>
+              <div id="discord-setup" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
+                <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:8px;">Enter your Discord bot token:</p>
+                <div class="settings-field">
+                  <input type="password" id="discord-bot-token" placeholder="MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.XXXXXX.XXXXXXXXXX" style="font-family:monospace;">
+                </div>
+                <div style="display:flex;gap:var(--sp-2);align-items:center;margin-top:8px;">
+                  <button class="btn btn-primary" id="btn-discord-validate">Validate & Connect</button>
+                  <button class="btn btn-ghost" id="btn-discord-cancel">Cancel</button>
+                  <span id="discord-status" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
+                </div>
+              </div>
+              <div id="email-setup" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
+                <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:8px;">Set up an email channel:</p>
+                <div class="settings-field" style="margin-bottom:8px;">
+                  <label style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:2px;display:block;">Your email address</label>
+                  <input type="email" id="email-user-address" placeholder="you@example.com">
+                </div>
+                <div class="settings-field">
+                  <label style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:2px;display:block;">Channel name (becomes the inbound address prefix)</label>
+                  <input type="text" id="email-channel-name" placeholder="assistant">
+                </div>
+                <div style="display:flex;gap:var(--sp-2);align-items:center;margin-top:8px;">
+                  <button class="btn btn-primary" id="btn-email-register">Register</button>
+                  <button class="btn btn-ghost" id="btn-email-cancel">Cancel</button>
+                  <span id="email-status" style="font-size:var(--text-xs);color:var(--text-secondary);"></span>
                 </div>
               </div>
               <div id="channels-list" style="display:grid;gap:8px;"></div>

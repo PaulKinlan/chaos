@@ -17,27 +17,131 @@ interface ResendInboundEmail {
 
 // ── Registration ──
 
-export function generateInboundAddress(domain: string): string {
-  const slug = crypto.randomUUID().slice(0, 12);
-  return `${slug}@${domain}`;
+/**
+ * Sanitize a channel name into a valid email local part.
+ * Lowercases, strips spaces, removes characters not suitable for email addresses.
+ */
+function sanitizeChannelName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9._-]/g, "")
+    .replace(/^[-._]+|[-._]+$/g, "");
 }
 
 export async function registerEmailChannel(
   userId: string,
-  fromAddress: string,
+  userEmail: string,
+  channelName: string,
   domain: string,
-): Promise<{ inboundAddress: string }> {
-  logger.info("email", "Registering email channel", { userId, fromAddress });
-
-  const inboundAddress = generateInboundAddress(domain);
-
-  logger.info("email", "Email channel registered", {
+  serverBaseUrl: string,
+  channelId: string,
+): Promise<{
+  inboundAddress: string;
+  verificationToken: string;
+}> {
+  logger.info("email", "Registering email channel", {
     userId,
-    fromAddress,
+    userEmail,
+    channelName,
+  });
+
+  const sanitized = sanitizeChannelName(channelName);
+  if (!sanitized) {
+    throw new Error(
+      "Invalid channel name — must contain at least one alphanumeric character",
+    );
+  }
+
+  const inboundAddress = `${sanitized}@${domain}`;
+  const verificationToken = crypto.randomUUID();
+
+  // Send verification email via Resend
+  const verifyUrl =
+    `${serverBaseUrl}/email/verify?token=${verificationToken}&channelId=${channelId}`;
+
+  await sendVerificationEmail(userEmail, inboundAddress, verifyUrl);
+
+  logger.info("email", "Email channel registered (pending verification)", {
+    userId,
+    userEmail,
     inboundAddress,
   });
 
-  return { inboundAddress };
+  return { inboundAddress, verificationToken };
+}
+
+// ── Verification ──
+
+export async function handleEmailVerification(
+  token: string,
+  channelId: string,
+  getSession: (
+    channelId: string,
+  ) => Promise<
+    | {
+      userId: string;
+      channels: {
+        id: string;
+        type: string;
+        metadata: Record<string, unknown>;
+      }[];
+    }
+    | null
+  >,
+  updateMetadata: (
+    userId: string,
+    channelId: string,
+    metadata: Record<string, unknown>,
+  ) => Promise<void>,
+): Promise<Response> {
+  const session = await getSession(channelId);
+  if (!session) {
+    return htmlResponse("Verification failed: channel not found.", 404);
+  }
+
+  const channel = session.channels.find((ch) => ch.id === channelId);
+  if (!channel || channel.type !== "email") {
+    return htmlResponse("Verification failed: not an email channel.", 400);
+  }
+
+  const storedToken = channel.metadata["verificationToken"] as
+    | string
+    | undefined;
+  if (!storedToken || storedToken !== token) {
+    return htmlResponse("Verification failed: invalid or expired token.", 400);
+  }
+
+  // Mark as verified and add user email to allowedSenders
+  const userEmail = channel.metadata["userEmail"] as string;
+  const existingSenders = (channel.metadata["allowedSenders"] as string[]) ||
+    [];
+  const allowedSenders = existingSenders.includes(userEmail)
+    ? existingSenders
+    : [...existingSenders, userEmail];
+
+  await updateMetadata(session.userId, channelId, {
+    ...channel.metadata,
+    verified: true,
+    verificationToken: "", // Clear the token
+    allowedSenders,
+  });
+
+  logger.info("email", "Email channel verified", {
+    channelId,
+    userEmail,
+  });
+
+  return htmlResponse(
+    `<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+      <div style="text-align:center;">
+        <h1 style="color:#22c55e;">Email verified!</h1>
+        <p>You can close this tab.</p>
+      </div>
+    </body></html>`,
+    200,
+  );
 }
 
 // ── Webhook handler ──
@@ -60,6 +164,14 @@ export async function handleEmailWebhook(
   if (!channel || channel.type !== "email") {
     logger.error("email", "Channel is not an email type", { channelId });
     return jsonResponse({ error: "Channel is not an email channel" }, 400);
+  }
+
+  // Reject unverified channels
+  if (!channel.metadata["verified"]) {
+    logger.warn("email", "Rejecting webhook for unverified channel", {
+      channelId,
+    });
+    return jsonResponse({ error: "Channel not verified" }, 403);
   }
 
   // Parse the Resend inbound webhook payload
@@ -130,6 +242,56 @@ export async function handleEmailWebhook(
   return jsonResponse({ ok: true, messageId: message.id });
 }
 
+// ── Send verification email via Resend API ──
+
+async function sendVerificationEmail(
+  toAddress: string,
+  inboundAddress: string,
+  verifyUrl: string,
+): Promise<void> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY environment variable is not set");
+  }
+
+  const domain = inboundAddress.split("@")[1];
+  const fromAddress = `noreply@${domain}`;
+
+  const resp = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      from: fromAddress,
+      to: toAddress,
+      subject: "Verify your email channel",
+      text:
+        `Click the link below to verify your email address for the inbound address ${inboundAddress}:\n\n${verifyUrl}\n\nIf you did not request this, you can ignore this email.`,
+      html:
+        `<p>Click the link below to verify your email address for the inbound address <strong>${inboundAddress}</strong>:</p><p><a href="${verifyUrl}">Verify Email</a></p><p>If you did not request this, you can ignore this email.</p>`,
+    }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    logger.error("email", "Resend verification email failed", {
+      toAddress,
+      status: resp.status,
+      body,
+    });
+    throw new Error(
+      `Failed to send verification email: ${resp.status} ${body}`,
+    );
+  }
+
+  logger.info("email", "Verification email sent", {
+    toAddress,
+    inboundAddress,
+  });
+}
+
 // ── Send reply via Resend API ──
 
 export async function sendEmailReply(
@@ -177,6 +339,13 @@ function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: { "Content-Type": "application/json" },
+  });
+}
+
+function htmlResponse(html: string, status = 200): Response {
+  return new Response(html, {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 }
 

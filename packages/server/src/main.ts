@@ -6,7 +6,9 @@ import {
   createSession,
   getChannels,
   getSessionByApiKey,
+  getSessionByChannelId,
   removeChannel,
+  updateChannelMetadata,
   type UserSession,
   validateAuth,
 } from "./auth.ts";
@@ -26,7 +28,11 @@ import {
   handleDiscordWebhook,
   registerDiscordBot,
 } from "./channels/discord.ts";
-import { handleEmailWebhook, registerEmailChannel } from "./channels/email.ts";
+import {
+  handleEmailVerification,
+  handleEmailWebhook,
+  registerEmailChannel,
+} from "./channels/email.ts";
 import { getServerPublicKey, initServerKeyPair } from "./crypto.ts";
 import { getKv, initKv, isKvAvailable } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
@@ -530,6 +536,33 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
+  // Email verification (no Bearer auth — user clicks link from email)
+  if (url.pathname === "/email/verify" && method === "GET") {
+    const token = url.searchParams.get("token");
+    const channelId = url.searchParams.get("channelId");
+    if (!token || !channelId) {
+      return new Response("Missing token or channelId", {
+        status: 400,
+        headers: { "Content-Type": "text/plain", ...corsHeaders },
+      });
+    }
+
+    const resp = await handleEmailVerification(
+      token,
+      channelId,
+      getSessionByChannelId,
+      updateChannelMetadata,
+    );
+    const body = await resp.text();
+    return new Response(body, {
+      status: resp.status,
+      headers: {
+        ...Object.fromEntries(resp.headers.entries()),
+        ...corsHeaders,
+      },
+    });
+  }
+
   // Email webhook ingestion (no Bearer auth — Resend posts directly)
   const emailMatch = url.pathname.match(/^\/email\/([^/]+)$/);
   if (emailMatch && method === "POST") {
@@ -954,9 +987,13 @@ Deno.serve(serveOptions, async (req: Request) => {
 
     try {
       const body = await req.json();
-      const fromAddress = body.fromAddress;
-      if (!fromAddress || typeof fromAddress !== "string") {
-        return error("Missing or invalid fromAddress");
+      const userEmail = body.userEmail;
+      const channelName = body.channelName;
+      if (!userEmail || typeof userEmail !== "string") {
+        return error("Missing or invalid userEmail");
+      }
+      if (!channelName || typeof channelName !== "string") {
+        return error("Missing or invalid channelName");
       }
 
       const domain = Deno.env.get("CHAOS_EMAIL_DOMAIN");
@@ -968,10 +1005,15 @@ Deno.serve(serveOptions, async (req: Request) => {
       }
 
       const channelId = crypto.randomUUID();
-      const { inboundAddress } = await registerEmailChannel(
+      const serverBaseUrl = url.origin;
+
+      const { inboundAddress, verificationToken } = await registerEmailChannel(
         session.userId,
-        fromAddress,
+        userEmail,
+        channelName,
         domain,
+        serverBaseUrl,
+        channelId,
       );
 
       const channel: ChannelConfig = {
@@ -981,18 +1023,20 @@ Deno.serve(serveOptions, async (req: Request) => {
         agentId: body.agentId || "",
         enabled: true,
         metadata: {
-          fromAddress,
+          userEmail,
           inboundAddress,
-          allowedSenders: body.allowedSenders || [],
+          verificationToken,
+          verified: false,
+          allowedSenders: [],
         },
       };
 
       await addChannel(session.userId, channel);
 
-      logger.info("server", "Email channel registered", {
+      logger.info("server", "Email channel registered (pending verification)", {
         userId: session.userId,
         channelId,
-        fromAddress,
+        userEmail,
         inboundAddress,
       });
       return json({ channelId, inboundAddress }, 201);

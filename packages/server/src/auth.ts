@@ -340,6 +340,19 @@ export async function removeChannel(
   return true;
 }
 
+export async function updateChannelMetadata(
+  userId: string,
+  channelId: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const session = await getSessionByUserId(userId);
+  if (!session) return;
+  const channel = session.channels.find((ch) => ch.id === channelId);
+  if (!channel) return;
+  channel.metadata = metadata;
+  await persistSession(session);
+}
+
 export async function getChannels(userId: string): Promise<ChannelConfig[]> {
   const session = await getSessionByUserId(userId);
   if (!session) return [];

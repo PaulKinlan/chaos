@@ -184,6 +184,39 @@ export async function registerTelegramChannel(
   return resp.json();
 }
 
+export async function registerDiscordChannel(
+  config: RelayConfig,
+  botToken: string,
+  agentId?: string,
+): Promise<{ channelId: string; botUsername: string; pairingCode?: string }> {
+  const resp = await relayFetch(config, '/channels/discord/register', {
+    method: 'POST',
+    body: JSON.stringify({ botToken, agentId: agentId || '' }),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({ error: resp.statusText }));
+    throw new Error(body.error || `Discord registration failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
+export async function registerEmailChannel(
+  config: RelayConfig,
+  userEmail: string,
+  channelName: string,
+  agentId?: string,
+): Promise<{ channelId: string; inboundAddress: string }> {
+  const resp = await relayFetch(config, '/channels/email/register', {
+    method: 'POST',
+    body: JSON.stringify({ userEmail, channelName, agentId: agentId || '' }),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({ error: resp.statusText }));
+    throw new Error(body.error || `Email registration failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
 export async function listChannels(
   config: RelayConfig,
 ): Promise<ChannelConfig[]> {
