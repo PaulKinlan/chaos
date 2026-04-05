@@ -20,9 +20,12 @@
 - [x] Deduplication of messages (persisted in chrome.storage.local)
 - [x] Auto-reconnect with session reclaim (pubkey fingerprint in KV)
 
-### Phase 2: Discord — TODO
-- [ ] No Discord handler on server
-- [ ] Could follow same pattern as Telegram (webhook + bot token)
+### Phase 2: Discord — DONE (server only, no extension UI yet)
+- [x] `packages/server/src/channels/discord.ts` — bot validation, webhook handler, reply sender
+- [x] Pairing code flow (same pattern as Telegram)
+- [x] Per-channel allowlist with Discord user IDs
+- [x] Endpoints: POST /channels/discord/register, POST /discord/:channelId
+- [ ] Extension UI for Discord channel setup (not started)
 
 ### Phase 3: Telegram — DONE
 - [x] `packages/server/src/channels/telegram.ts` — bot registration, webhook handler, reply sender
@@ -31,8 +34,14 @@
 - [x] Per-channel allowlist with Telegram user IDs
 - [x] Bidirectional: agent receives messages AND replies via Telegram API
 
-### Phase 4: Email — TODO
-- [ ] No email implementation (Resend planned)
+### Phase 4: Email — DONE (server only, no extension UI yet)
+- [x] `packages/server/src/channels/email.ts` — Resend inbound webhook, unique addresses, reply sender
+- [x] Unique inbound addresses: {random-slug}@{CHAOS_EMAIL_DOMAIN}
+- [x] Sender allowlist (same pattern as Telegram/Discord)
+- [x] Reply via Resend API with Re: subject threading
+- [x] Endpoints: POST /channels/email/register, POST /email/:channelId
+- [ ] Extension UI for Email channel setup (not started)
+- [ ] Env vars needed: CHAOS_EMAIL_DOMAIN, RESEND_API_KEY
 
 ### Phase 5: Webhooks — DONE
 - [x] Generic webhook ingestion (`/webhook/:channelId?token=secret`)
