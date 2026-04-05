@@ -1,0 +1,53 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  extension-tests:
+    name: Extension Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+        working-directory: packages/extension
+
+      - name: Unit tests
+        run: npm test
+        working-directory: packages/extension
+
+      - name: Build
+        run: npm run build
+        working-directory: packages/extension
+
+  server-tests:
+    name: Relay Server Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Format check
+        run: deno fmt --check packages/server/src/
+
+      - name: Type check
+        run: deno check packages/server/src/main.ts
+
+      - name: Unit tests
+        run: deno task test
+        working-directory: packages/server
