@@ -24,9 +24,11 @@
 - [ ] No JSON registry or marketplace API found
 - [ ] No skill browser with search/filter by tags (only curated featured list in UI)
 
-### Phase 4: Agent self-discovery — TODO
-- [ ] No `search_skills` tool found
-- [ ] No automatic skill installation based on task context
+### Phase 4: Agent self-discovery — DONE
+- [x] `search_skills` tool (searches installed, featured, GitHub API)
+- [x] `auto_install_skill` tool (fetch + install in one step)
+- [x] Master template updated to check skills before creating agents
+- [x] FEATURED_SKILLS extracted to shared module
 
 ---
 
