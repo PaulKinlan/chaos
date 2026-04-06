@@ -28,20 +28,34 @@ export function createDeleteAgentTool(masterAgentId: string) {
         // Verify agent exists
         const { meta } = await getAgent(agentId);
 
-        // Only allow deleting agents that this master created
+        // NEVER delete agents unless they were BOTH created by this master
+        // AND marked as temporary (one-off task agents)
         if (!meta.createdBy || meta.createdBy !== masterAgentId) {
+          console.log(`[delete-agent] BLOCKED: "${meta.name}" not created by master`);
           return {
             ok: false,
-            error: `Cannot delete "${meta.name}" — it was not created by you. Only agents you created can be deleted. User-created agents are protected.`,
+            error: `Cannot delete "${meta.name}" — it was not created by you. User-created agents are protected.`,
           };
         }
 
+        if (!meta.temporary) {
+          console.log(`[delete-agent] BLOCKED: "${meta.name}" is not temporary — archiving instead`);
+          // Non-temporary agents created by master: archive, don't delete
+          await archiveAgent(agentId);
+          return {
+            ok: true,
+            archived: true,
+            preservedMemory: true,
+            note: `"${meta.name}" was archived (not deleted) because it is not a temporary agent. It can be restored from Settings.`,
+          };
+        }
+
+        console.log(`[delete-agent] Deleting temporary agent: "${meta.name}" (${agentId})`);
+
         if (preserveMemory) {
-          // Archive: remove from active list, keep OPFS data
           await archiveAgent(agentId);
           return { ok: true, archived: true, preservedMemory: true };
         } else {
-          // Full delete including OPFS
           await deleteAgent(agentId);
           return { ok: true, deleted: true, preservedMemory: false };
         }
