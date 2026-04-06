@@ -4740,7 +4740,7 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       const mailtoHref = inboundAddr ? `mailto:${encodeURIComponent(inboundAddr)}?subject=${encodeURIComponent('Test')}&body=${encodeURIComponent('Test email to CHAOS agent')}` : '';
 
       detailHtml = `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">`;
-      detailHtml += inboundAddr ? `Inbound: <a href="${mailtoHref}" style="color:var(--text-link, #58a6ff);">${escapeHtml(inboundAddr)}</a>` : '';
+      detailHtml += inboundAddr ? `Inbound: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--text-link, #58a6ff);">${escapeHtml(inboundAddr)}</a>` : '';
       detailHtml += ` | ${verified ? '<span style="color:#3fb950;">Verified</span>' : '<span style="color:#d29922;">Not verified</span>'}`;
       detailHtml += `</div>`;
       detailHtml += `
@@ -5576,7 +5576,7 @@ document.getElementById('btn-email-register')!.addEventListener('click', async (
     const mailtoHref = `mailto:${encodeURIComponent(result.inboundAddress)}?subject=${mailtoSubject}&body=${mailtoBody}`;
     infoDiv.innerHTML = `
       <p style="margin:0 0 6px 0;color:var(--text-primary);font-weight:500;">Check your email for a verification link.</p>
-      <p style="margin:0 0 6px 0;color:var(--text-secondary);">Your inbound address: <a href="${mailtoHref}" style="color:var(--text-link, #58a6ff);font-weight:500;">${escapeHtml(result.inboundAddress)}</a></p>
+      <p style="margin:0 0 6px 0;color:var(--text-secondary);">Your inbound address: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--text-link, #58a6ff);font-weight:500;">${escapeHtml(result.inboundAddress)}</a></p>
       <p style="margin:0;color:var(--text-muted);font-size:10px;">After verifying, click the address above to send a test email.</p>
     `;
     statusSpan.parentElement!.appendChild(infoDiv);
@@ -5587,6 +5587,33 @@ document.getElementById('btn-email-register')!.addEventListener('click', async (
     // Hide setup form and refresh
     document.getElementById('email-setup')!.style.display = 'none';
     await renderChannelsUI();
+
+    // Poll for verification completion (check every 5 seconds for 5 minutes)
+    let verifyPollCount = 0;
+    const verifyPollMax = 60;
+    const verifyPollInterval = setInterval(async () => {
+      verifyPollCount++;
+      if (verifyPollCount > verifyPollMax) {
+        clearInterval(verifyPollInterval);
+        return;
+      }
+      try {
+        const channels = await relayListChannels(config);
+        const emailCh = channels.find(c => c.id === result.channelId);
+        if (emailCh?.metadata?.['verified']) {
+          clearInterval(verifyPollInterval);
+          channelLog('Email channel verified!');
+          infoDiv.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style="color:#3fb950;font-weight:500;">Email verified!</span>
+            </div>
+            <p style="margin:6px 0 0;color:var(--text-secondary);font-size:var(--text-xs);">Inbound: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--text-link, #58a6ff);">${escapeHtml(result.inboundAddress)}</a> — click to send a test email.</p>
+          `;
+          await renderChannelsUI();
+        }
+      } catch { /* ignore poll errors */ }
+    }, 5000);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     channelLog(`Email registration failed: ${errMsg}`);
