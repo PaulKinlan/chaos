@@ -305,6 +305,7 @@ export async function handleEmailInbound(
     hasData: !!payload.data,
     topLevelKeys: Object.keys(payload).join(","),
     payloadType: payload.type,
+    payloadPreview: JSON.stringify(payload).slice(0, 500),
   });
 
   if (
@@ -313,15 +314,18 @@ export async function handleEmailInbound(
   ) {
     const webhookPayload = rawPayload as ResendWebhookPayload;
     inbound = webhookPayload.data;
-    resendEmailId = webhookPayload.data.id;
+    // Resend uses email_id or id depending on version
+    const dataObj = payload.data as Record<string, unknown>;
+    resendEmailId = (dataObj.email_id as string) ||
+      (dataObj.id as string) || webhookPayload.data.id;
     logger.info("email", "Parsed as Resend webhook format", {
       emailId: resendEmailId,
     });
   } else {
     inbound = rawPayload as ResendInboundEmail;
     // Try to extract ID from flat format
-    resendEmailId = (payload.id as string) ||
-      (payload.email_id as string) || undefined;
+    resendEmailId = (payload.email_id as string) ||
+      (payload.id as string) || undefined;
     logger.info("email", "Parsed as flat format", {
       emailId: resendEmailId,
       hasFrom: !!inbound.from,
