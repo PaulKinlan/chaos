@@ -3821,7 +3821,7 @@ async function loadArchivedAgents(): Promise<void> {
 // ── Global Settings View
 // ══════════════════════════════════════════
 
-const PROVIDERS = ['anthropic', 'google', 'openai', 'openrouter'] as const;
+const PROVIDERS = ['anthropic', 'google', 'openai', 'openrouter', 'ollama'] as const;
 
 async function loadSettings(): Promise<void> {
   try {

@@ -3452,6 +3452,17 @@
                     <input type="text" class="provider-custom-model" id="custom-model-openrouter" placeholder="Custom model ID..." onclick="event.stopPropagation()">
                   </div>
                 </label>
+                <label class="provider-row" data-provider="ollama">
+                  <input type="radio" name="active-provider" value="ollama">
+                  <div class="provider-info">
+                    <span class="provider-name">Ollama (Local)</span>
+                    <input type="text" id="settings-url-ollama" class="provider-key-input" placeholder="http://localhost:11434/v1" onclick="event.stopPropagation()">
+                  </div>
+                  <div class="provider-model-area" id="model-area-ollama" style="display:none;">
+                    <select class="provider-model-select" id="model-select-ollama"></select>
+                    <input type="text" class="provider-custom-model" id="custom-model-ollama" placeholder="Model name e.g. llama3.2" onclick="event.stopPropagation()">
+                  </div>
+                </label>
               </div>
               <div class="settings-actions" style="margin-top:12px;">
                 <button class="btn btn-primary" id="btn-save-provider-settings">Save</button>

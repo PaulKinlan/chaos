@@ -18,7 +18,7 @@ export interface AgentMeta {
 
 export interface Settings {
   defaultAgentId?: string;
-  activeProvider: 'anthropic' | 'openai' | 'google' | 'openrouter';
+  activeProvider: 'anthropic' | 'openai' | 'google' | 'openrouter' | 'ollama';
   theme: 'dark' | 'light' | 'system';
   model?: string;
 }
@@ -30,6 +30,7 @@ export interface ApiKeys {
   openai?: string;
   google?: string;
   openrouter?: string;
+  ollama?: string;  // base URL for Ollama (not actually an API key)
   brave?: string;
 }
 

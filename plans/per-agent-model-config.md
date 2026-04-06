@@ -188,6 +188,15 @@ This is a safe additive change:
 - No data migration needed
 - getAgentList() already handles missing fields gracefully
 
+## Already Implemented (Foundation)
+
+- [x] Ollama provider added to provider-registry.ts (OpenAI-compatible, default http://localhost:11434/v1)
+- [x] All providers accept optional baseURL parameter (for Vertex AI, Azure, self-hosted)
+- [x] Ollama in global settings UI with base URL field
+- [x] ProviderId type includes 'ollama'
+- [x] ApiKeys type includes 'ollama' (stores base URL, not a key)
+- [x] createLanguageModel accepts baseURL parameter
+
 ## Open Questions
 
 1. **Should the master know about other agents' models?** When delegating, it could be useful to know "Agent X uses Gemini with vision, Agent Y uses Claude for coding". The `find_agent` and `agent_discover` tools could include model info.

@@ -13,7 +13,7 @@ import type { LanguageModel, ToolSet } from 'ai';
 
 // ── Types ──
 
-export type ProviderId = 'anthropic' | 'google' | 'openai' | 'openrouter';
+export type ProviderId = 'anthropic' | 'google' | 'openai' | 'openrouter' | 'ollama';
 
 export interface ProviderFeatures {
   supportsVision: boolean;
@@ -32,7 +32,8 @@ export interface ProviderConfig {
   defaultModel: string;
   models: ModelInfo[];
   features: ProviderFeatures;
-  createModel: (apiKey: string, modelId?: string) => LanguageModel;
+  supportsBaseUrl: boolean;  // whether users can override the API endpoint
+  createModel: (apiKey: string, modelId?: string, baseURL?: string) => LanguageModel;
 }
 
 // ── Provider definitions ──
@@ -51,8 +52,9 @@ const anthropicProvider: ProviderConfig = {
     requiresApiKey: true,
     authStyle: 'x-api-key',
   },
-  createModel: (apiKey, modelId) => {
-    const provider = createAnthropic({ apiKey });
+  supportsBaseUrl: true,
+  createModel: (apiKey, modelId, baseURL) => {
+    const provider = createAnthropic({ apiKey, ...(baseURL ? { baseURL } : {}) });
     return provider(modelId ?? 'claude-sonnet-4-6');
   },
 };
@@ -73,8 +75,9 @@ const googleProvider: ProviderConfig = {
     requiresApiKey: true,
     authStyle: 'bearer',
   },
-  createModel: (apiKey, modelId) => {
-    const provider = createGoogleGenerativeAI({ apiKey });
+  supportsBaseUrl: true,
+  createModel: (apiKey, modelId, baseURL) => {
+    const provider = createGoogleGenerativeAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
     return provider(modelId ?? 'gemini-3.1-pro-preview');
   },
 };
@@ -94,8 +97,9 @@ const openaiProvider: ProviderConfig = {
     requiresApiKey: true,
     authStyle: 'bearer',
   },
-  createModel: (apiKey, modelId) => {
-    const provider = createOpenAI({ apiKey });
+  supportsBaseUrl: true,
+  createModel: (apiKey, modelId, baseURL) => {
+    const provider = createOpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
     return provider(modelId ?? 'gpt-5.4');
   },
 };
@@ -119,6 +123,7 @@ const openrouterProvider: ProviderConfig = {
     requiresApiKey: true,
     authStyle: 'bearer',
   },
+  supportsBaseUrl: false, // OpenRouter IS the base URL
   createModel: (apiKey, modelId) => {
     // OpenRouter uses an OpenAI-compatible API
     const provider = createOpenAI({
@@ -129,6 +134,36 @@ const openrouterProvider: ProviderConfig = {
   },
 };
 
+const ollamaProvider: ProviderConfig = {
+  id: 'ollama',
+  displayName: 'Ollama (Local)',
+  defaultModel: 'llama3.2',
+  models: [
+    // Common Ollama models — users can specify any installed model
+    { id: 'llama3.2', displayName: 'Llama 3.2' },
+    { id: 'llama3.2:70b', displayName: 'Llama 3.2 70B' },
+    { id: 'mistral', displayName: 'Mistral' },
+    { id: 'codellama', displayName: 'Code Llama' },
+    { id: 'gemma2', displayName: 'Gemma 2' },
+    { id: 'phi3', displayName: 'Phi-3' },
+    { id: 'qwen2.5-coder', displayName: 'Qwen 2.5 Coder' },
+  ],
+  features: {
+    supportsVision: false,
+    requiresApiKey: false,
+    authStyle: 'bearer',
+  },
+  supportsBaseUrl: true,
+  createModel: (_apiKey, modelId, baseURL) => {
+    // Ollama exposes an OpenAI-compatible API
+    const provider = createOpenAI({
+      apiKey: 'ollama', // Ollama doesn't need a real key but the SDK requires one
+      baseURL: baseURL || 'http://localhost:11434/v1',
+    });
+    return provider(modelId ?? 'llama3.2');
+  },
+};
+
 // ── Registry ──
 
 const providers: Record<ProviderId, ProviderConfig> = {
@@ -136,6 +171,7 @@ const providers: Record<ProviderId, ProviderConfig> = {
   google: googleProvider,
   openai: openaiProvider,
   openrouter: openrouterProvider,
+  ollama: ollamaProvider,
 };
 
 /** Get a provider configuration by ID. */
@@ -179,9 +215,10 @@ export function createLanguageModel(
   providerId: ProviderId,
   apiKey: string,
   modelId?: string,
+  baseURL?: string,
 ): LanguageModel {
   const provider = getProvider(providerId);
-  return provider.createModel(apiKey, modelId ?? provider.defaultModel);
+  return provider.createModel(apiKey, modelId ?? provider.defaultModel, baseURL);
 }
 
 /**
