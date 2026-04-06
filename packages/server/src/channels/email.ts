@@ -479,16 +479,23 @@ export async function handleEmailInbound(
 
   // Extract content
   const subject = inbound.subject || "(no subject)";
-  const content = inbound.text || stripHtml(inbound.html || "");
+  const content = inbound.text || stripHtml(inbound.html || "") || subject;
 
   if (!content) {
-    logger.warn("email", "Email has no text content", {
-      channelId,
-      hasText: !!inbound.text,
-      hasHtml: !!inbound.html,
-      subject,
-    });
-    return jsonResponse({ ok: true });
+    // Fall back to subject line as content if body is empty
+    if (subject && subject !== "(no subject)") {
+      logger.info("email", "Using subject as content (body empty)", {
+        channelId,
+        subject,
+      });
+    } else {
+      logger.warn("email", "Email has no text content and no subject", {
+        channelId,
+        hasText: !!inbound.text,
+        hasHtml: !!inbound.html,
+      });
+      return jsonResponse({ ok: true });
+    }
   }
   logger.info("email", "Content extracted", {
     channelId,
@@ -674,12 +681,25 @@ async function fetchEmailFromResend(
   }
 
   try {
-    const resp = await fetch(`https://api.resend.com/emails/${emailId}`, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
+    // Try the received emails endpoint first, then fall back to sent emails endpoint
+    let resp = await fetch(
+      `https://api.resend.com/emails/${emailId}/content`,
+      {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${apiKey}` },
       },
-    });
+    );
+
+    if (!resp.ok) {
+      logger.info("email", "Content endpoint failed, trying base endpoint", {
+        emailId,
+        status: resp.status,
+      });
+      resp = await fetch(`https://api.resend.com/emails/${emailId}`, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${apiKey}` },
+      });
+    }
 
     if (!resp.ok) {
       const body = await resp.text();
