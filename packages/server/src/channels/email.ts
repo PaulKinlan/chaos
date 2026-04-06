@@ -291,6 +291,45 @@ export async function handleEmailInbound(
     }
   }
 
+  // Fallback: if KV lookup failed, scan sessions for a channel with matching inboundAddress
+  if (!channelId) {
+    for (const addr of toAddresses) {
+      const normalized = extractEmail(addr).toLowerCase();
+      // Scan all sessions in KV for a channel with this inboundAddress
+      if (isKvAvailable() && getKv()) {
+        const iter = getKv()!.list<{
+          channels: Array<{
+            id: string;
+            type: string;
+            metadata: Record<string, unknown>;
+          }>;
+        }>({ prefix: ["sessions"] });
+        for await (const entry of iter) {
+          const session = entry.value;
+          if (!session.channels) continue;
+          const match = session.channels.find(
+            (ch) =>
+              ch.type === "email" &&
+              (ch.metadata["inboundAddress"] as string || "").toLowerCase() ===
+                normalized,
+          );
+          if (match) {
+            channelId = match.id;
+            matchedAddress = normalized;
+            // Re-store the address mapping for future lookups
+            await storeAddressMapping(normalized, match.id);
+            logger.info("email", "Recovered address mapping via session scan", {
+              address: normalized,
+              channelId: match.id,
+            });
+            break;
+          }
+        }
+      }
+      if (channelId) break;
+    }
+  }
+
   if (!channelId || !matchedAddress) {
     logger.warn("email", "No channel found for inbound address", {
       to: toAddresses,
