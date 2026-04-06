@@ -1,0 +1,1591 @@
+openapi: 3.1.0
+info:
+  title: CHAOS Relay Server API
+  description: |
+    The CHAOS relay server handles message relay between external channels
+    (Telegram, Discord, email, webhooks) and the CHAOS Chrome extension.
+
+    ## Authentication
+
+    Most endpoints require a Bearer token obtained from `POST /auth/register`.
+    Some endpoints use alternative auth mechanisms:
+    - **Webhook endpoints** (`/webhook/:id`, `/telegram/:id`, `/discord/:id`): URL query token
+    - **Admin endpoints** (`/admin/*`): session cookie (`chaos_admin`)
+    - **WebSocket** (`/ws`): query parameter `?token={apiKey}`
+
+    ## Request Signing (ECDSA P-256)
+
+    For enhanced security, clients can sign requests with ECDSA P-256.
+    When a session is registered with a `publicKey`, all subsequent requests
+    **must** include signature headers. Sessions without a public key allow
+    unsigned requests (backwards compatibility).
+
+    **Signed payload format:** `{timestamp}\n{nonce}\n{path}\n{bodyHash}`
+
+    Where `bodyHash` is the SHA-256 hex digest of the request body (empty string for GET/HEAD).
+
+    ## CORS
+
+    All origins are allowed (`Access-Control-Allow-Origin: *`).
+    Preflight (`OPTIONS`) requests return 204 with appropriate headers.
+
+    ## Rate Limiting
+
+    Each endpoint has per-key rate limits. When exceeded, the server returns
+    `429 Too Many Requests` with an error message.
+
+    | Endpoint | Limit | Window | Key |
+    |----------|-------|--------|-----|
+    | `POST /auth/register` | 5 | 1 hour | Client IP |
+    | `GET /messages` | 120 | 1 minute | User ID |
+    | `POST /reply` | 30 | 1 minute | User ID |
+    | `POST /webhook/:id` | 60 | 1 minute | Channel ID |
+    | `POST /telegram/:id` | 60 | 1 minute | Channel ID |
+    | `POST /discord/:id` | 60 | 1 minute | Channel ID |
+    | `POST /email/inbound` | 60 | 1 minute | Global |
+    | `POST /channels` | 10 | 1 hour | User ID |
+    | `POST /channels/telegram/register` | 10 | 1 hour | User ID |
+    | `POST /channels/discord/register` | 10 | 1 hour | User ID |
+    | `POST /channels/email/register` | 10 | 1 hour | User ID |
+  version: 0.1.0
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8787
+    description: Local development
+  - url: https://chaos-relay.deno.dev
+    description: Deno Deploy (production)
+
+tags:
+  - name: Public
+    description: Unauthenticated endpoints
+  - name: Auth
+    description: Session registration
+  - name: Messages
+    description: Message polling and replies
+  - name: Channels
+    description: Channel management
+  - name: Webhooks
+    description: Inbound webhook endpoints (token-based auth)
+  - name: WebSocket
+    description: Real-time message delivery
+  - name: Admin
+    description: Admin dashboard and management (cookie auth)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        API key obtained from `POST /auth/register`. Pass as
+        `Authorization: Bearer {apiKey}`.
+
+    SignatureAuth:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: |
+        ECDSA P-256 request signature. Required when session was registered
+        with a public key. Must be accompanied by `X-Timestamp` and `X-Nonce`
+        headers. The signature covers `{timestamp}\n{nonce}\n{path}\n{bodyHash}`.
+
+    WebhookToken:
+      type: apiKey
+      in: query
+      name: token
+      description: Webhook secret token, auto-generated during channel creation.
+
+    AdminCookie:
+      type: apiKey
+      in: cookie
+      name: chaos_admin
+      description: |
+        Session cookie set by `POST /admin/login`. HttpOnly, SameSite=Strict,
+        24-hour TTL.
+
+  headers:
+    X-Timestamp:
+      schema:
+        type: string
+        format: date-time
+      description: ISO 8601 timestamp of the request. Must be within 5 minutes of server time.
+      example: "2025-01-15T10:30:00.000Z"
+
+    X-Nonce:
+      schema:
+        type: string
+      description: Random 16-byte hex string. Each nonce can only be used once.
+      example: "a1b2c3d4e5f67890a1b2c3d4e5f67890"
+
+    X-Signature:
+      schema:
+        type: string
+      description: Base64-encoded ECDSA-SHA256 signature of the request payload.
+
+  schemas:
+    ChannelMessage:
+      type: object
+      required: [id, channelType, channelId, from, content, timestamp]
+      properties:
+        id:
+          type: string
+          description: Unique message identifier.
+          example: "msg_abc123"
+        channelType:
+          type: string
+          enum: [discord, telegram, email, webhook, slack]
+          description: Type of channel the message originated from.
+          example: "telegram"
+        channelId:
+          type: string
+          description: Channel identifier.
+          example: "ch_abc123"
+        from:
+          type: string
+          description: Sender identifier (username, email, etc.).
+          example: "johndoe"
+        content:
+          type: string
+          description: Message text content.
+          example: "Hello, agent!"
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the message was received.
+          example: "2025-01-15T10:30:00Z"
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Channel-specific data (e.g. Telegram chat_id, message_id).
+
+    ChannelResponse:
+      type: object
+      required: [channelId, content]
+      properties:
+        channelType:
+          type: string
+          description: Channel type hint.
+          example: "telegram"
+        channelId:
+          type: string
+          description: Target channel ID.
+          example: "ch_abc123"
+        replyTo:
+          type: string
+          description: Original message ID to reply to.
+          example: "msg_abc123"
+        content:
+          type: string
+          description: Reply text content (sanitized server-side).
+          example: "Here is the agent's response."
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Channel-specific metadata.
+
+    ChannelConfig:
+      type: object
+      required: [id, type, direction, agentId, enabled, metadata]
+      properties:
+        id:
+          type: string
+          description: Unique channel identifier.
+          example: "ch_abc123"
+        name:
+          type: string
+          description: Human-readable label.
+          example: "Deploy Notifications"
+        type:
+          type: string
+          enum: [discord, telegram, email, webhook, slack]
+          description: Channel type.
+          example: "webhook"
+        direction:
+          type: string
+          enum: [inbound, bidirectional]
+          description: |
+            `inbound` = receive only; `bidirectional` = receive + reply.
+            Defaults by type: webhook=inbound, all others=bidirectional.
+          example: "inbound"
+        prompt:
+          type: string
+          description: Instructions for the agent when processing messages from this channel.
+        agentId:
+          type: string
+          description: Agent to route messages to.
+          example: "agent-123-abc"
+        enabled:
+          type: boolean
+          description: Whether the channel is active.
+          example: true
+        metadata:
+          type: object
+          additionalProperties: true
+          description: |
+            Channel-specific configuration. May include:
+            - `webhookSecret` (webhook channels)
+            - `botUsername` (Telegram/Discord)
+            - `allowedUsers` (array of allowed sender identifiers)
+            - `pairingCode` (Telegram/Discord, during setup)
+            - `userEmail`, `inboundAddress` (email channels)
+
+    StoredMessage:
+      type: object
+      required: [id, userId, channelType, channelId, from, content, timestamp]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        channelType:
+          type: string
+        channelId:
+          type: string
+        from:
+          type: string
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+
+    HealthResponse:
+      type: object
+      required: [status, version, kv, websockets, uptime]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: "ok"
+        version:
+          type: string
+          example: "0.1.0"
+        kv:
+          type: boolean
+          description: Whether Deno KV is available.
+          example: true
+        websockets:
+          type: integer
+          description: Number of active WebSocket connections.
+          example: 3
+        uptime:
+          type: integer
+          description: Seconds since server start.
+          example: 12345
+
+    SessionRegistration:
+      type: object
+      properties:
+        publicKey:
+          type: object
+          description: |
+            ECDSA P-256 public key in JWK format for request signing.
+            If provided, all subsequent requests must include signature headers.
+            If a session with this public key already exists, the existing
+            session is reclaimed (returned instead of creating a new one).
+          properties:
+            kty:
+              type: string
+              example: "EC"
+            crv:
+              type: string
+              example: "P-256"
+            x:
+              type: string
+            y:
+              type: string
+
+    SessionRegistrationResponse:
+      type: object
+      required: [userId, apiKey]
+      properties:
+        userId:
+          type: string
+          description: Unique user identifier (UUID).
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        apiKey:
+          type: string
+          description: Bearer token for all authenticated requests (UUID).
+          example: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        serverPublicKey:
+          type: object
+          description: Server's ECDSA P-256 public key in JWK format for verifying server signatures.
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+          example: "Unauthorized. Include Authorization: Bearer <apiKey>"
+
+    AdminStatusResponse:
+      type: object
+      required: [status, version, kv, websockets, uptime, sessions, recentMessages]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+        kv:
+          type: boolean
+        websockets:
+          type: integer
+        uptime:
+          type: integer
+        sessions:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+              channels:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    type:
+                      type: string
+                    agentId:
+                      type: string
+                    enabled:
+                      type: boolean
+                    botUsername:
+                      type: string
+                    allowedUsers:
+                      type: array
+                      items:
+                        type: string
+                    hasPairingCode:
+                      type: boolean
+              createdAt:
+                type: string
+                format: date-time
+              wsConnections:
+                type: integer
+        recentMessages:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              userId:
+                type: string
+                description: Truncated to first 8 characters.
+              channelType:
+                type: string
+              channelId:
+                type: string
+                description: Truncated to first 8 characters.
+              from:
+                type: string
+              direction:
+                type: string
+                enum: [in, out]
+              content:
+                type: string
+                description: Truncated to 100 characters.
+              timestamp:
+                type: string
+                format: date-time
+
+    WebSocketServerMessage:
+      oneOf:
+        - type: object
+          required: [type, message]
+          properties:
+            type:
+              type: string
+              enum: [message]
+            message:
+              $ref: '#/components/schemas/ChannelMessage'
+          description: New inbound message.
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              enum: [pong]
+          description: Keepalive response.
+        - type: object
+          required: [type, ok]
+          properties:
+            type:
+              type: string
+              enum: [reply_ack]
+            ok:
+              type: boolean
+            channelType:
+              type: string
+            channelId:
+              type: string
+          description: Acknowledgement of a reply sent via WebSocket.
+        - type: object
+          required: [type, error]
+          properties:
+            type:
+              type: string
+              enum: [error]
+            error:
+              type: string
+          description: Error message.
+
+    WebSocketClientMessage:
+      oneOf:
+        - type: object
+          required: [type, channelId, content]
+          properties:
+            type:
+              type: string
+              enum: [reply]
+            channelType:
+              type: string
+            channelId:
+              type: string
+            replyTo:
+              type: string
+            content:
+              type: string
+            metadata:
+              type: object
+              additionalProperties: true
+          description: Send a reply to a channel message.
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              enum: [ping]
+          description: Keepalive ping.
+
+  parameters:
+    SinceParam:
+      name: since
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date-time
+      description: Only return items after this ISO 8601 timestamp.
+      example: "2025-01-15T10:00:00Z"
+
+    ChannelIdPath:
+      name: channelId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Channel identifier.
+      example: "ch_abc123"
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns server status including KV availability, WebSocket connection count, and uptime.
+      tags: [Public]
+      security: []
+      responses:
+        "200":
+          description: Server is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "ok"
+                version: "0.1.0"
+                kv: true
+                websockets: 3
+                uptime: 12345
+
+  /auth/register:
+    post:
+      operationId: registerSession
+      summary: Register a new session
+      description: |
+        Creates a new user session and returns credentials for all subsequent
+        API calls. Optionally accepts an ECDSA P-256 public key; if provided,
+        all future requests must include signature headers.
+
+        If a session with the same public key already exists (e.g. after a
+        server restart), the existing session is reclaimed and returned.
+      tags: [Auth]
+      security: []
+      x-rate-limit: "5 per hour per client IP"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionRegistration'
+            example:
+              publicKey:
+                kty: "EC"
+                crv: "P-256"
+                x: "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU"
+                y: "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"
+      responses:
+        "200":
+          description: Session created (or reclaimed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionRegistrationResponse'
+              example:
+                userId: "550e8400-e29b-41d4-a716-446655440000"
+                apiKey: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+                serverPublicKey:
+                  kty: "EC"
+                  crv: "P-256"
+                  x: "..."
+                  y: "..."
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Too many registration attempts. Try again later."
+
+  /messages:
+    get:
+      operationId: getMessages
+      summary: Poll for inbound messages
+      description: |
+        Returns messages queued for the authenticated user. Use the `since`
+        parameter (returned in each response) for efficient polling. Messages
+        are stored for up to 24 hours with a maximum of 100 per user.
+      tags: [Messages]
+      security:
+        - BearerAuth: []
+      x-rate-limit: "120 per minute per user"
+      parameters:
+        - $ref: '#/components/parameters/SinceParam'
+      responses:
+        "200":
+          description: Messages retrieved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages, since]
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChannelMessage'
+                  since:
+                    type: string
+                    format: date-time
+                    description: Use this value as the `since` parameter for the next poll.
+              example:
+                messages:
+                  - id: "msg_abc123"
+                    channelType: "webhook"
+                    channelId: "ch_def456"
+                    from: "GitHub Actions"
+                    content: "Build succeeded on main"
+                    timestamp: "2025-01-15T10:30:00Z"
+                    metadata: { repo: "user/project" }
+                since: "2025-01-15T10:31:00Z"
+        "401":
+          description: Missing or invalid Bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reply:
+    post:
+      operationId: sendReply
+      summary: Send a reply to a channel message
+      description: |
+        Sends a reply to a specific channel. For Telegram channels, the server
+        calls the Telegram Bot API `sendMessage`. For webhook channels, the
+        response is stored for retrieval via `GET /responses/:channelId`.
+        Content is sanitized server-side.
+      tags: [Messages]
+      security:
+        - BearerAuth: []
+      x-rate-limit: "30 per minute per user"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelResponse'
+            example:
+              channelType: "telegram"
+              channelId: "ch_abc123"
+              replyTo: "msg_original"
+              content: "Here is the agent's response."
+      responses:
+        "200":
+          description: Reply sent successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  channelType:
+                    type: string
+                    example: "telegram"
+                  channelId:
+                    type: string
+                    example: "ch_abc123"
+        "400":
+          description: Missing required fields or invalid content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Missing channelId or content"
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /channels:
+    get:
+      operationId: listChannels
+      summary: List all channels
+      description: Returns all channels registered by the authenticated user.
+      tags: [Channels]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Channel list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channels]
+                properties:
+                  channels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChannelConfig'
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      operationId: createChannel
+      summary: Register a new channel
+      description: |
+        Creates a new channel. For webhook channels, a `webhookSecret` is
+        auto-generated if not provided in metadata. The response includes
+        the full `webhookUrl` for webhook-type channels.
+
+        Direction defaults: webhook=inbound, telegram/discord/email/slack=bidirectional.
+      tags: [Channels]
+      security:
+        - BearerAuth: []
+      x-rate-limit: "10 per hour per user"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [webhook, telegram, discord, email, slack]
+                  default: webhook
+                  description: Channel type.
+                id:
+                  type: string
+                  description: Custom channel ID. Auto-generated (UUID) if omitted.
+                agentId:
+                  type: string
+                  description: Agent to route messages to.
+                direction:
+                  type: string
+                  enum: [inbound, bidirectional]
+                  description: Defaults by type (webhook=inbound, others=bidirectional).
+                enabled:
+                  type: boolean
+                  default: true
+                metadata:
+                  type: object
+                  additionalProperties: true
+            example:
+              type: "webhook"
+              agentId: "agent-123-abc"
+              direction: "inbound"
+              enabled: true
+              metadata: {}
+      responses:
+        "201":
+          description: Channel created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel]
+                properties:
+                  channel:
+                    $ref: '#/components/schemas/ChannelConfig'
+                  webhookUrl:
+                    type: string
+                    format: uri
+                    description: Full webhook URL (only for webhook-type channels).
+              example:
+                channel:
+                  id: "ch_abc123"
+                  type: "webhook"
+                  direction: "inbound"
+                  agentId: "agent-123-abc"
+                  enabled: true
+                  metadata:
+                    webhookSecret: "secret-uuid"
+                webhookUrl: "https://relay.example.com/webhook/ch_abc123?token=secret-uuid"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /channels/{channelId}:
+    patch:
+      operationId: updateChannel
+      summary: Update a channel
+      description: |
+        Updates a channel's name, prompt, or metadata. Only the fields provided
+        are updated. For metadata, only `allowedUsers` can be modified via this
+        endpoint (other metadata fields are protected).
+      tags: [Channels]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Human-readable label.
+                prompt:
+                  type: string
+                  description: Instructions for the agent when processing messages.
+                metadata:
+                  type: object
+                  properties:
+                    allowedUsers:
+                      type: array
+                      items:
+                        type: string
+                      description: Allowlist of user identifiers.
+            example:
+              name: "Deploy Notifications"
+              prompt: "Summarize this deploy notification and flag any failures"
+              metadata:
+                allowedUsers: ["user123", "user456"]
+      responses:
+        "200":
+          description: Channel updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  channel:
+                    $ref: '#/components/schemas/ChannelConfig'
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Channel not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: deleteChannel
+      summary: Delete a channel
+      description: Permanently removes a channel from the user's session.
+      tags: [Channels]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelIdPath'
+      responses:
+        "200":
+          description: Channel deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Channel not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /channels/telegram/register:
+    post:
+      operationId: registerTelegramBot
+      summary: Register a Telegram bot channel
+      description: |
+        Registers a Telegram bot as a bidirectional channel. The server:
+        1. Calls Telegram `getMe` to validate the token and get the bot username
+        2. Sets the Telegram webhook URL to `{serverUrl}/telegram/{channelId}`
+        3. Generates a pairing code for the owner to verify via Telegram
+        4. Encrypts the bot token before storing in KV
+
+        After registration, send the pairing code to the bot in Telegram to
+        complete the pairing.
+      tags: [Channels]
+      security:
+        - BearerAuth: []
+      x-rate-limit: "10 per hour per user (shared with /channels)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [botToken]
+              properties:
+                botToken:
+                  type: string
+                  description: Telegram Bot API token from @BotFather.
+                  example: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                agentId:
+                  type: string
+                  description: Agent to route messages to.
+      responses:
+        "201":
+          description: Telegram bot registered. Send the pairing code to the bot to complete setup.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channelId, botUsername, pairingCode]
+                properties:
+                  channelId:
+                    type: string
+                    example: "ch_abc123"
+                  botUsername:
+                    type: string
+                    example: "my_chaos_bot"
+                  pairingCode:
+                    type: string
+                    description: 8-character uppercase code to send to the bot.
+                    example: "A1B2C3D4"
+        "400":
+          description: Missing or invalid botToken, or Telegram API error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /channels/discord/register:
+    post:
+      operationId: registerDiscordBot
+      summary: Register a Discord bot channel
+      description: |
+        Registers a Discord bot as a bidirectional channel. Similar to Telegram
+        registration: validates the token, sets up the webhook, generates a
+        pairing code, and encrypts the bot token.
+      tags: [Channels]
+      security:
+        - BearerAuth: []
+      x-rate-limit: "10 per hour per user (shared with /channels)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [botToken]
+              properties:
+                botToken:
+                  type: string
+                  description: Discord bot token.
+                agentId:
+                  type: string
+                  description: Agent to route messages to.
+      responses:
+        "201":
+          description: Discord bot registered. Send the pairing code to the bot to complete setup.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channelId, botUsername, pairingCode]
+                properties:
+                  channelId:
+                    type: string
+                  botUsername:
+                    type: string
+                  pairingCode:
+                    type: string
+                    description: 8-character uppercase code.
+        "400":
+          description: Missing or invalid botToken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /channels/email/register:
+    post:
+      operationId: registerEmailChannel
+      summary: Register an email channel
+      description: |
+        Registers a bidirectional email channel. The server generates a unique
+        inbound email address and sends a verification email to the user's
+        email address. The channel is not active until the user clicks the
+        verification link.
+
+        Requires `CHAOS_EMAIL_DOMAIN` environment variable to be configured.
+      tags: [Channels]
+      security:
+        - BearerAuth: []
+      x-rate-limit: "10 per hour per user (shared with /channels)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userEmail, channelName]
+              properties:
+                userEmail:
+                  type: string
+                  format: email
+                  description: User's email address for verification and replies.
+                  example: "user@example.com"
+                channelName:
+                  type: string
+                  description: Human-readable name for the channel.
+                  example: "Work Email"
+                agentId:
+                  type: string
+                  description: Agent to route messages to.
+      responses:
+        "201":
+          description: Email channel registered (pending verification).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channelId, inboundAddress]
+                properties:
+                  channelId:
+                    type: string
+                  inboundAddress:
+                    type: string
+                    format: email
+                    description: The generated inbound email address for this channel.
+        "400":
+          description: Missing or invalid fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Email not configured on server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Email not configured (set CHAOS_EMAIL_DOMAIN env var)"
+
+  /webhook/{channelId}:
+    post:
+      operationId: ingestWebhook
+      summary: Ingest a webhook message
+      description: |
+        Receives an inbound webhook message from an external service. The body
+        format is flexible: `content` (or `text`, `message`, `body`) is extracted
+        as message content; `from` (or `sender`, `username`) identifies the sender.
+      tags: [Webhooks]
+      security:
+        - WebhookToken: []
+      x-rate-limit: "60 per minute per channel"
+      parameters:
+        - $ref: '#/components/parameters/ChannelIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                  description: Message content (also accepts `text`, `message`, or `body`).
+                from:
+                  type: string
+                  description: Sender identifier (also accepts `sender` or `username`).
+                metadata:
+                  type: object
+                  additionalProperties: true
+            example:
+              content: "Build failed on main branch"
+              from: "GitHub Actions"
+              metadata:
+                repo: "user/project"
+                run_id: 12345
+      responses:
+        "200":
+          description: Message ingested.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  messageId:
+                    type: string
+                    example: "msg_abc123"
+        "404":
+          description: Channel not found or wrong token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /telegram/{channelId}:
+    post:
+      operationId: telegramWebhook
+      summary: Telegram Bot API webhook
+      description: |
+        Receives Telegram Update objects sent by the Telegram Bot API.
+        The server parses the update, extracts message content and sender,
+        enforces the allowlist (if configured), checks the pairing code for
+        first-time users, and stores it as a ChannelMessage.
+
+        This URL is set automatically during `POST /channels/telegram/register`.
+      tags: [Webhooks]
+      security: []
+      x-rate-limit: "60 per minute per channel"
+      parameters:
+        - $ref: '#/components/parameters/ChannelIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Standard Telegram Update object.
+      responses:
+        "200":
+          description: Update processed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+  /discord/{channelId}:
+    post:
+      operationId: discordWebhook
+      summary: Discord interaction webhook
+      description: |
+        Receives Discord interaction/event payloads. This URL is configured
+        automatically during `POST /channels/discord/register`.
+      tags: [Webhooks]
+      security: []
+      x-rate-limit: "60 per minute per channel"
+      parameters:
+        - $ref: '#/components/parameters/ChannelIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Discord interaction payload.
+      responses:
+        "200":
+          description: Interaction processed.
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /email/verify:
+    get:
+      operationId: verifyEmail
+      summary: Verify email channel ownership
+      description: |
+        Clicked by the user from their verification email. Marks the email
+        channel as verified so it can begin receiving messages.
+      tags: [Webhooks]
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Verification token from the email.
+        - name: channelId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Channel ID being verified.
+      responses:
+        "200":
+          description: Email verified successfully (returns HTML confirmation).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Missing token or channelId.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /email/inbound:
+    post:
+      operationId: emailInbound
+      summary: Inbound email webhook
+      description: |
+        Receives inbound emails from the email provider (e.g. SendGrid,
+        Mailgun). Routes the email to the correct channel based on the
+        recipient address.
+      tags: [Webhooks]
+      security: []
+      x-rate-limit: "60 per minute (global)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Inbound email payload (format depends on provider).
+      responses:
+        "200":
+          description: Email processed.
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /responses/{channelId}:
+    get:
+      operationId: getResponses
+      summary: Poll for agent responses
+      description: |
+        Retrieves agent responses for a specific channel. Used by external
+        services that send webhooks and want to retrieve the agent's replies.
+        No authentication required.
+      tags: [Public]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelIdPath'
+        - $ref: '#/components/parameters/SinceParam'
+      responses:
+        "200":
+          description: Responses retrieved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [responses, since]
+                properties:
+                  responses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StoredMessage'
+                  since:
+                    type: string
+                    format: date-time
+                    description: Use as the `since` parameter for the next poll.
+              example:
+                responses:
+                  - id: "resp_abc"
+                    userId: "usr_123"
+                    channelType: "webhook"
+                    channelId: "ch_123"
+                    from: "agent"
+                    content: "Agent's reply text"
+                    timestamp: "2025-01-15T10:30:00Z"
+                since: "2025-01-15T10:31:00Z"
+
+  /ws:
+    get:
+      operationId: websocketConnect
+      summary: WebSocket connection
+      description: |
+        Upgrades to a WebSocket connection for real-time message delivery.
+        Authenticate via `?token={apiKey}` query parameter.
+
+        **On connect:** The server sends any messages from the last 5 minutes
+        that may have been missed during reconnection.
+
+        **KV Watch:** On Deno Deploy, the server uses `kv.watch()` to push
+        new messages in real time, even across isolates.
+
+        ### Server -> Client messages
+
+        | Type | Description |
+        |------|-------------|
+        | `message` | New inbound channel message |
+        | `pong` | Keepalive response |
+        | `reply_ack` | Acknowledgement of a reply |
+        | `error` | Error message |
+
+        ### Client -> Server messages
+
+        | Type | Description |
+        |------|-------------|
+        | `reply` | Send a reply (requires `channelId` and `content`) |
+        | `ping` | Keepalive ping |
+      tags: [WebSocket]
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: API key for authentication.
+      responses:
+        "101":
+          description: WebSocket upgrade successful.
+          headers:
+            Upgrade:
+              schema:
+                type: string
+                example: websocket
+            Connection:
+              schema:
+                type: string
+                example: Upgrade
+        "401":
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Missing token query parameter"
+
+  /admin/login:
+    get:
+      operationId: adminLoginPage
+      summary: Admin login page
+      description: Serves the HTML login form for the admin dashboard.
+      tags: [Admin]
+      security: []
+      responses:
+        "200":
+          description: Login HTML page.
+          content:
+            text/html:
+              schema:
+                type: string
+        "503":
+          description: Admin not configured (CHAOS_ADMIN_KEY not set).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Admin not configured (set CHAOS_ADMIN_KEY env var)"
+
+    post:
+      operationId: adminLogin
+      summary: Authenticate as admin
+      description: |
+        Validates the admin password and sets a session cookie.
+        The cookie is HttpOnly, SameSite=Strict, with a 24-hour TTL.
+      tags: [Admin]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+            example:
+              password: "the-admin-key"
+      responses:
+        "200":
+          description: Login successful. Sets `chaos_admin` session cookie.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: "chaos_admin=<token>; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=86400"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        "401":
+          description: Invalid password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Invalid password"
+        "503":
+          description: Admin not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin:
+    get:
+      operationId: adminDashboard
+      summary: Admin dashboard
+      description: |
+        Serves the admin dashboard HTML page. Redirects to `/admin/login` if
+        not authenticated. The dashboard auto-refreshes every 10 seconds and
+        shows server status, active sessions, and recent messages.
+      tags: [Admin]
+      security:
+        - AdminCookie: []
+      responses:
+        "200":
+          description: Dashboard HTML page.
+          content:
+            text/html:
+              schema:
+                type: string
+        "302":
+          description: Redirect to login page if not authenticated.
+          headers:
+            Location:
+              schema:
+                type: string
+                example: "/admin/login"
+
+  /admin/status:
+    get:
+      operationId: adminStatus
+      summary: Admin status API
+      description: |
+        JSON API used by the admin dashboard. Returns server status,
+        all active sessions with their channels, and recent messages
+        (last 30).
+      tags: [Admin]
+      security:
+        - AdminCookie: []
+      responses:
+        "200":
+          description: Full admin status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatusResponse'
+        "401":
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/sessions/{userId}:
+    delete:
+      operationId: adminDeleteSession
+      summary: Delete a user session
+      description: |
+        Deletes a user session and all its associated channels from KV.
+      tags: [Admin]
+      security:
+        - AdminCookie: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID of the session to delete.
+      responses:
+        "200":
+          description: Session deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  deleted:
+                    type: string
+                    description: The userId that was deleted.
+                    example: "usr_abc123"
+        "401":
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/logout:
+    post:
+      operationId: adminLogout
+      summary: Admin logout
+      description: Clears the admin session cookie and redirects to the login page.
+      tags: [Admin]
+      security:
+        - AdminCookie: []
+      responses:
+        "302":
+          description: Redirect to login page. Clears `chaos_admin` cookie.
+          headers:
+            Location:
+              schema:
+                type: string
+                example: "/admin/login"
+            Set-Cookie:
+              schema:
+                type: string
+                example: "chaos_admin=; Path=/admin; HttpOnly; Max-Age=0"
