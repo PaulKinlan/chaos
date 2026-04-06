@@ -77,7 +77,7 @@ Deno.test("List channels returns created channels", async () => {
   const creds = await register();
 
   // Create two channels
-  await authedFetch(
+  const c1 = await authedFetch(
     `${base}/channels`,
     {
       method: "POST",
@@ -86,7 +86,8 @@ Deno.test("List channels returns created channels", async () => {
     },
     creds,
   );
-  await authedFetch(
+  await c1.body?.cancel();
+  const c2 = await authedFetch(
     `${base}/channels`,
     {
       method: "POST",
@@ -95,6 +96,7 @@ Deno.test("List channels returns created channels", async () => {
     },
     creds,
   );
+  await c2.body?.cancel();
 
   const resp = await authedFetch(`${base}/channels`, { method: "GET" }, creds);
   assertEquals(resp.status, 200);
@@ -152,6 +154,7 @@ Deno.test("PATCH non-existent channel returns 404", async () => {
   );
 
   assertEquals(resp.status, 404);
+  await resp.body?.cancel();
 });
 
 Deno.test("Delete a channel", async () => {
@@ -200,6 +203,7 @@ Deno.test("Delete non-existent channel returns 404", async () => {
   );
 
   assertEquals(resp.status, 404);
+  await resp.body?.cancel();
 });
 
 Deno.test("Webhook ingestion stores a message", async () => {
@@ -257,6 +261,7 @@ Deno.test("Webhook with invalid token is rejected", async () => {
   );
 
   assertEquals(resp.status, 401);
+  await resp.body?.cancel();
 });
 
 Deno.test("Webhook to unknown channel returns 404", async () => {
@@ -270,6 +275,7 @@ Deno.test("Webhook to unknown channel returns 404", async () => {
   );
 
   assertEquals(resp.status, 404);
+  await resp.body?.cancel();
 });
 
 Deno.test("Poll messages after webhook returns the message", async () => {
@@ -289,11 +295,12 @@ Deno.test("Poll messages after webhook returns the message", async () => {
   const { webhookUrl } = await createResp.json();
 
   // Send a webhook message
-  await fetch(webhookUrl, {
+  const whResp = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text: "poll test message" }),
   });
+  await whResp.body?.cancel();
 
   // Poll for messages
   const pollResp = await authedFetch(
@@ -333,11 +340,12 @@ Deno.test("Poll messages with no since returns all messages", async () => {
   );
   const { webhookUrl } = await createResp.json();
 
-  await fetch(webhookUrl, {
+  const whResp2 = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text: "no-since test" }),
   });
+  await whResp2.body?.cancel();
 
   // Poll without since
   const pollResp = await authedFetch(
@@ -356,7 +364,7 @@ Deno.test("Channels are isolated between sessions", async () => {
   const creds2 = await register();
 
   // Create a channel in session 1
-  await authedFetch(
+  const createResp = await authedFetch(
     `${base}/channels`,
     {
       method: "POST",
@@ -365,6 +373,7 @@ Deno.test("Channels are isolated between sessions", async () => {
     },
     creds1,
   );
+  await createResp.body?.cancel();
 
   // Session 2 should see no channels
   const resp = await authedFetch(`${base}/channels`, { method: "GET" }, creds2);

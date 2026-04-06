@@ -30,7 +30,7 @@ Deno.test("Full end-to-end: register -> create channel -> webhook -> poll -> rep
   assertExists(channel.id);
   assertExists(webhookUrl);
 
-  const sinceBeforeWebhook = new Date().toISOString();
+  const sinceBeforeWebhook = new Date(Date.now() - 1).toISOString();
 
   // 3. Send a message via webhook
   const webhookResp = await fetch(webhookUrl, {
@@ -169,7 +169,7 @@ Deno.test("Responses endpoint with since filter", async () => {
   const { channel } = await createResp.json();
 
   // Send a reply
-  await authedFetch(
+  const reply1Resp = await authedFetch(
     `${base}/reply`,
     {
       method: "POST",
@@ -182,6 +182,7 @@ Deno.test("Responses endpoint with since filter", async () => {
     },
     creds,
   );
+  await reply1Resp.body?.cancel();
 
   // Get responses and note the since timestamp
   const resp1 = await fetch(`${base}/responses/${channel.id}`);
@@ -189,8 +190,11 @@ Deno.test("Responses endpoint with since filter", async () => {
   const since = data1.since;
   assertExists(since);
 
+  // Small delay to ensure the second reply gets a timestamp strictly after `since`
+  await new Promise((r) => setTimeout(r, 10));
+
   // Send another reply
-  await authedFetch(
+  const reply2Resp = await authedFetch(
     `${base}/reply`,
     {
       method: "POST",
@@ -203,6 +207,7 @@ Deno.test("Responses endpoint with since filter", async () => {
     },
     creds,
   );
+  await reply2Resp.body?.cancel();
 
   // Poll with since — should only get the second reply
   const resp2 = await fetch(`${base}/responses/${channel.id}?since=${since}`);

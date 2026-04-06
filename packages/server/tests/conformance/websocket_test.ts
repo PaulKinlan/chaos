@@ -124,6 +124,13 @@ Deno.test("WebSocket receives messages after webhook", async () => {
     // Give the server a moment to set up the KV watch
     await new Promise((r) => setTimeout(r, 500));
 
+    // Set up listener BEFORE sending webhook to avoid race condition
+    const msgPromise = waitForMessage(
+      ws,
+      (data) => data.type === "message",
+      10000,
+    );
+
     // Send a webhook message
     const webhookResp = await fetch(webhookUrl, {
       method: "POST",
@@ -137,11 +144,7 @@ Deno.test("WebSocket receives messages after webhook", async () => {
     await webhookResp.body?.cancel();
 
     // Wait for the message to arrive via WebSocket
-    const msg = await waitForMessage(
-      ws,
-      (data) => data.type === "message",
-      10000,
-    );
+    const msg = await msgPromise;
 
     assertEquals(msg.type, "message");
     assertExists(msg.message);

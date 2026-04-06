@@ -117,6 +117,7 @@ Deno.test("Signed session requires signature headers — missing headers rejecte
     401,
     "session with public key must include signature headers",
   );
+  await resp.body?.cancel();
 });
 
 Deno.test("Stale timestamp rejected", async () => {
@@ -144,6 +145,7 @@ Deno.test("Stale timestamp rejected", async () => {
   });
 
   assertEquals(resp.status, 401, "stale timestamp should be rejected");
+  await resp.body?.cancel();
 });
 
 Deno.test("Replayed nonce rejected", async () => {
