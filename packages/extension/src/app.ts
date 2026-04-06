@@ -6380,13 +6380,28 @@ async function init(): Promise<void> {
   // Connect the port for chat streaming
   port = connectPort();
 
-  // Check if onboarding is needed (no API keys configured)
+  // Check if onboarding is needed
   try {
-    const keys = await sendMsg<{ keys: ApiKeys }>({ type: 'getApiKeys' });
-    const hasAnyKey = Object.values(keys.keys).some(k => k && k.length > 0);
-    if (!hasAnyKey) {
-      const completed = await chrome.storage.local.get('chaos:onboarding-completed');
-      if (!completed['chaos:onboarding-completed']) {
+    const [completedResult, needsResult] = await Promise.all([
+      chrome.storage.local.get('chaos:onboarding-completed'),
+      chrome.storage.local.get('chaos:needs-onboarding'),
+    ]);
+    const completed = completedResult['chaos:onboarding-completed'];
+    const needsOnboarding = needsResult['chaos:needs-onboarding'];
+
+    // Show onboarding if: explicitly flagged by onInstalled, OR no API keys and not completed
+    let shouldOnboard = !completed && needsOnboarding;
+    if (!completed && !shouldOnboard) {
+      try {
+        const keys = await sendMsg<{ keys: ApiKeys }>({ type: 'getApiKeys' });
+        const hasAnyKey = Object.values(keys.keys).some(k => k && k.length > 0);
+        shouldOnboard = !hasAnyKey;
+      } catch {
+        // Service worker may not be ready — skip onboarding check
+      }
+    }
+
+    if (shouldOnboard) {
         const result = await showOnboarding(sendMsg);
         if (result) {
           // Onboarding completed — now load agents and trigger intro
@@ -6407,7 +6422,6 @@ async function init(): Promise<void> {
         }
         // User somehow closed without completing — continue to normal load
       }
-    }
   } catch (err) {
     console.warn('[app] Onboarding check failed, continuing normally:', err);
   }
