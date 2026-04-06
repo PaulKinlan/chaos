@@ -2,7 +2,15 @@
 
 ## Status
 
-All phases: TODO.
+### Phase 1: OpenAPI Specification — DONE
+- [x] docs/relay-openapi.yaml (1591 lines, all 19 endpoints)
+
+### Phase 2: Conformance Test Suite — DONE
+- [x] 38 tests across 5 files (health, auth, channels, flow, websocket)
+- [x] All passing against our implementation
+- [x] Added to CI (runs on every push)
+
+### Phase 3-5: TODO
 
 ---
 

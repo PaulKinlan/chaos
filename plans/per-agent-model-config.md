@@ -188,14 +188,30 @@ This is a safe additive change:
 - No data migration needed
 - getAgentList() already handles missing fields gracefully
 
-## Already Implemented (Foundation)
+## Already Implemented
 
-- [x] Ollama provider added to provider-registry.ts (OpenAI-compatible, default http://localhost:11434/v1)
-- [x] All providers accept optional baseURL parameter (for Vertex AI, Azure, self-hosted)
-- [x] Ollama in global settings UI with base URL field
-- [x] ProviderId type includes 'ollama'
-- [x] ApiKeys type includes 'ollama' (stores base URL, not a key)
+### Foundation
+- [x] Ollama provider added to provider-registry.ts
+- [x] All providers accept optional baseURL parameter
+- [x] Ollama in global settings UI
 - [x] createLanguageModel accepts baseURL parameter
+
+### Phase 1: Resolution Logic — DONE
+- [x] model-config.ts with getAgentModelConfig(agentId)
+- [x] AgentMeta has optional provider and model fields
+- [x] agentic-loop.ts uses getAgentModelConfig
+- [x] loop.ts uses getAgentModelConfig
+- [x] Backwards compatible (agents without overrides use global)
+
+### Phase 2: Agent Settings UI — DONE
+- [x] "Model" section in agent settings
+- [x] Provider dropdown with "Use Global Default" option
+- [x] Model dropdown populated per provider
+- [x] Custom model text input
+- [x] Save persists to AgentMeta
+
+### Phase 3: Per-Agent API Keys — TODO
+### Phase 4: Visual Indicators — TODO
 
 ## Open Questions
 
