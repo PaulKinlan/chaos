@@ -1611,16 +1611,20 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
     }
   });
 
-  // Show delegation hint on send button when Ctrl/Cmd is held
+  // Show delegation icon on send button when Ctrl/Cmd is held
+  const sendIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+  const delegateIcon = '<svg width="18" height="16" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v-2a3 3 0 0 0-3-3H5a3 3 0 0 0-3 3v2"/><circle cx="7" cy="7" r="3"/><line x1="18" y1="4" x2="26" y2="12"/><polygon points="26 4 22 18 18 12 12 10 26 4"/></svg>';
   textareaEl.addEventListener('keydown', (e) => {
     if (e.key === 'Control' || e.key === 'Meta') {
-      sendBtn.title = 'Delegate (Ctrl+Enter)';
+      sendBtn.title = 'Delegate to sub-agent (Ctrl+Enter)';
+      sendBtn.innerHTML = delegateIcon;
       sendBtn.style.color = 'var(--accent-text, #58a6ff)';
     }
   });
   textareaEl.addEventListener('keyup', (e) => {
     if (e.key === 'Control' || e.key === 'Meta') {
-      sendBtn.title = 'Send';
+      sendBtn.title = 'Send (Enter)';
+      sendBtn.innerHTML = sendIcon;
       sendBtn.style.color = '';
     }
   });
