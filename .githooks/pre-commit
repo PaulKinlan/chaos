@@ -1,0 +1,22 @@
+#!/bin/bash
+# Git pre-commit hook for CHAOS
+# Runs basic security checks on staged changes
+
+set -euo pipefail
+
+echo "Running pre-commit checks..."
+
+# Check for hardcoded secrets
+if git diff --cached --no-color | grep -iE '(sk-ant-|sk-or-|AIza|sk-[a-zA-Z0-9]{48})' | grep -v '^\+.*placeholder\|^\+.*example\|^\+.*\.md' | head -3; then
+  echo "WARNING: Possible API key detected in staged changes"
+  echo "Review the above lines before committing."
+fi
+
+# Check for .env files
+if git diff --cached --name-only | grep -E '\.env$|\.env\.local$|credentials'; then
+  echo "ERROR: .env or credentials file staged for commit!"
+  echo "Run: git reset HEAD <file> to unstage"
+  exit 1
+fi
+
+echo "Pre-commit checks passed."
