@@ -83,32 +83,20 @@ Links for each provider:
 - OpenRouter: https://openrouter.ai/keys
 - Ollama: "Install Ollama from ollama.ai — no key needed"
 
-#### Step 3: Meet Your Agent
-```
-┌─────────────────────────────────────────────┐
-│                                             │
-│  Your assistant is ready!                   │
-│                                             │
-│  ★ Assistant (master agent)                 │
-│                                             │
-│  It can:                                    │
-│  • Chat and answer questions                │
-│  • Read and interact with browser tabs      │
-│  • Create specialist agents for big tasks   │
-│  • Connect to external channels             │
-│                                             │
-│  Try saying: "Read this page and summarize" │
-│                                             │
-│                          [Start Chatting →]  │
-└─────────────────────────────────────────────┘
-```
+#### Step 3: Chat with Your Agent
 
-#### Step 4: (Optional) Quick Tour
-Show tooltips pointing to key UI elements:
-1. Chat columns — "This is where you talk to agents"
-2. Sidebar — "Navigate between views"
-3. Agents section — "Your agents and their settings"
-4. Settings cog — "Configure providers, themes, permissions"
+Close the wizard and open a chat column with the master agent. The agent automatically sends an introductory message:
+
+> "Hi! I'm your CHAOS assistant. I live in your browser and can help you with all sorts of things. Ask me what I can do, or try one of these:
+> - "Read this page and summarize it"
+> - "What tabs do I have open?"
+> - "Set up a Telegram channel"
+>
+> What would you like to do?"
+
+This is a real conversation — the user can immediately start interacting. The agent's CLAUDE.md already describes its capabilities, so it can answer "what can you do?" naturally.
+
+Implementation: after the wizard completes, call `sendPortMessage({ type: 'agenticChat', agentId: masterAgentId, message: 'Introduce yourself to a new user. Explain what you can do in a friendly, concise way. Suggest 3 things they could try right now.' })` to trigger the agent's first message.
 
 ### Implementation
 
