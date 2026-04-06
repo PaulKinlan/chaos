@@ -1541,12 +1541,6 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
   inputArea.appendChild(inputWrapper);
 
   // Delegate button — wraps input with delegation instruction
-  const delegateBtn = document.createElement('button');
-  delegateBtn.className = 'chat-btn-delegate';
-  delegateBtn.title = 'Delegate to sub-agent';
-  delegateBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>';
-  inputArea.appendChild(delegateBtn);
-
   const sendBtn = document.createElement('button');
   sendBtn.className = 'chat-btn-send';
   sendBtn.title = 'Send';
@@ -1598,19 +1592,36 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
   }
 
   // Wire up event handlers
-  delegateBtn.addEventListener('click', () => {
-    const text = column.inputEl.value.trim();
-    if (!text || column.isStreaming) return;
-    column.inputEl.value = `Delegate this task to an appropriate sub-agent: ${text}`;
-    sendColumnMessage(column);
-  });
-
   sendBtn.addEventListener('click', () => sendColumnMessage(column));
 
   textareaEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !columnMentionVisible(column)) {
       e.preventDefault();
-      sendColumnMessage(column);
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl+Enter (Cmd+Enter on Mac) = delegate
+        const text = column.inputEl.value.trim();
+        if (text && !column.isStreaming) {
+          column.inputEl.value = `Delegate this task to an appropriate sub-agent: ${text}`;
+          sendColumnMessage(column);
+        }
+      } else {
+        // Enter = normal send
+        sendColumnMessage(column);
+      }
+    }
+  });
+
+  // Show delegation hint on send button when Ctrl/Cmd is held
+  textareaEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Control' || e.key === 'Meta') {
+      sendBtn.title = 'Delegate (Ctrl+Enter)';
+      sendBtn.style.color = 'var(--accent-text, #58a6ff)';
+    }
+  });
+  textareaEl.addEventListener('keyup', (e) => {
+    if (e.key === 'Control' || e.key === 'Meta') {
+      sendBtn.title = 'Send';
+      sendBtn.style.color = '';
     }
   });
 
