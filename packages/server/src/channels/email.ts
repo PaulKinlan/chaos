@@ -681,25 +681,14 @@ async function fetchEmailFromResend(
   }
 
   try {
-    // Try the received emails endpoint first, then fall back to sent emails endpoint
-    let resp = await fetch(
-      `https://api.resend.com/emails/${emailId}/content`,
+    // Resend received emails use /emails/receiving/{id} not /emails/{id}
+    const resp = await fetch(
+      `https://api.resend.com/emails/receiving/${emailId}`,
       {
         method: "GET",
         headers: { "Authorization": `Bearer ${apiKey}` },
       },
     );
-
-    if (!resp.ok) {
-      logger.info("email", "Content endpoint failed, trying base endpoint", {
-        emailId,
-        status: resp.status,
-      });
-      resp = await fetch(`https://api.resend.com/emails/${emailId}`, {
-        method: "GET",
-        headers: { "Authorization": `Bearer ${apiKey}` },
-      });
-    }
 
     if (!resp.ok) {
       const body = await resp.text();
