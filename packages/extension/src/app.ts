@@ -1768,7 +1768,8 @@ function updateColumnsLayout(): void {
   // When columns fit, use flex fill; when they overflow, use fixed width
   const totalMinWidth = columns.length * 400 + 48; // 48 for add button
   const containerWidth = columnsContainer.clientWidth;
-  columnsContainer.classList.toggle('fit-columns', totalMinWidth <= containerWidth && columns.length > 1);
+  // Columns always stay at fixed width (TweetDeck style) — never expand to fill
+  columnsContainer.classList.remove('fit-columns');
 }
 
 function showColumnAddPicker(e: MouseEvent): void {
