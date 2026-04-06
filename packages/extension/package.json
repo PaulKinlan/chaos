@@ -10,7 +10,8 @@
     "test": "vitest run --exclude src/__tests__/e2e/",
     "test:unit": "vitest run --exclude src/__tests__/e2e/",
     "test:e2e": "npx vitest run src/__tests__/e2e/",
-    "test:watch": "vitest --exclude src/__tests__/e2e/"
+    "test:watch": "vitest --exclude src/__tests__/e2e/",
+    "extension:zip": "npm run build && cd dist && zip -r ../chaos-extension.zip . && echo 'Created chaos-extension.zip'"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",
