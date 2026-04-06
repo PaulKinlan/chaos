@@ -396,6 +396,7 @@ export async function handleEmailInbound(
   }
 
   // Look up the channel
+  logger.info("email", "Channel found", { channelId, matchedAddress });
   const session = await getSessionByChannelId(channelId);
   if (!session) {
     logger.error("email", "Channel owner session not found", { channelId });
@@ -404,6 +405,10 @@ export async function handleEmailInbound(
 
   const channel = session.channels.find((ch) => ch.id === channelId);
   if (!channel || channel.type !== "email") {
+    logger.error("email", "Channel not found in session or wrong type", {
+      channelId,
+      type: channel?.type,
+    });
     return jsonResponse({ ok: true });
   }
 
@@ -414,6 +419,7 @@ export async function handleEmailInbound(
     });
     return jsonResponse({ ok: true });
   }
+  logger.info("email", "Channel verified, checking sender", { channelId });
 
   // Sender allowlist check
   const senderAddress = inbound.from || "unknown";
@@ -427,10 +433,13 @@ export async function handleEmailInbound(
         channelId,
         sender: senderAddress,
         senderEmail,
-        allowedCount: allowlist.length,
+        allowlist,
       });
       return jsonResponse({ ok: true }); // Silently drop
     }
+    logger.info("email", "Sender allowed", { senderEmail });
+  } else {
+    logger.info("email", "No allowlist configured, accepting all senders");
   }
 
   // Extract content
@@ -438,8 +447,19 @@ export async function handleEmailInbound(
   const content = inbound.text || stripHtml(inbound.html || "");
 
   if (!content) {
+    logger.warn("email", "Email has no text content", {
+      channelId,
+      hasText: !!inbound.text,
+      hasHtml: !!inbound.html,
+      subject,
+    });
     return jsonResponse({ ok: true });
   }
+  logger.info("email", "Content extracted", {
+    channelId,
+    subject,
+    contentLength: content.length,
+  });
 
   // Extract email threading headers
   const emailMessageId = getHeader(inbound.headers, "Message-ID") ||
