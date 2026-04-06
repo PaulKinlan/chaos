@@ -840,13 +840,17 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'channelMessageReceived': {
-      // Open a new column for the incoming channel message
+      // Open a column for the incoming channel message — reuse if one exists for this agent
       const agentId = msg.agentId as string;
       const channelLabel = msg.channelLabel as string || 'Channel';
       const from = msg.from as string || 'unknown';
       const content = msg.content as string || '';
 
-      const col = addColumn(agentId, true);
+      // Reuse existing column for this agent if one is streaming or was recently used
+      let col = getColumnForAgent(agentId);
+      if (!col) {
+        col = addColumn(agentId, false); // false = reuse existing, don't duplicate
+      }
       if (col) {
         // Rename the column header to show channel name
         const headerName = col.columnEl.querySelector('.column-agent-name');
