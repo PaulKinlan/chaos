@@ -228,9 +228,67 @@ export async function handleEmailInbound(
 ): Promise<Response> {
   logger.info("email", "Incoming email inbound webhook");
 
+  // Verify Resend/Svix webhook signature if signing secret is configured
+  const signingSecret = Deno.env.get("RESEND_WEBHOOK_SECRET");
+  const bodyText = await req.text();
+
+  if (signingSecret) {
+    const svixId = req.headers.get("svix-id");
+    const svixTimestamp = req.headers.get("svix-timestamp");
+    const svixSignature = req.headers.get("svix-signature");
+
+    if (!svixId || !svixTimestamp || !svixSignature) {
+      logger.warn("email", "Missing Svix signature headers");
+      return jsonResponse({ error: "Missing signature headers" }, 401);
+    }
+
+    // Verify timestamp freshness (within 5 minutes)
+    const ts = parseInt(svixTimestamp, 10);
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - ts) > 300) {
+      logger.warn("email", "Svix timestamp too old", { svixTimestamp });
+      return jsonResponse({ error: "Timestamp too old" }, 401);
+    }
+
+    // Compute expected signature: HMAC-SHA256 of "{svix-id}.{svix-timestamp}.{body}"
+    // The signing secret from Resend starts with "whsec_" and is base64-encoded after that prefix
+    const secretBytes = Uint8Array.from(
+      atob(signingSecret.replace(/^whsec_/, "")),
+      (c) => c.charCodeAt(0),
+    );
+    const signPayload = `${svixId}.${svixTimestamp}.${bodyText}`;
+    const key = await crypto.subtle.importKey(
+      "raw",
+      secretBytes,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sig = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(signPayload),
+    );
+    const expectedSig = btoa(String.fromCharCode(...new Uint8Array(sig)));
+
+    // Svix sends multiple signatures separated by spaces, each prefixed with version
+    const signatures = svixSignature.split(" ");
+    const valid = signatures.some((s) => {
+      const parts = s.split(",");
+      return parts.length === 2 && parts[1] === expectedSig;
+    });
+
+    if (!valid) {
+      logger.warn("email", "Invalid Svix signature");
+      return jsonResponse({ error: "Invalid signature" }, 401);
+    }
+
+    logger.info("email", "Svix signature verified");
+  }
+
   let rawPayload: unknown;
   try {
-    rawPayload = await req.json();
+    rawPayload = JSON.parse(bodyText);
   } catch {
     logger.error("email", "Invalid JSON body in email inbound webhook");
     return jsonResponse({ error: "Invalid JSON body" }, 400);
