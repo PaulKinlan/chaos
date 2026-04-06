@@ -48,6 +48,18 @@ import { toolRegistry } from './tools/lookup/registry.js';
 import { getFallbackModels, listProviders, type ModelOption } from './agents/provider-registry.js';
 import type { ToolMeta } from './tools/lookup/types.js';
 
+// ── Help content (bundled at build time) ──
+import chatHelp from '../docs/help/chat.md?raw';
+import jobsHelp from '../docs/help/jobs.md?raw';
+import artifactsHelp from '../docs/help/artifacts.md?raw';
+import channelsHelp from '../docs/help/channels.md?raw';
+import hooksHelp from '../docs/help/hooks.md?raw';
+import memoryHelp from '../docs/help/memory.md?raw';
+import messagesHelp from '../docs/help/messages.md?raw';
+import tasksHelp from '../docs/help/tasks.md?raw';
+import agentSettingsHelp from '../docs/help/agent-settings.md?raw';
+import globalSettingsHelp from '../docs/help/global-settings.md?raw';
+
 // ── Configure marked ──
 
 marked.setOptions({
@@ -514,6 +526,102 @@ document.getElementById('btn-global-settings-sidebar')?.addEventListener('click'
 document.getElementById('btn-add-agent-sidebar')?.addEventListener('click', () => {
   // Trigger the same create agent modal as the top bar + button
   document.getElementById('btn-add-agent')?.click();
+});
+
+// ══════════════════════════════════════════
+// ── Help System
+// ══════════════════════════════════════════
+
+const helpContent: Record<string, { title: string; content: string }> = {
+  chat: { title: 'Help: Chat', content: chatHelp },
+  tasks: { title: 'Help: Jobs', content: jobsHelp },
+  artifacts: { title: 'Help: Artifacts', content: artifactsHelp },
+  channels: { title: 'Help: Channels', content: channelsHelp },
+  hooks: { title: 'Help: Hooks', content: hooksHelp },
+  files: { title: 'Help: Agent Memory', content: memoryHelp },
+  messages: { title: 'Help: Messages', content: messagesHelp },
+  'scheduled-tasks': { title: 'Help: Scheduled Tasks', content: tasksHelp },
+  'agent-settings': { title: 'Help: Agent Settings', content: agentSettingsHelp },
+  'global-settings': { title: 'Help: Global Settings', content: globalSettingsHelp },
+};
+
+// Human-readable labels for the "Ask the agent" pre-fill
+const helpViewLabels: Record<string, string> = {
+  chat: 'Chat',
+  tasks: 'Jobs',
+  artifacts: 'Artifacts',
+  channels: 'Channels',
+  hooks: 'Hooks',
+  files: 'Agent Memory',
+  messages: 'Messages',
+  'scheduled-tasks': 'Scheduled Tasks',
+  'agent-settings': 'Agent Settings',
+  'global-settings': 'Global Settings',
+};
+
+let currentHelpView: string | null = null;
+
+function showHelp(viewName: string): void {
+  const entry = helpContent[viewName];
+  if (!entry) return;
+
+  currentHelpView = viewName;
+
+  const dialog = document.getElementById('help-dialog') as HTMLDialogElement;
+  const titleEl = document.getElementById('help-dialog-title')!;
+  const bodyEl = document.getElementById('help-dialog-body')!;
+
+  titleEl.textContent = entry.title;
+  const rendered = marked.parse(entry.content);
+  bodyEl.innerHTML = DOMPurify.sanitize(rendered as string);
+
+  dialog.showModal();
+}
+
+// Wire up help dialog close buttons
+const helpDialog = document.getElementById('help-dialog') as HTMLDialogElement;
+document.getElementById('help-dialog-close')!.addEventListener('click', () => {
+  helpDialog.close();
+});
+document.getElementById('help-dialog-close-btn')!.addEventListener('click', () => {
+  helpDialog.close();
+});
+
+// Click backdrop to close
+helpDialog.addEventListener('click', (e) => {
+  if (e.target === helpDialog) helpDialog.close();
+});
+
+// "Ask the agent" button — switch to chat and pre-fill
+document.getElementById('help-dialog-ask-agent')!.addEventListener('click', () => {
+  const label = currentHelpView ? (helpViewLabels[currentHelpView] || currentHelpView) : 'this view';
+  helpDialog.close();
+
+  // Switch to chat view
+  activeView = 'chat';
+  sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === activeView));
+  updateViewVisibility();
+  updateHash();
+
+  // Pre-fill the first chat column's input
+  setTimeout(() => {
+    const firstTextarea = document.querySelector('#columns-container .chat-input-area textarea') as HTMLTextAreaElement | null;
+    if (firstTextarea) {
+      firstTextarea.value = `I need help with ${label}`;
+      firstTextarea.focus();
+      // Trigger auto-resize
+      firstTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }, 100);
+});
+
+// Wire up all help buttons (event delegation)
+document.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('.help-btn[data-help]') as HTMLElement | null;
+  if (btn) {
+    const viewName = btn.dataset.help;
+    if (viewName) showHelp(viewName);
+  }
 });
 
 function loadCurrentViewData(): void {

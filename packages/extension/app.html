@@ -855,6 +855,37 @@
       color: var(--text-primary);
     }
 
+    /* Drag-to-reorder */
+    .column-drag-handle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      padding: 2px;
+      border-radius: 4px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+    }
+
+    .column-drag-handle:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+
+    .column-drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .chat-column.column-dragging {
+      opacity: 0.5;
+    }
+
+    .chat-column.column-drop-target {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-subtle), 0 2px 8px var(--shadow-color, rgba(0,0,0,0.15));
+    }
+
     /* Column add picker dropdown */
     .column-add-picker {
       position: fixed;
@@ -3051,6 +3082,133 @@
         min-width: 280px;
       }
     }
+
+    /* ── Help Button ── */
+    .help-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1px solid var(--border-default);
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1;
+      transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+      flex-shrink: 0;
+    }
+
+    .help-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-secondary);
+    }
+
+    /* ── Help Dialog ── */
+    .help-dialog {
+      background: var(--bg-raised);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      padding: 0;
+      max-width: 560px;
+      width: 90%;
+      max-height: 80vh;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.3);
+    }
+
+    .help-dialog::backdrop {
+      background: rgba(0,0,0,0.6);
+    }
+
+    .help-dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--sp-4) var(--sp-6);
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .help-dialog-header h2 {
+      font-size: var(--text-lg);
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .help-dialog-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+    }
+
+    .help-dialog-close:hover {
+      color: var(--text-primary);
+      background: var(--bg-surface);
+    }
+
+    .help-dialog-body {
+      padding: var(--sp-4) var(--sp-6);
+      overflow-y: auto;
+      max-height: calc(80vh - 120px);
+      font-size: var(--text-sm);
+      line-height: 1.7;
+      color: var(--text-secondary);
+    }
+
+    .help-dialog-body h1 {
+      font-size: var(--text-lg);
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0 0 var(--sp-3) 0;
+    }
+
+    .help-dialog-body h3 {
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: var(--sp-4) 0 var(--sp-2) 0;
+    }
+
+    .help-dialog-body p {
+      margin: 0 0 var(--sp-2) 0;
+    }
+
+    .help-dialog-body ul {
+      margin: 0 0 var(--sp-2) 0;
+      padding-left: var(--sp-5);
+    }
+
+    .help-dialog-body li {
+      margin-bottom: var(--sp-1);
+    }
+
+    .help-dialog-body code {
+      background: var(--bg-surface);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      font-family: var(--font-mono);
+    }
+
+    .help-dialog-footer {
+      padding: var(--sp-3) var(--sp-6);
+      border-top: 1px solid var(--border-default);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
   </style>
 </head>
 <body>
@@ -3127,7 +3285,10 @@
       </div>
 
       <!-- ════════ Chat View ════════ -->
-      <div class="view-panel" id="view-chat">
+      <div class="view-panel" id="view-chat" style="position:relative;">
+        <button class="help-btn" data-help="chat" title="Help: Chat" style="position:absolute;top:8px;right:8px;z-index:10;">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
         <div class="columns-container" id="columns-container">
           <!-- Columns rendered dynamically by app.ts -->
         </div>
@@ -3141,6 +3302,9 @@
         <div class="view-padded">
           <div class="section-header">
             <h2>Jobs</h2>
+            <button class="help-btn" data-help="tasks" title="Help: Jobs">
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </button>
           </div>
           <div class="filter-bar" id="tasks-filter-bar">
             <select id="tasks-filter-agent">
@@ -3170,6 +3334,9 @@
         <div class="view-padded">
           <div class="section-header">
             <h2>Messages</h2>
+            <button class="help-btn" data-help="messages" title="Help: Messages">
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </button>
           </div>
           <p style="font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--sp-4); line-height: 1.5;">Messages sent and received by this agent.</p>
           <div class="filter-bar" id="messages-filter-bar">
@@ -3196,6 +3363,9 @@
         <div class="view-padded">
           <div class="section-header">
             <h2>Artifacts</h2>
+            <button class="help-btn" data-help="artifacts" title="Help: Artifacts">
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </button>
           </div>
           <div class="filter-bar" id="artifacts-filter-bar">
             <select id="artifacts-filter-agent">
@@ -3218,6 +3388,9 @@
         <div class="view-padded">
           <div class="section-header">
             <h2>Channels</h2>
+            <button class="help-btn" data-help="channels" title="Help: Channels">
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </button>
           </div>
           <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:16px;">Connect external channels (webhooks, Discord, Telegram) to your agents via a relay server.</p>
           <div id="channels-section">
@@ -3312,7 +3485,10 @@
       </div>
 
       <!-- ════════ Files View ════════ -->
-      <div class="view-panel" id="view-files">
+      <div class="view-panel" id="view-files" style="position:relative;">
+        <button class="help-btn" data-help="files" title="Help: Agent Memory" style="position:absolute;top:8px;right:8px;z-index:10;">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
         <div class="files-container">
           <div class="files-tree-panel">
             <div class="files-tree-header">Agent Memory</div>
@@ -3339,7 +3515,12 @@
         <div class="view-padded">
           <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;">
             <h2>Hooks</h2>
-            <button class="btn btn-primary btn-sm" id="hooks-btn-create">+ Create Hook</button>
+            <div style="display:flex;gap:var(--sp-2);align-items:center;">
+              <button class="help-btn" data-help="hooks" title="Help: Hooks">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </button>
+              <button class="btn btn-primary btn-sm" id="hooks-btn-create">+ Create Hook</button>
+            </div>
           </div>
 
           <!-- Hook Presets Palette -->
@@ -3410,7 +3591,10 @@
       </div>
 
       <!-- ════════ Agent Settings View ════════ -->
-      <div class="view-panel" id="view-agent-settings">
+      <div class="view-panel" id="view-agent-settings" style="position:relative;">
+        <button class="help-btn" data-help="agent-settings" title="Help: Agent Settings" style="position:absolute;top:8px;right:8px;z-index:10;">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
         <div class="view-padded" id="agent-settings-content">
           <div class="empty-state">
             <p>Select an agent to view its settings.</p>
@@ -3423,6 +3607,9 @@
         <div class="view-padded">
           <div class="section-header">
             <h2>Global Settings</h2>
+            <button class="help-btn" data-help="global-settings" title="Help: Global Settings">
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </button>
           </div>
           <div class="settings-grid">
             <div class="settings-card" style="grid-column: 1 / -1;">
@@ -3648,6 +3835,24 @@
       Delete Agent
     </button>
   </div>
+
+  <!-- ══════ Help Dialog ══════ -->
+  <dialog class="help-dialog" id="help-dialog">
+    <div class="help-dialog-header">
+      <h2 id="help-dialog-title">Help</h2>
+      <button class="help-dialog-close" id="help-dialog-close" title="Close">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="help-dialog-body" id="help-dialog-body"></div>
+    <div class="help-dialog-footer">
+      <button class="btn btn-ghost btn-sm" id="help-dialog-close-btn">Close</button>
+      <button class="btn btn-primary btn-sm" id="help-dialog-ask-agent">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Ask the agent
+      </button>
+    </div>
+  </dialog>
 
   <script type="module" src="src/app.ts"></script>
 </body>
