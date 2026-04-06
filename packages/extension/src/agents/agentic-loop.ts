@@ -403,6 +403,17 @@ async function buildAgenticSystemPrompt(
 ## Autonomous Task Mode
 
 You are running an autonomous task. Work through it step by step.
+
+### Planning Phase (FIRST STEP)
+Before starting work on any non-trivial task:
+1. **Assess what expertise this task requires** — does it need design, coding, research, writing, or domain-specific knowledge?
+2. **Check your installed skills** — use \`list_skills\` to see what you already have
+3. **Search for relevant skills** — if the task needs expertise you don't have, call \`search_skills\` with keywords describing what you need. If a useful skill is found, call \`auto_install_skill\` to install it before proceeding.
+4. **Plan your approach** — break the task into steps, then execute
+
+Skip the skill search for simple questions or tasks you can handle with your existing knowledge and tools.
+
+### Execution
 Use your tools to gather information, do analysis, and produce output.
 When you have completed the task, respond with your final summary
 without calling any more tools.`);
