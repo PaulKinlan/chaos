@@ -669,6 +669,7 @@ interface ChatColumn {
   currentStepStartTime: number | null;
   currentStepNumber: number;
   currentProgressEntries: AgenticProgressEntry[];
+  isChannelColumn?: boolean; // true if created by a channel/hook/task message, not user chat
 }
 
 let columns: ChatColumn[] = [];
@@ -840,16 +841,18 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'channelMessageReceived': {
-      // Open a column for the incoming channel message — reuse if one exists for this agent
+      // Open a column for the incoming channel message
+      // NEVER take over the user's existing chat column
       const agentId = msg.agentId as string;
       const channelLabel = msg.channelLabel as string || 'Channel';
       const from = msg.from as string || 'unknown';
       const content = msg.content as string || '';
 
-      // Reuse existing column for this agent if one is streaming or was recently used
-      let col = getColumnForAgent(agentId);
+      // Only reuse an existing CHANNEL column for this agent (not user chat columns)
+      let col = columns.find(c => c.agentId === agentId && c.isChannelColumn);
       if (!col) {
-        col = addColumn(agentId, false); // false = reuse existing, don't duplicate
+        col = addColumn(agentId, true); // true = allow duplicate (separate from user chat)
+        if (col) col.isChannelColumn = true;
       }
       if (col) {
         // Rename the column header to show channel name
