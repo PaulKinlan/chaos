@@ -9,8 +9,9 @@
 import { streamText, stepCountIs, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { opfs } from '../storage/opfs.js';
-import { getAgentList, getApiKeys, getSettings } from '../storage/chrome-storage.js';
+import { getAgentList, getApiKeys } from '../storage/chrome-storage.js';
 import { createLanguageModel, getProviderSearchTools } from './provider-registry.js';
+import { getAgentModelConfig } from './model-config.js';
 import { getCommunicationTools } from '../tools/communication/index.js';
 import { getChromeTools } from '../tools/chrome/index.js';
 import { getWasmTools } from '../tools/wasm/index.js';
@@ -735,26 +736,19 @@ export async function runAgentLoop(
   // 2. Build system prompt
   const systemPrompt = await buildSystemPrompt(agentId, claudeMd, pageContext);
 
-  // 3. Get provider configuration and API key
-  const settings = await getSettings();
-  const apiKeys = await getApiKeys();
-  const apiKey = apiKeys[settings.activeProvider];
-  if (!apiKey) {
-    throw new Error(
-      `No API key configured for provider: ${settings.activeProvider}`,
-    );
-  }
-
-  const model = createLanguageModel(settings.activeProvider, apiKey, settings.model);
+  // 3. Get provider configuration and API key (agent override -> global settings)
+  const modelConfig = await getAgentModelConfig(agentId);
+  const model = createLanguageModel(modelConfig.provider, modelConfig.apiKey, modelConfig.model);
 
   // 4. Define tools (file tools + communication tools if visible/open)
   const agents = await getAgentList();
+  const apiKeys = await getApiKeys();
   const selfMeta = agents.find((a) => a.id === agentId);
   const isVisible = selfMeta && selfMeta.visibility !== 'private';
 
   // Build the full tool set (always available for resolution)
   const wasmTools = await getWasmTools();
-  const providerSearchTools = getProviderSearchTools(settings.activeProvider, apiKey);
+  const providerSearchTools = getProviderSearchTools(modelConfig.provider, modelConfig.apiKey);
   const isMaster = selfMeta?.master === true;
   const unfilteredTools: ToolSet = {
     ...createAgentTools(agentId),
@@ -780,7 +774,7 @@ export async function runAgentLoop(
     // Start with only the lookup_tools meta-tool; resolved tools are
     // injected dynamically when the agent calls lookup_tools
     // Pass the OpenAI key for embedding lookup (text-embedding-3-small)
-    const embeddingApiKey = apiKeys.openai || apiKey;
+    const embeddingApiKey = apiKeys.openai || modelConfig.apiKey;
     const lookup = createToolLookup(toolLookupStrategy, { apiKey: embeddingApiKey });
 
     tools = {

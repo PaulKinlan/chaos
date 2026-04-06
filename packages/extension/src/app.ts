@@ -45,7 +45,7 @@ import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionL
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
 import { toolRegistry } from './tools/lookup/registry.js';
-import { getFallbackModels, type ModelOption } from './agents/provider-registry.js';
+import { getFallbackModels, listProviders, type ModelOption } from './agents/provider-registry.js';
 import type { ToolMeta } from './tools/lookup/types.js';
 
 // ── Configure marked ──
@@ -3300,6 +3300,35 @@ async function loadAgentSettings(): Promise<void> {
         </div>
       </div>
 
+      <details class="agent-settings-section" id="agent-model-config-section">
+        <summary style="cursor:pointer;user-select:none;">
+          <h3 style="display:inline;">Model</h3>
+          <span id="agent-model-effective" style="font-size:var(--text-xs);color:var(--text-muted);margin-left:var(--sp-2);"></span>
+        </summary>
+        <p style="font-size:var(--text-xs);color:var(--text-muted);margin:var(--sp-3) 0;">
+          Override the global provider and model for this agent. Leave as "Use Global Default" to follow the global settings.
+        </p>
+        <div class="agent-settings-field">
+          <label for="agent-provider-select">Provider</label>
+          <select id="agent-provider-select">
+            <option value="">Use Global Default</option>
+          </select>
+        </div>
+        <div class="agent-settings-field">
+          <label for="agent-model-select">Model</label>
+          <select id="agent-model-select">
+            <option value="">(provider default)</option>
+          </select>
+        </div>
+        <div class="agent-settings-field">
+          <label for="agent-custom-model">Custom Model ID</label>
+          <input type="text" id="agent-custom-model" placeholder="e.g. gemini-2.5-flash, claude-haiku-4-5">
+        </div>
+        <div style="margin-top:var(--sp-3);">
+          <button class="btn btn-primary btn-sm" id="btn-save-agent-model">Save Model Configuration</button>
+        </div>
+      </details>
+
       <details class="agent-settings-section">
         <summary style="cursor:pointer;user-select:none;"><h3 style="display:inline;">Tools</h3></summary>
         <p style="font-size:var(--text-xs);color:var(--text-muted);margin:var(--sp-3) 0;">
@@ -3388,6 +3417,104 @@ async function loadAgentSettings(): Promise<void> {
       await sendMsg({ type: 'updateAgentVisibility', agentId: meta.id, visibility: newVis });
       sendPortMessage({ type: 'listAgents' });
     });
+
+    // ── Model Configuration ──
+    {
+      const providerSelect = document.getElementById('agent-provider-select') as HTMLSelectElement;
+      const modelSelect = document.getElementById('agent-model-select') as HTMLSelectElement;
+      const customModelInput = document.getElementById('agent-custom-model') as HTMLInputElement;
+      const effectiveLabel = document.getElementById('agent-model-effective') as HTMLSpanElement;
+
+      // Populate provider dropdown
+      const allProviders = listProviders();
+      // Get global settings to show current default in the label
+      let globalSettings: { activeProvider: string; model?: string } = { activeProvider: 'anthropic' };
+      try {
+        const sr = await sendMsg<{ settings: { activeProvider: string; model?: string } }>({ type: 'getSettings' });
+        globalSettings = sr.settings;
+      } catch { /* use defaults */ }
+
+      const globalProviderLabel = allProviders.find(p => p.id === globalSettings.activeProvider)?.displayName || globalSettings.activeProvider;
+      providerSelect.options[0].textContent = `Use Global Default (${globalProviderLabel})`;
+      for (const p of allProviders) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.displayName;
+        providerSelect.appendChild(opt);
+      }
+
+      // Populate model dropdown based on selected provider
+      function populateAgentModels(providerId: string): void {
+        const models = getFallbackModels(providerId || globalSettings.activeProvider);
+        modelSelect.innerHTML = '<option value="">(provider default)</option>';
+        for (const m of models) {
+          const opt = document.createElement('option');
+          opt.value = m.value;
+          opt.textContent = m.label;
+          modelSelect.appendChild(opt);
+        }
+      }
+
+      // Update effective label
+      function updateEffectiveLabel(): void {
+        const prov = providerSelect.value || globalSettings.activeProvider;
+        const provLabel = allProviders.find(p => p.id === prov)?.displayName || prov;
+        const mdl = customModelInput.value.trim() || modelSelect.value;
+        if (!providerSelect.value && !modelSelect.value && !customModelInput.value.trim()) {
+          effectiveLabel.textContent = `(using global: ${provLabel}${globalSettings.model ? ' / ' + globalSettings.model : ''})`;
+        } else {
+          effectiveLabel.textContent = `(${provLabel}${mdl ? ' / ' + mdl : ''})`;
+        }
+      }
+
+      // Set current values from agent meta
+      if (meta.provider) {
+        providerSelect.value = meta.provider;
+      }
+      populateAgentModels(meta.provider || globalSettings.activeProvider);
+      if (meta.model) {
+        const models = getFallbackModels(meta.provider || globalSettings.activeProvider);
+        const inList = models.some(m => m.value === meta.model);
+        if (inList) {
+          modelSelect.value = meta.model!;
+        } else {
+          customModelInput.value = meta.model!;
+        }
+      }
+      updateEffectiveLabel();
+
+      // Provider change -> repopulate models
+      providerSelect.addEventListener('change', () => {
+        populateAgentModels(providerSelect.value || globalSettings.activeProvider);
+        modelSelect.value = '';
+        customModelInput.value = '';
+        updateEffectiveLabel();
+      });
+      modelSelect.addEventListener('change', () => {
+        if (modelSelect.value) customModelInput.value = '';
+        updateEffectiveLabel();
+      });
+      customModelInput.addEventListener('input', () => {
+        if (customModelInput.value.trim()) modelSelect.value = '';
+        updateEffectiveLabel();
+      });
+
+      // Save model configuration
+      document.getElementById('btn-save-agent-model')!.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-save-agent-model') as HTMLButtonElement;
+        btn.textContent = 'Saving...';
+        btn.disabled = true;
+        const provider = providerSelect.value || undefined;
+        const model = customModelInput.value.trim() || modelSelect.value || undefined;
+        await sendMsg({ type: 'updateAgentModel', agentId: meta.id, provider, model });
+        // Update the local meta for UI consistency
+        (meta as any).provider = provider;
+        (meta as any).model = model;
+        updateEffectiveLabel();
+        btn.textContent = 'Saved!';
+        setTimeout(() => { btn.textContent = 'Save Model Configuration'; btn.disabled = false; }, 2000);
+      });
+    }
 
     // Render tools configuration
     const MINIMUM_TOOLS = ['read_file', 'list_directory'];

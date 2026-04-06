@@ -12,6 +12,8 @@ export interface AgentMeta {
   master?: boolean;     // true for the master agent
   temporary?: boolean;  // true for master-created temporary agents
   createdBy?: string;   // agentId of the master that created this sub-agent
+  provider?: 'anthropic' | 'openai' | 'google' | 'openrouter' | 'ollama';  // per-agent provider override
+  model?: string;       // per-agent model override (e.g. 'gemini-2.5-flash')
 }
 
 // ── Settings (stored in chrome.storage.sync) ──

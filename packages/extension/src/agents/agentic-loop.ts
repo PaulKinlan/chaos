@@ -14,8 +14,9 @@
 import { streamText, stepCountIs, tool, type ToolSet, type ModelMessage } from 'ai';
 import { z } from 'zod';
 import { opfs } from '../storage/opfs.js';
-import { getAgentList, getApiKeys, getSettings } from '../storage/chrome-storage.js';
+import { getAgentList, getApiKeys } from '../storage/chrome-storage.js';
 import { createLanguageModel, getProviderSearchTools } from './provider-registry.js';
+import { getAgentModelConfig } from './model-config.js';
 import { getCommunicationTools } from '../tools/communication/index.js';
 import { getChromeTools } from '../tools/chrome/index.js';
 import { getWasmTools } from '../tools/wasm/index.js';
@@ -540,22 +541,18 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
     });
   }
 
-  // 3. Get provider configuration
-  const settings = await getSettings();
-  const apiKeys = await getApiKeys();
-  const apiKey = apiKeys[settings.activeProvider];
-  if (!apiKey) {
-    throw new Error(`No API key configured for provider: ${settings.activeProvider}`);
-  }
-  const model = createLanguageModel(settings.activeProvider, apiKey, settings.model);
+  // 3. Get provider configuration (agent override -> global settings)
+  const modelConfig = await getAgentModelConfig(agentId);
+  const model = createLanguageModel(modelConfig.provider, modelConfig.apiKey, modelConfig.model);
 
   // 4. Build tools
   const agents = await getAgentList();
+  const apiKeys = await getApiKeys();
   const selfMeta = agents.find((a) => a.id === agentId);
   const isVisible = selfMeta && selfMeta.visibility !== 'private';
 
   const wasmTools = await getWasmTools();
-  const providerSearchTools = getProviderSearchTools(settings.activeProvider, apiKey);
+  const providerSearchTools = getProviderSearchTools(modelConfig.provider, modelConfig.apiKey);
   const isMaster = selfMeta?.master === true;
   const unfilteredTools: ToolSet = {
     ...createAgentTools(agentId),

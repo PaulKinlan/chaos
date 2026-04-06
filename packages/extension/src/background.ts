@@ -1444,6 +1444,15 @@ async function handleOneShotMessage(
       return { updated: true };
     }
 
+    case 'updateAgentModel': {
+      const modelUpdates: Partial<{ provider?: string; model?: string }> = {};
+      // Allow clearing overrides by passing undefined/empty
+      modelUpdates.provider = (msg.provider as string | undefined) || undefined;
+      modelUpdates.model = (msg.model as string | undefined) || undefined;
+      await updateAgentMeta(msg.agentId as string, modelUpdates as Partial<import('./storage/types.js').AgentMeta>);
+      return { updated: true };
+    }
+
     case 'getMessages': {
       const messages = await getMessages();
       return { messages };
