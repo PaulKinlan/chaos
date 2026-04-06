@@ -2751,10 +2751,10 @@ function renderTasks(): void {
   // Populate and read agent filter
   const filterAgentId = populateAgentFilter('tasks-filter-agent');
 
-  // Filter scheduled tasks - show all or filtered by agent
+  // Scheduled tasks only shown in per-agent view (not the global Jobs board)
   const agentScheduled = filterAgentId
     ? scheduledTasks.filter((t) => t.agentId === filterAgentId)
-    : scheduledTasks;
+    : [];
 
   // Filter collaborative tasks - show all or filtered by agent
   const filterStatus = (document.getElementById('tasks-filter-status') as HTMLSelectElement).value;
