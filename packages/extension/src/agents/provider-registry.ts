@@ -54,7 +54,11 @@ const anthropicProvider: ProviderConfig = {
   },
   supportsBaseUrl: true,
   createModel: (apiKey, modelId, baseURL) => {
-    const provider = createAnthropic({ apiKey, ...(baseURL ? { baseURL } : {}) });
+    const provider = createAnthropic({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      headers: { 'anthropic-dangerous-direct-browser-access': 'true' },
+    });
     return provider(modelId ?? 'claude-sonnet-4-6');
   },
 };
