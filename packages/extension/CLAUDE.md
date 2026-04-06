@@ -46,3 +46,13 @@ When in doubt:
 - Use inline SVG icons, never emoji, for UI elements
 - **NEVER use `alert()`, `confirm()`, or `prompt()`** — use `<dialog>` elements instead. The native dialogs break the UI aesthetic and block the thread. Use the existing `showConfirm()` helper or create a new `<dialog>` for custom flows.
 - **NEVER use `innerHTML` for user-provided content** — always escape with `escapeHtml()` first
+- **NEVER use dynamic `import()` in the service worker** (background.ts) — it's disallowed by the HTML spec. Use static imports at the top of the file.
+- **NEVER use `chrome.runtime.sendMessage` from the service worker to itself** — it doesn't work reliably. Use direct function references (e.g. setTaskExecutor, setMessageNotifier patterns).
+- **NEVER use `setTimeout` in the service worker for deferred execution** — the SW can suspend before the callback fires. Use direct calls or Chrome alarms.
+
+## Relay server changes
+
+If your extension change affects how the extension communicates with the relay server (relay-client.ts, poller.ts, ws-client.ts), also check:
+- `docs/relay-openapi.yaml` — does the spec still match?
+- `packages/server/tests/conformance/` — do conformance tests still pass?
+- See the root CLAUDE.md for full relay server change guidelines.

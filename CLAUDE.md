@@ -39,6 +39,32 @@ Or from root using workspace commands:
 
 If you're making 3+ related changes in a batch, update docs BEFORE committing the code changes.
 
+## Relay server changes (MANDATORY)
+
+When modifying `packages/server/`:
+
+1. **Run `deno fmt packages/server/src/`** — format all server code
+2. **Run `deno check packages/server/src/main.ts`** — type-check must pass
+3. **Run conformance tests** — start the server locally, then run:
+   ```
+   cd packages/server && RELAY_URL=http://localhost:8787 deno task test:conformance
+   ```
+   All 38+ tests must pass. If your change breaks a test, fix the server OR update the test (and document why).
+4. **Update `docs/relay-openapi.yaml`** if you:
+   - Add, remove, or rename an endpoint
+   - Change request/response schemas
+   - Modify authentication requirements
+   - Change rate limits
+   - Add new channel types
+5. **Update conformance tests** (`packages/server/tests/conformance/`) if you:
+   - Add new endpoints (add test coverage)
+   - Change existing endpoint behaviour (update assertions)
+   - Modify auth flow
+   - Change the WebSocket protocol
+6. **Update `docs/api.md`** for any endpoint changes
+
+The relay server is a public protocol. Third-party clients and servers depend on it being stable and well-documented. Every change must keep the spec, tests, and implementation in sync.
+
 ## Data store migrations (CRITICAL)
 
 **NEVER change stored data formats without a migration path.** Users have agents, conversations, settings, and scheduled tasks that must survive extension updates.
