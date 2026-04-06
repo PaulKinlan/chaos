@@ -1136,6 +1136,11 @@ Deno.serve(serveOptions, async (req: Request) => {
             String,
           );
         }
+        if (Array.isArray(body.metadata.allowedSenders)) {
+          channel.metadata["allowedSenders"] = body.metadata.allowedSenders.map(
+            String,
+          );
+        }
       }
       // Persist the updated channel by re-adding it
       await removeChannel(session.userId, channelId);

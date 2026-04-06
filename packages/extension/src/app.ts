@@ -4733,6 +4733,27 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
             <p style="color:var(--text-muted);margin-top:4px;">Tip: message the bot and check server logs to find your Telegram user ID.</p>
           </div>
         </details>`;
+    } else if (ch.type === 'email') {
+      const inboundAddr = ch.metadata['inboundAddress'] as string || ch.metadata['fromAddress'] as string || '';
+      const verified = ch.metadata['verified'] as boolean || false;
+      const allowedSenders = (ch.metadata['allowedSenders'] as string[] || []).join(', ');
+      const mailtoHref = inboundAddr ? `mailto:${encodeURIComponent(inboundAddr)}?subject=${encodeURIComponent('Test')}&body=${encodeURIComponent('Test email to CHAOS agent')}` : '';
+
+      detailHtml = `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">`;
+      detailHtml += inboundAddr ? `Inbound: <a href="${mailtoHref}" style="color:var(--text-link, #58a6ff);">${escapeHtml(inboundAddr)}</a>` : '';
+      detailHtml += ` | ${verified ? '<span style="color:#3fb950;">Verified</span>' : '<span style="color:#d29922;">Not verified</span>'}`;
+      detailHtml += `</div>`;
+      detailHtml += `
+        <details style="margin-top:6px;font-size:var(--text-xs);">
+          <summary style="cursor:pointer;color:var(--text-secondary);user-select:none;">Allowed Senders${allowedSenders ? ` (${(ch.metadata['allowedSenders'] as string[]).length})` : ''}</summary>
+          <div style="margin-top:4px;">
+            <p style="color:var(--text-muted);margin-bottom:4px;">Comma-separated email addresses. Only emails from these addresses will be processed.</p>
+            <div style="display:flex;gap:4px;align-items:center;">
+              <input type="text" class="allowlist-input" data-channel-id="${ch.id}" value="${escapeHtml(allowedSenders)}" placeholder="e.g. user@example.com, team@company.com" style="flex:1;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);font-family:var(--font-mono);">
+              <button class="btn btn-primary btn-xs btn-save-allowlist" data-channel-id="${ch.id}">Save</button>
+            </div>
+          </div>
+        </details>`;
     }
 
     const chName = (ch as Record<string, unknown>).name as string || '';
@@ -4802,10 +4823,13 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       const channelId = (btn as HTMLElement).dataset.channelId!;
       const input = listDiv.querySelector(`.allowlist-input[data-channel-id="${channelId}"]`) as HTMLInputElement;
       if (!input) return;
-      const allowedUsers = input.value.split(',').map(s => s.trim()).filter(Boolean);
+      const values = input.value.split(',').map(s => s.trim()).filter(Boolean);
+      // Determine the right metadata key based on channel type
+      const channel = channels.find(c => c.id === channelId);
+      const metaKey = channel?.type === 'email' ? 'allowedSenders' : 'allowedUsers';
       try {
-        channelLog(`Updating allowlist for ${channelId.slice(0, 8)}... (${allowedUsers.length} users)`);
-        await relayUpdateChannel(config, channelId, { metadata: { allowedUsers } });
+        channelLog(`Updating allowlist for ${channelId.slice(0, 8)}... (${values.length} entries)`);
+        await relayUpdateChannel(config, channelId, { metadata: { [metaKey]: values } });
         channelLog('Allowlist updated');
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
