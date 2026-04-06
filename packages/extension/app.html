@@ -3211,6 +3211,219 @@
       justify-content: space-between;
       align-items: center;
     }
+
+    /* ── Onboarding Dialog ── */
+    .onboarding-dialog {
+      background: var(--bg-raised);
+      border: 1px solid var(--border-default);
+      border-radius: 16px;
+      padding: 0;
+      max-width: 480px;
+      width: 92%;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+      overflow: hidden;
+    }
+
+    .onboarding-dialog::backdrop {
+      background: rgba(0,0,0,0.7);
+    }
+
+    .onboarding-content {
+      padding: var(--sp-8) var(--sp-6);
+    }
+
+    .onboarding-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .onboarding-icon {
+      color: var(--accent-text);
+      margin-bottom: var(--sp-4);
+    }
+
+    .onboarding-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0 0 var(--sp-1) 0;
+      color: var(--text-primary);
+    }
+
+    .onboarding-subtitle {
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--accent-text);
+      margin: 0 0 var(--sp-4) 0;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .onboarding-desc {
+      font-size: var(--text-base);
+      color: var(--text-secondary);
+      margin: 0 0 var(--sp-2) 0;
+      line-height: 1.6;
+      max-width: 360px;
+    }
+
+    .onboarding-desc-muted {
+      color: var(--text-muted);
+      font-size: var(--text-sm);
+    }
+
+    .onboarding-actions {
+      margin-top: var(--sp-6);
+      display: flex;
+      justify-content: center;
+      gap: var(--sp-3);
+      width: 100%;
+    }
+
+    .onboarding-actions-split {
+      justify-content: space-between;
+    }
+
+    .onboarding-actions .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-2);
+    }
+
+    .onboarding-actions .btn svg {
+      flex-shrink: 0;
+    }
+
+    .onboarding-providers {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      margin: var(--sp-4) 0;
+      text-align: left;
+    }
+
+    .onboarding-provider-row {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      padding: var(--sp-3) var(--sp-4);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+    }
+
+    .onboarding-provider-row:hover {
+      border-color: var(--border-default);
+      background: var(--bg-surface);
+    }
+
+    .onboarding-provider-row:has(input:checked) {
+      border-color: var(--accent);
+      background: var(--accent-subtle);
+    }
+
+    .onboarding-provider-row input[type="radio"] {
+      accent-color: var(--accent);
+      margin: 0;
+      flex-shrink: 0;
+    }
+
+    .onboarding-provider-name {
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--text-primary);
+      flex: 1;
+    }
+
+    .onboarding-badge {
+      font-size: var(--text-xs);
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: var(--accent-subtle);
+      color: var(--accent-text);
+      font-weight: 500;
+    }
+
+    .onboarding-key-section {
+      width: 100%;
+      text-align: left;
+      margin-top: var(--sp-3);
+    }
+
+    .onboarding-key-label {
+      display: block;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: var(--sp-1);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .onboarding-key-input {
+      width: 100%;
+      padding: var(--sp-3);
+      background: var(--bg-base);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: var(--text-sm);
+      box-sizing: border-box;
+    }
+
+    .onboarding-key-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px oklch(55% 0.14 270 / 0.2);
+    }
+
+    .onboarding-key-help {
+      margin-top: var(--sp-2);
+      font-size: var(--text-xs);
+    }
+
+    .onboarding-key-help a {
+      color: var(--accent-text);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .onboarding-key-help a:hover {
+      text-decoration: underline;
+    }
+
+    .onboarding-error {
+      width: 100%;
+      margin-top: var(--sp-3);
+      padding: var(--sp-3);
+      background: var(--danger-subtle);
+      border: 1px solid var(--danger-border);
+      border-radius: 8px;
+      color: var(--danger-text);
+      font-size: var(--text-sm);
+      text-align: left;
+    }
+
+    .onboarding-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border-default);
+      border-top-color: var(--text-on-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -3722,6 +3935,14 @@
               <p style="font-size:var(--text-xs);color:var(--text-secondary);margin:12px 0;">Agents that were archived (removed but with data preserved). You can restore them or permanently delete their data.</p>
               <div id="archived-agents-list"></div>
             </details>
+            <div class="settings-card" style="grid-column: 1 / -1;">
+              <h3>Setup</h3>
+              <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Re-run the initial setup wizard to change your provider or API key.</p>
+              <button class="btn btn-ghost" id="btn-rerun-onboarding">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+                Re-run setup wizard
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -57,7 +57,7 @@ describe('Agent Lifecycle', () => {
     expect(agents[0].id).toBe(agent.id);
     expect(agents[0].name).toBe('Bob');
     expect(agents[0].role).toBe('writer');
-    expect(agents[0].visibility).toBe('private');
+    expect(agents[0].visibility).toBe('visible');
   });
 
   it('update agent visibility persists', async () => {

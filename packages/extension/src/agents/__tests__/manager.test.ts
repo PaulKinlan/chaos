@@ -120,7 +120,7 @@ describe('Agent Manager', () => {
 
       expect(agent.name).toBe('TestBot');
       expect(agent.role).toBe('neutral');
-      expect(agent.visibility).toBe('private');
+      expect(agent.visibility).toBe('visible');
       expect(agent.id).toMatch(/^agent-/);
       expect(agent.createdAt).toBeTruthy();
       expect(agent.bookmarkFolderId).toBeTruthy();

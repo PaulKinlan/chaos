@@ -99,8 +99,8 @@ describe('Agent Communication', () => {
   it('private agent does not appear in agent discovery', async () => {
     const privateAgent = await createAgent('Hidden', 'researcher');
     const visibleAgent = await createAgent('Visible', 'writer');
-    await updateAgentMeta(visibleAgent.id, { visibility: 'visible' });
-    // privateAgent stays private
+    // Explicitly set one to private
+    await updateAgentMeta(privateAgent.id, { visibility: 'private' });
 
     const agents = await getAgentList();
     const discoverable = agents.filter(

@@ -92,6 +92,45 @@ const mockModel = { modelId: 'claude-sonnet-4-6' };
 vi.mock('../provider-registry.js', () => ({
   createLanguageModel: vi.fn(() => mockModel),
   getProviderSearchTools: vi.fn(() => ({})),
+  getProvider: vi.fn(() => ({ defaultModel: 'claude-sonnet-4-6' })),
+}));
+
+// ── Additional tool mocks ──
+
+vi.mock('../../tools/communication/index.js', () => ({
+  getCommunicationTools: vi.fn(() => ({})),
+}));
+
+vi.mock('../../tools/chrome/index.js', () => ({
+  getChromeTools: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../tools/wasm/index.js', () => ({
+  getWasmTools: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../tools/web/index.js', () => ({
+  getWebTools: vi.fn(() => ({})),
+}));
+
+vi.mock('../../tools/hooks/index.js', () => ({
+  getHookTools: vi.fn(() => ({})),
+}));
+
+vi.mock('../../tools/master/index.js', () => ({
+  getMasterTools: vi.fn(() => ({})),
+}));
+
+vi.mock('../../tools/skills/index.js', () => ({
+  getSkillTools: vi.fn(() => ({})),
+}));
+
+vi.mock('../../tools/permissions.js', () => ({
+  checkPermission: vi.fn(async () => true),
+}));
+
+vi.mock('../skills.js', () => ({
+  buildSkillsPromptSection: vi.fn(async () => ''),
 }));
 
 // ── Import after mocks ──

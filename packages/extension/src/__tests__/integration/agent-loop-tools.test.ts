@@ -89,7 +89,8 @@ describe('Agent Loop Tools', () => {
 
     it('communication tools are not included for private agents in the loop', async () => {
       const agent = await createAgent('PrivateAgent', 'researcher');
-      // Default visibility is 'private'
+      // Default visibility is now 'visible', so explicitly set to 'private'
+      await updateAgentMeta(agent.id, { visibility: 'private' });
 
       // The agent loop checks visibility before including comm tools:
       // isVisible = selfMeta && selfMeta.visibility !== 'private'

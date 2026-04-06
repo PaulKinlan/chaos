@@ -43,6 +43,7 @@ import DOMPurify from 'dompurify';
 import type { AgentMeta, AgentMessage, Task, TaskEvent, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
+import { showOnboarding, resetOnboarding } from './ui/onboarding.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
 import { toolRegistry } from './tools/lookup/registry.js';
 import { getFallbackModels, listProviders, type ModelOption } from './agents/provider-registry.js';
@@ -4344,6 +4345,19 @@ async function getCurrentApiKeys(): Promise<ApiKeys> {
   return result.keys;
 }
 
+// ── Re-run onboarding wizard ──
+document.getElementById('btn-rerun-onboarding')?.addEventListener('click', async () => {
+  await resetOnboarding();
+  const result = await showOnboarding(sendMsg);
+  if (result) {
+    // Refresh settings UI
+    const col = getFocusedColumn();
+    if (col) addChatSystemMessageToColumn(col, 'Setup wizard completed. Provider updated.');
+    // Reload provider settings in the settings view
+    loadSettings();
+  }
+});
+
 // ── Mic Test ──
 
 const btnTestMic = document.getElementById('btn-test-mic');
@@ -6314,6 +6328,39 @@ document.getElementById('hook-refine-btn')!.addEventListener('click', () => {
 async function init(): Promise<void> {
   // Connect the port for chat streaming
   port = connectPort();
+
+  // Check if onboarding is needed (no API keys configured)
+  try {
+    const keys = await sendMsg<{ keys: ApiKeys }>({ type: 'getApiKeys' });
+    const hasAnyKey = Object.values(keys.keys).some(k => k && k.length > 0);
+    if (!hasAnyKey) {
+      const completed = await chrome.storage.local.get('chaos:onboarding-completed');
+      if (!completed['chaos:onboarding-completed']) {
+        const result = await showOnboarding(sendMsg);
+        if (result) {
+          // Onboarding completed — now load agents and trigger intro
+          sendPortMessage({ type: 'listAgents' });
+          // Wait briefly for agents to load, then send intro message
+          setTimeout(() => {
+            const masterAgent = agents.find((a) => a.master);
+            const targetAgent = masterAgent || agents[0];
+            if (targetAgent) {
+              sendPortMessage({
+                type: 'agenticChat',
+                agentId: targetAgent.id,
+                message: 'Introduce yourself to a new user. Explain what you can do in a friendly, concise way. Suggest 3 things they could try right now.',
+              });
+            }
+          }, 2000);
+          return;
+        }
+        // User somehow closed without completing — continue to normal load
+      }
+    }
+  } catch (err) {
+    console.warn('[app] Onboarding check failed, continuing normally:', err);
+  }
+
   sendPortMessage({ type: 'listAgents' });
 }
 

@@ -429,6 +429,9 @@ describe('Agent discovery', () => {
       name: 'Bob',
       role: 'writer',
       visibility: 'open',
+      master: false,
+      provider: null,
+      model: null,
     });
   });
 
@@ -470,6 +473,7 @@ describe('getCommunicationTools', () => {
       'artifact_list',
       'artifact_publish',
       'artifact_read',
+      'channel_send',
       'message_read',
       'message_send',
       'task_create',

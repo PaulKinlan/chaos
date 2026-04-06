@@ -110,6 +110,7 @@ const mockModel = { modelId: 'claude-sonnet-4-6' };
 vi.mock('../provider-registry.js', () => ({
   createLanguageModel: vi.fn(() => mockModel),
   getProviderSearchTools: vi.fn(() => ({})),
+  getProvider: vi.fn(() => ({ defaultModel: 'claude-sonnet-4-6' })),
 }));
 
 // ── Tools mocks ──
@@ -136,6 +137,18 @@ vi.mock('../../tools/hooks/index.js', () => ({
 
 vi.mock('../../tools/permissions.js', () => ({
   checkPermission: vi.fn(async () => true),
+}));
+
+vi.mock('../../tools/master/index.js', () => ({
+  getMasterTools: vi.fn(() => ({})),
+}));
+
+vi.mock('../../tools/skills/index.js', () => ({
+  getSkillTools: vi.fn(() => ({})),
+}));
+
+vi.mock('../skills.js', () => ({
+  buildSkillsPromptSection: vi.fn(async () => ''),
 }));
 
 // ── Import after mocks ──

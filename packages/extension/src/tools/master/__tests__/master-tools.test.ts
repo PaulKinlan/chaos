@@ -85,7 +85,7 @@ vi.mock('../../../storage/shared.js', () => ({
 
 import { opfs } from '../../../storage/opfs.js';
 import { createCreateAgentTool } from '../create-agent.js';
-import { createAssignTaskTool } from '../assign-task.js';
+import { createAssignTaskTool, setTaskExecutor } from '../assign-task.js';
 import { createGetAgentStatusTool } from '../get-agent-status.js';
 import { createFindAgentTool } from '../find-agent.js';
 
@@ -139,7 +139,7 @@ describe('Master Tools', () => {
   });
 
   describe('assign_task', () => {
-    it('creates a task and triggers an alarm', async () => {
+    it('creates a task and triggers the task executor', async () => {
       // Set up an agent to assign to
       const targetAgentId = 'agent-target-001';
       setupAgents([
@@ -148,6 +148,10 @@ describe('Master Tools', () => {
       ]);
       // Write CLAUDE.md so getAgent works
       (opfs as any)._store.set(`agents/${targetAgentId}/CLAUDE.md`, '# Researcher');
+
+      // Install a mock task executor
+      const mockExecutor = vi.fn();
+      setTaskExecutor(mockExecutor);
 
       const tool = createAssignTaskTool(MASTER_ID);
       const result = await tool.execute!(
@@ -164,11 +168,14 @@ describe('Master Tools', () => {
       expect(taskEvents[0].data.owner).toBe(targetAgentId);
       expect(taskEvents[0].data.subject).toBe('Research AI');
 
-      // Verify alarm was created
-      expect(mockAlarms.create).toHaveBeenCalledWith(
-        expect.stringContaining(`agentic:${targetAgentId}`),
-        { delayInMinutes: 0.08 },
+      // Verify task executor was called with the agent and task IDs
+      expect(mockExecutor).toHaveBeenCalledWith(
+        targetAgentId,
+        (result as any).taskId,
       );
+
+      // Clean up
+      setTaskExecutor(null as any);
     });
 
     it('returns error for non-existent agent', async () => {
