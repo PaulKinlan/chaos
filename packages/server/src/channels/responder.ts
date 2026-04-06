@@ -159,7 +159,8 @@ async function sendEmailReplyAsync(
     const channel = session.channels.find((ch) => ch.id === payload.channelId);
     if (!channel || channel.type !== "email") return;
 
-    const fromAddress = channel.metadata["fromAddress"] as string | undefined;
+    const fromAddress = (channel.metadata["inboundAddress"] as string) ||
+      (channel.metadata["fromAddress"] as string) || undefined;
     const toAddress = payload.metadata?.["senderAddress"] as
       | string
       | undefined;
@@ -174,6 +175,12 @@ async function sendEmailReplyAsync(
         {
           userId,
           channelId: payload.channelId,
+          fromAddress: fromAddress || "(missing)",
+          toAddress: toAddress || "(missing)",
+          metadataKeys: Object.keys(channel.metadata).join(","),
+          payloadMetadataKeys: payload.metadata
+            ? Object.keys(payload.metadata).join(",")
+            : "(none)",
         },
       );
       return;
