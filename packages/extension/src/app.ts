@@ -3353,12 +3353,12 @@ async function loadAgentSettings(): Promise<void> {
         <div class="agent-settings-field" style="margin-top:var(--sp-4);border-top:1px solid var(--border-default);padding-top:var(--sp-3);">
           <label>API Key</label>
           <div style="display:flex;gap:var(--sp-3);align-items:center;margin-bottom:var(--sp-2);">
-            <label style="display:flex;align-items:center;gap:var(--sp-1);cursor:pointer;font-size:var(--text-sm);">
-              <input type="radio" name="agent-apikey-mode" value="global" id="agent-apikey-global" checked>
+            <label style="display:flex;align-items:center;gap:var(--sp-1);cursor:pointer;font-size:var(--text-xs);">
+              <input type="radio" name="agent-apikey-mode" value="global" id="agent-apikey-global" checked style="width:14px;height:14px;margin:0;">
               Use Global
             </label>
-            <label style="display:flex;align-items:center;gap:var(--sp-1);cursor:pointer;font-size:var(--text-sm);">
-              <input type="radio" name="agent-apikey-mode" value="custom" id="agent-apikey-custom">
+            <label style="display:flex;align-items:center;gap:var(--sp-1);cursor:pointer;font-size:var(--text-xs);">
+              <input type="radio" name="agent-apikey-mode" value="custom" id="agent-apikey-custom" style="width:14px;height:14px;margin:0;">
               Custom
             </label>
           </div>
