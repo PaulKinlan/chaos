@@ -300,6 +300,13 @@ export async function handleEmailInbound(
   let resendEmailId: string | undefined;
 
   const payload = rawPayload as Record<string, unknown>;
+  logger.info("email", "Webhook payload format", {
+    hasType: !!payload.type,
+    hasData: !!payload.data,
+    topLevelKeys: Object.keys(payload).join(","),
+    payloadType: payload.type,
+  });
+
   if (
     payload.type && payload.data &&
     typeof payload.data === "object"
@@ -307,24 +314,49 @@ export async function handleEmailInbound(
     const webhookPayload = rawPayload as ResendWebhookPayload;
     inbound = webhookPayload.data;
     resendEmailId = webhookPayload.data.id;
-  } else {
-    inbound = rawPayload as ResendInboundEmail;
-  }
-
-  // If text and html are both empty but we have an email ID, fetch full content from Resend API
-  if (!inbound.text && !inbound.html && resendEmailId) {
-    logger.info("email", "Body empty in webhook, fetching from Resend API", {
+    logger.info("email", "Parsed as Resend webhook format", {
       emailId: resendEmailId,
     });
-    const fetched = await fetchEmailFromResend(resendEmailId);
-    if (fetched) {
-      inbound.text = fetched.text;
-      inbound.html = fetched.html;
-      if (
-        fetched.headers && (!inbound.headers || inbound.headers.length === 0)
-      ) {
-        inbound.headers = fetched.headers;
+  } else {
+    inbound = rawPayload as ResendInboundEmail;
+    // Try to extract ID from flat format
+    resendEmailId = (payload.id as string) ||
+      (payload.email_id as string) || undefined;
+    logger.info("email", "Parsed as flat format", {
+      emailId: resendEmailId,
+      hasFrom: !!inbound.from,
+      hasTo: !!inbound.to,
+    });
+  }
+
+  // If text and html are both empty, try to fetch full content from Resend API
+  if (!inbound.text && !inbound.html) {
+    if (resendEmailId) {
+      logger.info("email", "Body empty, fetching from Resend API", {
+        emailId: resendEmailId,
+      });
+      const fetched = await fetchEmailFromResend(resendEmailId);
+      if (fetched) {
+        inbound.text = fetched.text;
+        inbound.html = fetched.html;
+        if (
+          fetched.headers &&
+          (!inbound.headers || inbound.headers.length === 0)
+        ) {
+          inbound.headers = fetched.headers;
+        }
+        logger.info("email", "Fetched content from Resend API", {
+          hasText: !!inbound.text,
+          hasHtml: !!inbound.html,
+          textLength: inbound.text?.length || 0,
+        });
+      } else {
+        logger.warn("email", "Failed to fetch content from Resend API");
       }
+    } else {
+      logger.warn("email", "Body empty and no email ID to fetch from API", {
+        topLevelKeys: Object.keys(payload).join(","),
+      });
     }
   }
 
