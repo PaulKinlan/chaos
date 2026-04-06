@@ -51,3 +51,17 @@ jobs:
       - name: Unit tests
         run: deno task test
         working-directory: packages/server
+
+      - name: Start server for conformance tests
+        run: CHAOS_ADMIN_KEY=test deno run --allow-net --allow-env --unstable-kv packages/server/src/main.ts &
+        env:
+          PORT: 8787
+
+      - name: Wait for server
+        run: sleep 3
+
+      - name: Conformance tests
+        run: deno task test:conformance
+        working-directory: packages/server
+        env:
+          RELAY_URL: http://localhost:8787
