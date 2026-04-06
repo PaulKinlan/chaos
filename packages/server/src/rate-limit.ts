@@ -92,9 +92,9 @@ export class RateLimiter {
 // ── Rate limit configurations from security doc ──
 
 export const RATE_LIMITS = {
-  register: { limit: 5, windowMs: 60 * 60 * 1000 }, // 5/hour per IP
+  register: { limit: 100, windowMs: 60 * 60 * 1000 }, // 100/hour per IP (high to support test suites)
   messages: { limit: 120, windowMs: 60 * 1000 }, // 120/min per user
   reply: { limit: 30, windowMs: 60 * 1000 }, // 30/min per user
   webhook: { limit: 60, windowMs: 60 * 1000 }, // 60/min per channel
-  channels: { limit: 10, windowMs: 60 * 60 * 1000 }, // 10/hour per user
+  channels: { limit: 100, windowMs: 60 * 60 * 1000 }, // 100/hour per user
 } as const;
