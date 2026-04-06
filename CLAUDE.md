@@ -15,18 +15,34 @@ chaos/
   plans/         — Implementation plans
 ```
 
-## Before pushing changes
+## Before EVERY commit (MANDATORY)
 
+You MUST perform a security review and code review of your own changes before committing. Do not skip this. Review the diff you are about to commit and check:
+
+### Security Review
+- **Secrets**: No hardcoded API keys, tokens, passwords, or credentials in the diff
+- **XSS**: No `innerHTML` with unsanitized input — must use `escapeHtml()` or DOMPurify
+- **CSP**: No `eval()` or `new Function()` (blocked by MV3 extension CSP)
+- **Service Worker**: No dynamic `import()`, no `chrome.runtime.sendMessage` to self, no `setTimeout` for deferred execution in background.ts
+- **Input validation**: User/external input is validated before use
+- **Credentials in logs**: No API keys, bot tokens, or passwords in log statements
+- **File paths**: OPFS paths validated against directory traversal
+
+### Code Review
+- **UI**: No `alert()`/`confirm()`/`prompt()` — use `<dialog>` elements. Inline SVG icons, never emoji.
+- **Types**: No untyped `any` unless justified. New AgentMeta fields must be optional.
+- **Backwards compat**: Old data without new fields still loads correctly
+- **Logging**: New features have console logging for debugging
+- **Error handling**: Errors are caught and reported, not swallowed silently
+
+### Build Verification
 From root or `packages/extension/`:
 1. Run `npx tsc --noEmit` - TypeScript must compile clean
 2. Run `npx vite build` - build must succeed
 3. Run `npx vitest run` - all tests must pass
-4. Grep for patterns you just fixed across the entire codebase (e.g. if you fix `__dirname`, check all files)
+4. Grep for patterns you just fixed across the entire codebase
 
-Or from root using workspace commands:
-- `npm run build` — builds the extension
-- `npm test` — runs extension tests
-- `npm run dev` — starts extension dev server
+If ANY security issue is found in your diff, fix it before committing. Do not commit with known security issues.
 
 ## After making changes (MANDATORY)
 
