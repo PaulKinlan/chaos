@@ -7,7 +7,7 @@ set -euo pipefail
 echo "Running pre-commit checks..."
 
 # Check for hardcoded secrets
-if git diff --cached --no-color | grep -iE '(sk-ant-|sk-or-|AIza|sk-[a-zA-Z0-9]{48})' | grep -v '^\+.*placeholder\|^\+.*example\|^\+.*\.md' | head -3; then
+if git diff --cached --no-color | grep -iE '(sk-ant-|sk-or-|AIza|sk-[a-zA-Z0-9]{48})' | grep -v 'placeholder\|example\|\.md' | head -3; then
   echo "WARNING: Possible API key detected in staged changes"
   echo "Review the above lines before committing."
 fi
