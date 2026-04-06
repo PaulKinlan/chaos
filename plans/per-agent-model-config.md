@@ -2,7 +2,7 @@
 
 ## Status
 
-All phases: TODO. Currently all agents share a single global provider/model setting.
+All phases complete. Agents can have individual provider, model, and API key overrides.
 
 ---
 
@@ -210,8 +210,17 @@ This is a safe additive change:
 - [x] Custom model text input
 - [x] Save persists to AgentMeta
 
-### Phase 3: Per-Agent API Keys — TODO
-### Phase 4: Visual Indicators — TODO
+### Phase 3: Per-Agent API Keys — DONE
+- [x] API key UI in agent settings: "Use Global" / "Custom" radio with password input
+- [x] Custom key saved to `chrome.storage.local` under `chaos:agentApiKey:{agentId}`
+- [x] `getAgentModelConfig` checks per-agent key before falling back to global pool
+- [x] Key value never displayed or logged — placeholder shown when key is stored
+
+### Phase 4: Visual Indicators — DONE
+- [x] Chat column header shows provider badge when agent has custom model override
+- [x] Sidebar agent list shows model subtitle when agent has custom override
+- [x] `find_agent` tool returns provider/model fields in response
+- [x] `agent_discover` tool returns provider/model fields in response
 
 ## Open Questions
 

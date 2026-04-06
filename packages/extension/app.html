@@ -518,6 +518,15 @@
       white-space: nowrap;
       flex: 1;
     }
+    .sidebar-agent-item .agent-model-subtitle {
+      font-size: 9px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 0;
+      max-width: 80px;
+    }
     .sidebar-agent-sub {
       padding-left: var(--sp-6);
     }
@@ -795,6 +804,16 @@
     .chat-column-header .role-badge {
       font-size: var(--text-xs);
       flex-shrink: 0;
+    }
+
+    .chat-column-header .column-provider-badge {
+      font-size: 10px;
+      color: var(--text-muted);
+      background: var(--bg-hover);
+      padding: 1px 6px;
+      border-radius: var(--radius-sm);
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .chat-column-header .column-close-btn {

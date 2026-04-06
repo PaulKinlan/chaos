@@ -297,6 +297,18 @@ function renderAgentTabs(): void {
     nameEl.textContent = agent.name;
     summary.appendChild(nameEl);
 
+    // Show model subtitle when agent has a custom model override
+    if (agent.provider || agent.model) {
+      const modelSubEl = document.createElement('span');
+      modelSubEl.className = 'agent-model-subtitle';
+      const provLabel = agent.provider
+        ? (listProviders().find(p => p.id === agent.provider)?.displayName || agent.provider)
+        : '';
+      const mdlLabel = agent.model || '';
+      modelSubEl.textContent = mdlLabel ? (provLabel ? `${provLabel} / ${mdlLabel}` : mdlLabel) : provLabel;
+      summary.appendChild(modelSubEl);
+    }
+
     // Double-click to switch to agent's chat
     summary.addEventListener('dblclick', (e) => {
       e.preventDefault();
@@ -1342,8 +1354,22 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
   // Header
   const headerEl = document.createElement('div');
   headerEl.className = 'chat-column-header';
+  // Build provider badge if agent has a custom model override
+  let providerBadgeHtml = '';
+  if (agent && (agent.provider || agent.model)) {
+    const providerLabel = agent.provider
+      ? (listProviders().find(p => p.id === agent.provider)?.displayName || agent.provider)
+      : '';
+    const modelLabel = agent.model || '';
+    const badgeText = providerLabel || modelLabel;
+    if (badgeText) {
+      providerBadgeHtml = `<span class="column-provider-badge">${escapeHtml(badgeText)}</span>`;
+    }
+  }
+
   headerEl.innerHTML = `
     <span class="column-agent-name">${escapeHtml(aName)}</span>
+    ${providerBadgeHtml}
     <span class="role-badge ${roleBadgeClass(aRole)}">${escapeHtml(aRole)}</span>
     <button class="column-clear-btn" title="Clear conversation">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
@@ -3324,6 +3350,22 @@ async function loadAgentSettings(): Promise<void> {
           <label for="agent-custom-model">Custom Model ID</label>
           <input type="text" id="agent-custom-model" placeholder="e.g. gemini-2.5-flash, claude-haiku-4-5">
         </div>
+        <div class="agent-settings-field" style="margin-top:var(--sp-4);border-top:1px solid var(--border-default);padding-top:var(--sp-3);">
+          <label>API Key</label>
+          <div style="display:flex;gap:var(--sp-3);align-items:center;margin-bottom:var(--sp-2);">
+            <label style="display:flex;align-items:center;gap:var(--sp-1);cursor:pointer;font-size:var(--text-sm);">
+              <input type="radio" name="agent-apikey-mode" value="global" id="agent-apikey-global" checked>
+              Use Global
+            </label>
+            <label style="display:flex;align-items:center;gap:var(--sp-1);cursor:pointer;font-size:var(--text-sm);">
+              <input type="radio" name="agent-apikey-mode" value="custom" id="agent-apikey-custom">
+              Custom
+            </label>
+          </div>
+          <div id="agent-apikey-input-wrapper" style="display:none;">
+            <input type="password" id="agent-apikey-input" placeholder="Enter API key for this agent" style="width:100%;">
+          </div>
+        </div>
         <div style="margin-top:var(--sp-3);">
           <button class="btn btn-primary btn-sm" id="btn-save-agent-model">Save Model Configuration</button>
         </div>
@@ -3499,6 +3541,38 @@ async function loadAgentSettings(): Promise<void> {
         updateEffectiveLabel();
       });
 
+      // ── API Key mode (global vs custom) ──
+      const apiKeyGlobalRadio = document.getElementById('agent-apikey-global') as HTMLInputElement;
+      const apiKeyCustomRadio = document.getElementById('agent-apikey-custom') as HTMLInputElement;
+      const apiKeyInputWrapper = document.getElementById('agent-apikey-input-wrapper') as HTMLDivElement;
+      const apiKeyInput = document.getElementById('agent-apikey-input') as HTMLInputElement;
+
+      // Load existing per-agent key to determine initial state
+      const agentKeyStorageKey = `chaos:agentApiKey:${meta.id}`;
+      chrome.storage.local.get(agentKeyStorageKey, (result) => {
+        const existingKey = result[agentKeyStorageKey] as string | undefined;
+        if (existingKey) {
+          apiKeyCustomRadio.checked = true;
+          apiKeyGlobalRadio.checked = false;
+          apiKeyInputWrapper.style.display = '';
+          // Show a placeholder to indicate a key is stored, never the actual value
+          apiKeyInput.placeholder = 'Key saved (enter new value to replace)';
+        }
+      });
+
+      apiKeyGlobalRadio.addEventListener('change', () => {
+        if (apiKeyGlobalRadio.checked) {
+          apiKeyInputWrapper.style.display = 'none';
+          apiKeyInput.value = '';
+        }
+      });
+      apiKeyCustomRadio.addEventListener('change', () => {
+        if (apiKeyCustomRadio.checked) {
+          apiKeyInputWrapper.style.display = '';
+          apiKeyInput.focus();
+        }
+      });
+
       // Save model configuration
       document.getElementById('btn-save-agent-model')!.addEventListener('click', async () => {
         const btn = document.getElementById('btn-save-agent-model') as HTMLButtonElement;
@@ -3507,6 +3581,17 @@ async function loadAgentSettings(): Promise<void> {
         const provider = providerSelect.value || undefined;
         const model = customModelInput.value.trim() || modelSelect.value || undefined;
         await sendMsg({ type: 'updateAgentModel', agentId: meta.id, provider, model });
+
+        // Save or clear per-agent API key
+        if (apiKeyCustomRadio.checked && apiKeyInput.value.trim()) {
+          await chrome.storage.local.set({ [agentKeyStorageKey]: apiKeyInput.value.trim() });
+          apiKeyInput.value = '';
+          apiKeyInput.placeholder = 'Key saved (enter new value to replace)';
+        } else if (apiKeyGlobalRadio.checked) {
+          await chrome.storage.local.remove(agentKeyStorageKey);
+          apiKeyInput.placeholder = 'Enter API key for this agent';
+        }
+
         // Update the local meta for UI consistency
         (meta as any).provider = provider;
         (meta as any).model = model;

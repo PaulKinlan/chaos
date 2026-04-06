@@ -46,6 +46,8 @@ export function createFindAgentTool(_agentId: string) {
             temporary: a.temporary ?? false,
             createdBy: a.createdBy,
             createdAt: a.createdAt,
+            provider: a.provider ?? null,
+            model: a.model ?? null,
           })),
         };
       } catch (err) {

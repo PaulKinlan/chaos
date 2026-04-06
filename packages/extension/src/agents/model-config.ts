@@ -39,8 +39,11 @@ export async function getAgentModelConfig(agentId: string): Promise<AgentModelCo
   const providerConfig = getProvider(provider);
   const model = agent?.model || settings.model || providerConfig.defaultModel;
 
-  // Resolve API key from the global pool for the resolved provider
-  const apiKey = apiKeys[provider];
+  // Resolve API key: per-agent override -> global pool for the resolved provider
+  const agentKeyStorageKey = `chaos:agentApiKey:${agentId}`;
+  const agentKeyResult = await chrome.storage.local.get(agentKeyStorageKey);
+  const agentKey = agentKeyResult[agentKeyStorageKey] as string | undefined;
+  const apiKey = agentKey || apiKeys[provider];
   if (!apiKey) {
     throw new Error(`No API key configured for provider: ${provider}`);
   }

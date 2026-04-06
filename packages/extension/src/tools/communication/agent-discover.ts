@@ -30,6 +30,8 @@ export function createAgentDiscoverTool(agentId: string) {
           role: a.role,
           visibility: a.visibility || 'visible',
           master: a.master ?? false,
+          provider: a.provider ?? null,
+          model: a.model ?? null,
         }));
     },
   });
