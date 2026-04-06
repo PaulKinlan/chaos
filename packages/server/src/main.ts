@@ -342,6 +342,11 @@ Deno.serve(serveOptions, async (req: Request) => {
             enabled: ch.enabled,
             botUsername: ch.metadata["botUsername"] as string | undefined,
             allowedUsers: ch.metadata["allowedUsers"] as string[] | undefined,
+            allowedSenders: ch.metadata["allowedSenders"] as
+              | string[]
+              | undefined,
+            inboundAddress: ch.metadata["inboundAddress"] as string | undefined,
+            verified: ch.metadata["verified"] as boolean | undefined,
             hasPairingCode: !!ch.metadata["pairingCode"],
           })),
           createdAt: s.createdAt,
@@ -1301,6 +1306,12 @@ async function load(){
             if(ch.hasPairingCode) detail+=' <span class="badge badge-pending">awaiting pairing</span>';
             else if(ch.allowedUsers&&ch.allowedUsers.length>0) detail+=' <span class="badge badge-paired">'+ch.allowedUsers.length+' user(s)</span>';
             else detail+=' <span class="badge badge-pending">open (no allowlist)</span>';
+          }else if(ch.type==='email'){
+            detail+=' '+(ch.inboundAddress||'');
+            detail+=' '+(ch.verified?'<span class="badge badge-paired">verified</span>':'<span class="badge badge-pending">not verified</span>');
+            if(ch.allowedSenders&&ch.allowedSenders.length>0) detail+=' <span class="badge badge-paired">'+ch.allowedSenders.length+' sender(s)</span>';
+          }else if(ch.type==='discord'){
+            detail+=' '+(ch.botUsername?'@'+esc(ch.botUsername):'');
           }else{
             detail+=' <span class="badge badge-webhook">webhook</span>';
           }
