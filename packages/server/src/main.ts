@@ -1356,7 +1356,7 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   .search-box::placeholder{color:#484f58}
   .pager{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:#8b949e}
   .pager-info{flex:1}
-  dialog{background:#161b22;color:#e1e4e8;border:1px solid #30363d;border-radius:12px;padding:0;max-width:800px;width:90vw;max-height:85vh;overflow:hidden}
+  dialog{background:#161b22;color:#e1e4e8;border:1px solid #30363d;border-radius:12px;padding:0;max-width:800px;width:90vw;max-height:85vh;overflow:hidden;position:fixed;inset:0;margin:auto}
   dialog::backdrop{background:rgba(0,0,0,0.6)}
   .dialog-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #30363d}
   .dialog-header h3{font-size:15px;color:#f0f3f6}
