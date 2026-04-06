@@ -714,13 +714,23 @@ async function fetchEmailFromResend(
  * Extract a header value from the headers array by name (case-insensitive).
  */
 function getHeader(
-  headers: ResendEmailHeader[] | undefined,
+  headers: ResendEmailHeader[] | Record<string, string> | undefined,
   name: string,
 ): string | undefined {
   if (!headers) return undefined;
   const lower = name.toLowerCase();
-  const header = headers.find((h) => h.name.toLowerCase() === lower);
-  return header?.value;
+  // Handle array format: [{ name: "Message-ID", value: "..." }]
+  if (Array.isArray(headers)) {
+    const header = headers.find((h) => h.name?.toLowerCase() === lower);
+    return header?.value;
+  }
+  // Handle object format: { "Message-ID": "..." }
+  if (typeof headers === "object") {
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() === lower) return v;
+    }
+  }
+  return undefined;
 }
 
 // ── Utility ──

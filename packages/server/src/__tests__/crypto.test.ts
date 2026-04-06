@@ -366,9 +366,9 @@ Deno.test("sanitizeMessage validates content", () => {
 
 // ── Message expiry tests ──
 
-Deno.test("Message expiry cleanup removes old messages", () => {
+Deno.test("Message expiry cleanup removes old messages", async () => {
   const testUserId = "expiry-test-user";
-  clearMessages(testUserId);
+  await clearMessages(testUserId);
 
   // Add a message with old timestamp (25 hours ago)
   const oldMsg: StoredMessage = {
@@ -380,7 +380,7 @@ Deno.test("Message expiry cleanup removes old messages", () => {
     content: "old message",
     timestamp: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
   };
-  addMessage(testUserId, oldMsg);
+  await addMessage(testUserId, oldMsg);
 
   // Add a recent message
   const newMsg: StoredMessage = {
@@ -392,23 +392,23 @@ Deno.test("Message expiry cleanup removes old messages", () => {
     content: "new message",
     timestamp: new Date().toISOString(),
   };
-  addMessage(testUserId, newMsg);
+  await addMessage(testUserId, newMsg);
 
-  assertEquals(getMessages(testUserId).length, 2);
+  assertEquals((await getMessages(testUserId)).length, 2);
 
   const removed = cleanupExpiredMessages();
   assertEquals(removed >= 1, true); // at least the old message was removed
 
-  const remaining = getMessages(testUserId);
+  const remaining = await getMessages(testUserId);
   assertEquals(remaining.length, 1);
   assertEquals(remaining[0].id, "new1");
 
-  clearMessages(testUserId);
+  await clearMessages(testUserId);
 });
 
-Deno.test("Message expiry cleanup keeps recent messages", () => {
+Deno.test("Message expiry cleanup keeps recent messages", async () => {
   const testUserId = "expiry-test-user-2";
-  clearMessages(testUserId);
+  await clearMessages(testUserId);
 
   const msg: StoredMessage = {
     id: "recent1",
@@ -419,12 +419,12 @@ Deno.test("Message expiry cleanup keeps recent messages", () => {
     content: "recent message",
     timestamp: new Date().toISOString(),
   };
-  addMessage(testUserId, msg);
+  await addMessage(testUserId, msg);
 
   const removed = cleanupExpiredMessages();
   // The recent message should not be removed
-  const remaining = getMessages(testUserId);
+  const remaining = await getMessages(testUserId);
   assertEquals(remaining.length, 1);
 
-  clearMessages(testUserId);
+  await clearMessages(testUserId);
 });
