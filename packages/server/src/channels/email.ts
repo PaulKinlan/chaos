@@ -329,35 +329,34 @@ export async function handleEmailInbound(
     });
   }
 
-  // If text and html are both empty, try to fetch full content from Resend API
-  if (!inbound.text && !inbound.html) {
-    if (resendEmailId) {
-      logger.info("email", "Body empty, fetching from Resend API", {
-        emailId: resendEmailId,
-      });
-      const fetched = await fetchEmailFromResend(resendEmailId);
-      if (fetched) {
-        inbound.text = fetched.text;
-        inbound.html = fetched.html;
-        if (
-          fetched.headers &&
-          (!inbound.headers || inbound.headers.length === 0)
-        ) {
-          inbound.headers = fetched.headers;
-        }
-        logger.info("email", "Fetched content from Resend API", {
-          hasText: !!inbound.text,
-          hasHtml: !!inbound.html,
-          textLength: inbound.text?.length || 0,
-        });
-      } else {
-        logger.warn("email", "Failed to fetch content from Resend API");
+  // Always fetch full content from Resend API (webhook often has empty body)
+  if (resendEmailId) {
+    logger.info("email", "Fetching full email from Resend API", {
+      emailId: resendEmailId,
+    });
+    const fetched = await fetchEmailFromResend(resendEmailId);
+    if (fetched) {
+      // Prefer API content over webhook content (more complete)
+      if (fetched.text) inbound.text = fetched.text;
+      if (fetched.html) inbound.html = fetched.html;
+      if (
+        fetched.headers && (!inbound.headers || inbound.headers.length === 0)
+      ) {
+        inbound.headers = fetched.headers;
       }
-    } else {
-      logger.warn("email", "Body empty and no email ID to fetch from API", {
-        topLevelKeys: Object.keys(payload).join(","),
+      logger.info("email", "Fetched content from Resend API", {
+        hasText: !!inbound.text,
+        hasHtml: !!inbound.html,
+        textLength: inbound.text?.length || 0,
       });
+    } else {
+      logger.warn(
+        "email",
+        "Failed to fetch from Resend API, using webhook data",
+      );
     }
+  } else {
+    logger.info("email", "No email ID available, using webhook data only");
   }
 
   // Extract the "to" address(es)
