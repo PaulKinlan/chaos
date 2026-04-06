@@ -265,6 +265,63 @@ export async function clearResponses(channelId: string): Promise<void> {
   }
 }
 
+/** Get all messages (inbound + outbound) for a specific user from KV. */
+export async function getMessagesForUser(
+  userId: string,
+  limit = 50,
+  cursor?: string,
+): Promise<{ messages: StoredMessage[]; cursor?: string }> {
+  const all: StoredMessage[] = [];
+
+  if (isKvAvailable() && getKv()) {
+    const kv = getKv()!;
+    // Inbound messages keyed by ["messages", userId, timestamp, id]
+    const msgIter = kv.list<StoredMessage>(
+      { prefix: ["messages", userId] },
+      { limit: limit * 2, reverse: true },
+    );
+    for await (const entry of msgIter) {
+      all.push(entry.value);
+    }
+
+    // Outbound responses keyed by ["responses", channelId, timestamp, id]
+    // We need to scan all responses and filter by userId
+    const respIter = kv.list<StoredMessage>(
+      { prefix: ["responses"] },
+      { limit: limit * 4, reverse: true },
+    );
+    for await (const entry of respIter) {
+      if (entry.value.userId === userId) {
+        all.push(entry.value);
+      }
+    }
+  } else {
+    const msgs = messageCache.get(userId) || [];
+    all.push(...msgs);
+    for (const resps of responseCache.values()) {
+      all.push(...resps.filter((r) => r.userId === userId));
+    }
+  }
+
+  all.sort((a, b) =>
+    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+
+  // Simple offset-based pagination using cursor (ISO timestamp of last item)
+  let filtered = all;
+  if (cursor) {
+    const cursorTime = new Date(cursor).getTime();
+    filtered = all.filter((m) => new Date(m.timestamp).getTime() < cursorTime);
+  }
+
+  const page = filtered.slice(0, limit);
+  const nextCursor = page.length === limit
+    ? page[page.length - 1].timestamp
+    : undefined;
+
+  return { messages: page, cursor: nextCursor };
+}
+
 /** Get all recent messages from KV (durable across isolate restarts). */
 export async function getAllRecentMessages(
   limit = 50,

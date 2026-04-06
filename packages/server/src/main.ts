@@ -439,6 +439,32 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
+  // Admin: get messages for a specific session
+  if (
+    url.pathname.match(/^\/admin\/sessions\/[^/]+\/messages$/) &&
+    method === "GET"
+  ) {
+    if (!(await verifyAdminSession(req))) return error("Unauthorized", 401);
+    const parts = url.pathname.split("/");
+    const targetUserId = parts[3];
+    const limit = Math.min(
+      parseInt(url.searchParams.get("limit") || "50"),
+      200,
+    );
+    const cursor = url.searchParams.get("cursor") || undefined;
+    try {
+      const { getMessagesForUser } = await import("./store.ts");
+      const result = await getMessagesForUser(targetUserId, limit, cursor);
+      return json(result);
+    } catch (err) {
+      logger.error("admin", "Failed to fetch session messages", {
+        userId: targetUserId,
+        error: String(err),
+      });
+      return json({ messages: [], error: String(err) });
+    }
+  }
+
   // Admin: delete a session
   if (url.pathname.startsWith("/admin/sessions/") && method === "DELETE") {
     if (!(await verifyAdminSession(req))) return error("Unauthorized", 401);
@@ -1296,7 +1322,7 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   .stat-value{font-size:24px;font-weight:600;color:#f0f3f6}
   .stat-label{font-size:11px;color:#8b949e;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px}
   .stat-ok{color:#3fb950}.stat-warn{color:#d29922}.stat-err{color:#f85149}
-  h2{font-size:16px;margin:24px 0 12px;color:#f0f3f6}
+  h2{font-size:16px;margin:24px 0 12px;color:#f0f3f6;display:flex;align-items:center;gap:12px}
   .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:12px}
   .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
   .card-title{font-size:14px;font-weight:600;color:#f0f3f6}
@@ -1306,39 +1332,193 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   .badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:500;margin-right:4px}
   .badge-telegram{background:#2b5278;color:#7bc8f6}
   .badge-webhook{background:#2d3a2d;color:#7ee787}
+  .badge-discord{background:#3b3f8a;color:#9ba3f5}
+  .badge-email{background:#3a2d2d;color:#f5b79b}
   .badge-in{background:#1f3a1f;color:#7ee787}
   .badge-out{background:#3a1f1f;color:#f0883e}
   .badge-paired{background:#1a3a1a;color:#3fb950}
   .badge-pending{background:#3a3a1a;color:#d29922}
   .channel-detail{font-size:11px;color:#8b949e;margin-top:2px}
   .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
-  .btn-logout{background:none;border:1px solid #30363d;border-radius:6px;color:#8b949e;padding:4px 12px;cursor:pointer;font-size:12px}
-  .btn-logout:hover{color:#f0f3f6;border-color:#8b949e}
-  .btn-refresh{background:none;border:1px solid #30363d;border-radius:6px;color:#58a6ff;padding:4px 12px;cursor:pointer;font-size:12px;margin-right:8px}
+  .btn{background:none;border:1px solid #30363d;border-radius:6px;color:#8b949e;padding:4px 12px;cursor:pointer;font-size:12px}
+  .btn:hover{color:#f0f3f6;border-color:#8b949e}
+  .btn-primary{color:#58a6ff;border-color:#58a6ff}
+  .btn-primary:hover{background:#58a6ff22}
+  .btn-danger{color:#f85149;border-color:#f85149}
+  .btn-danger:hover{background:#f8514922}
+  .btn-sm{padding:2px 8px;font-size:10px}
   #status{font-size:11px;color:#8b949e}
   .msg-content{max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:11px}
   .ts{font-size:11px;color:#8b949e;font-family:monospace}
   code{background:#21262d;padding:1px 4px;border-radius:3px;font-size:11px}
+  .search-box{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 12px;font-size:13px;width:260px}
+  .search-box:focus{outline:none;border-color:#58a6ff}
+  .search-box::placeholder{color:#484f58}
+  .pager{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:#8b949e}
+  .pager-info{flex:1}
+  dialog{background:#161b22;color:#e1e4e8;border:1px solid #30363d;border-radius:12px;padding:0;max-width:800px;width:90vw;max-height:85vh;overflow:hidden}
+  dialog::backdrop{background:rgba(0,0,0,0.6)}
+  .dialog-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #30363d}
+  .dialog-header h3{font-size:15px;color:#f0f3f6}
+  .dialog-body{padding:20px;overflow-y:auto;max-height:calc(85vh - 60px)}
+  .dialog-close{background:none;border:none;color:#8b949e;cursor:pointer;font-size:18px;padding:4px 8px;border-radius:4px}
+  .dialog-close:hover{color:#f0f3f6;background:#21262d}
+  .msg-row{padding:10px 0;border-bottom:1px solid #21262d;font-size:12px}
+  .msg-row:last-child{border-bottom:none}
+  .msg-meta{display:flex;gap:8px;align-items:center;margin-bottom:4px}
+  .msg-body{font-family:monospace;font-size:11px;color:#c9d1d9;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;background:#0d1117;padding:8px;border-radius:4px;margin-top:6px}
+  .empty{color:#8b949e;text-align:center;padding:24px;font-size:13px}
+  .section-controls{display:flex;align-items:center;gap:8px}
 </style></head><body>
 <div class="topbar">
   <div><h1>CHAOS Relay Admin</h1><div class="subtitle">Server dashboard — auto-refreshes every 10s</div></div>
   <div>
     <span id="status"></span>
-    <button class="btn-refresh" onclick="load()">Refresh</button>
-    <form action="/admin/logout" method="POST" style="display:inline"><button class="btn-logout" type="submit">Logout</button></form>
+    <button class="btn btn-primary" onclick="load()" style="margin-right:4px">Refresh</button>
+    <form action="/admin/logout" method="POST" style="display:inline"><button class="btn" type="submit">Logout</button></form>
   </div>
 </div>
 <div class="grid" id="stats"></div>
 
-<h2>Sessions &amp; Channels</h2>
+<h2>Sessions &amp; Channels <span class="section-controls"><input type="text" class="search-box" id="session-search" placeholder="Filter sessions..." oninput="filterSessions()"></span></h2>
 <div id="sessions"></div>
+<div class="pager" id="session-pager"></div>
 
-<h2>Recent Messages</h2>
+<h2>Recent Messages <span class="section-controls"><input type="text" class="search-box" id="msg-search" placeholder="Filter messages..." oninput="filterMessages()"></span></h2>
 <table><thead><tr><th>Time</th><th>Dir</th><th>From</th><th>Channel</th><th>User</th><th>Content</th></tr></thead><tbody id="messages"></tbody></table>
+<div class="pager" id="msg-pager"></div>
+
+<dialog id="session-dialog">
+  <div class="dialog-header">
+    <h3 id="dialog-title">Session Messages</h3>
+    <button class="dialog-close" onclick="document.getElementById('session-dialog').close()">&times;</button>
+  </div>
+  <div class="dialog-body" id="dialog-body"></div>
+</dialog>
 
 <script>
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function ago(ts){const s=Math.floor((Date.now()-new Date(ts).getTime())/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';return Math.floor(s/3600)+'h ago'}
+const PAGE_SIZE = 10;
+const MSG_PAGE_SIZE = 20;
+let allSessions = [];
+let allMessages = [];
+let sessionPage = 0;
+let msgPage = 0;
+let sessionFilter = '';
+let msgFilter = '';
+
+function esc(s){if(s==null)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
+function ago(ts){const s=Math.floor((Date.now()-new Date(ts).getTime())/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'}
+function fmtTime(ts){return new Date(ts).toLocaleString()}
+
+function matchSession(s,q){
+  if(!q)return true;
+  q=q.toLowerCase();
+  if(s.userId.toLowerCase().includes(q))return true;
+  for(const ch of s.channels){
+    if(ch.type.includes(q))return true;
+    if(ch.id.toLowerCase().includes(q))return true;
+    if((ch.botUsername||'').toLowerCase().includes(q))return true;
+    if((ch.inboundAddress||'').toLowerCase().includes(q))return true;
+  }
+  return false;
+}
+
+function matchMessage(m,q){
+  if(!q)return true;
+  q=q.toLowerCase();
+  return m.from.toLowerCase().includes(q)||m.channelType.toLowerCase().includes(q)||
+    m.channelId.toLowerCase().includes(q)||m.userId.toLowerCase().includes(q)||
+    m.content.toLowerCase().includes(q)||m.direction.toLowerCase().includes(q);
+}
+
+function renderSessions(){
+  const filtered=allSessions.filter(s=>matchSession(s,sessionFilter));
+  const total=filtered.length;
+  const pages=Math.max(1,Math.ceil(total/PAGE_SIZE));
+  sessionPage=Math.min(sessionPage,pages-1);
+  const start=sessionPage*PAGE_SIZE;
+  const page=filtered.slice(start,start+PAGE_SIZE);
+
+  const sc=document.getElementById('sessions');
+  if(page.length===0){
+    sc.innerHTML='<div class="empty">No sessions'+(sessionFilter?' matching "'+esc(sessionFilter)+'"':'')+'</div>';
+  } else {
+    sc.innerHTML=page.map(s=>{
+      const wsStatus=s.wsConnections>0?'<span class="stat-ok">'+s.wsConnections+' connected</span>':'<span style="color:#8b949e">disconnected</span>';
+      const channels=s.channels.length===0?'<div style="color:#8b949e;font-size:12px;padding:4px 0">No channels</div>':
+        s.channels.map(ch=>{
+          let detail='<code>'+esc(ch.id.slice(0,12))+'</code>';
+          if(ch.type==='telegram'){
+            detail+=' @'+esc(ch.botUsername||'?');
+            if(ch.hasPairingCode)detail+=' <span class="badge badge-pending">awaiting pairing</span>';
+            else if(ch.allowedUsers&&ch.allowedUsers.length>0)detail+=' <span class="badge badge-paired">'+ch.allowedUsers.length+' user(s)</span>';
+            else detail+=' <span class="badge badge-pending">open</span>';
+          }else if(ch.type==='email'){
+            detail+=' '+esc(ch.inboundAddress||'');
+            detail+=' '+(ch.verified?'<span class="badge badge-paired">verified</span>':'<span class="badge badge-pending">unverified</span>');
+            if(ch.allowedSenders&&ch.allowedSenders.length>0)detail+=' <span class="badge badge-paired">'+ch.allowedSenders.length+' sender(s)</span>';
+          }else if(ch.type==='discord'){
+            detail+=' '+(ch.botUsername?'@'+esc(ch.botUsername):'');
+          }else{
+            detail+=' <span class="badge badge-webhook">webhook</span>';
+          }
+          return '<div style="padding:4px 0;font-size:12px"><span class="badge badge-'+esc(ch.type)+'">'+esc(ch.type)+'</span> '+detail+'</div>';
+        }).join('');
+      return '<div class="card"><div class="card-header"><span class="card-title"><code>'+esc(s.userId.slice(0,12))+'...</code></span><span style="display:flex;align-items:center;gap:6px">'+wsStatus+
+        ' <button class="btn btn-primary btn-sm" onclick="viewMessages(&apos;'+esc(s.userId)+'&apos;)">Messages</button>'+
+        ' <button class="btn btn-danger btn-sm" onclick="delSession(&apos;'+esc(s.userId)+'&apos;)">Delete</button></span></div>'+
+        '<div class="channel-detail">Created: '+fmtTime(s.createdAt)+' | Channels: '+s.channels.length+' | ID: <code>'+esc(s.userId)+'</code></div>'+
+        '<div style="margin-top:8px">'+channels+'</div></div>';
+    }).join('');
+  }
+
+  document.getElementById('session-pager').innerHTML=total<=PAGE_SIZE?'':
+    '<span class="pager-info">Showing '+(start+1)+'–'+Math.min(start+PAGE_SIZE,total)+' of '+total+'</span>'+
+    '<button class="btn btn-sm" onclick="sessionPage=Math.max(0,sessionPage-1);renderSessions()"'+(sessionPage===0?' disabled':'')+'>Prev</button>'+
+    '<button class="btn btn-sm" onclick="sessionPage=Math.min('+(pages-1)+',sessionPage+1);renderSessions()"'+(sessionPage>=pages-1?' disabled':'')+'>Next</button>';
+}
+
+function renderMessages(){
+  const filtered=allMessages.filter(m=>matchMessage(m,msgFilter));
+  const total=filtered.length;
+  const pages=Math.max(1,Math.ceil(total/MSG_PAGE_SIZE));
+  msgPage=Math.min(msgPage,pages-1);
+  const start=msgPage*MSG_PAGE_SIZE;
+  const page=filtered.slice(start,start+MSG_PAGE_SIZE);
+
+  const mt=document.getElementById('messages');
+  if(page.length===0){
+    mt.innerHTML='<tr><td colspan="6" class="empty">No messages'+(msgFilter?' matching "'+esc(msgFilter)+'"':'')+'</td></tr>';
+  } else {
+    mt.innerHTML=page.map(m=>
+      '<tr>'+
+      '<td class="ts" title="'+esc(fmtTime(m.timestamp))+'">'+ago(m.timestamp)+'</td>'+
+      '<td><span class="badge badge-'+m.direction+'">'+m.direction+'</span></td>'+
+      '<td>'+esc(m.from)+'</td>'+
+      '<td><span class="badge badge-'+esc(m.channelType)+'">'+esc(m.channelType)+'</span> '+esc(m.channelId)+'</td>'+
+      '<td><code>'+esc(m.userId)+'</code></td>'+
+      '<td class="msg-content" title="'+esc(m.content)+'">'+esc(m.content)+'</td>'+
+      '</tr>'
+    ).join('');
+  }
+
+  document.getElementById('msg-pager').innerHTML=total<=MSG_PAGE_SIZE?'':
+    '<span class="pager-info">Showing '+(start+1)+'–'+Math.min(start+MSG_PAGE_SIZE,total)+' of '+total+'</span>'+
+    '<button class="btn btn-sm" onclick="msgPage=Math.max(0,msgPage-1);renderMessages()"'+(msgPage===0?' disabled':'')+'>Prev</button>'+
+    '<button class="btn btn-sm" onclick="msgPage=Math.min('+(pages-1)+',msgPage+1);renderMessages()"'+(msgPage>=pages-1?' disabled':'')+'>Next</button>';
+}
+
+function filterSessions(){
+  sessionFilter=document.getElementById('session-search').value;
+  sessionPage=0;
+  renderSessions();
+}
+
+function filterMessages(){
+  msgFilter=document.getElementById('msg-search').value;
+  msgPage=0;
+  renderMessages();
+}
 
 async function load(){
   document.getElementById('status').textContent='Loading...';
@@ -1347,64 +1527,89 @@ async function load(){
     if(r.status===401){location.href='/admin/login';return}
     const d=await r.json();
 
-    // Stats
     document.getElementById('stats').innerHTML=
-      '<div class="stat"><div class="stat-value '+(d.kv?'stat-ok':'stat-err')+'">'+(d.kv?'Connected':'Offline')+'</div><div class="stat-label">Deno KV</div></div>'+
+      '<div class="stat"><div class="stat-value '+(d.kv?'stat-ok':'stat-err')+'">'+(d.kv?'Connected':'Offline')+(d.kvError?' *':'')+'</div><div class="stat-label">Deno KV</div></div>'+
       '<div class="stat"><div class="stat-value">'+d.websockets+'</div><div class="stat-label">WebSockets</div></div>'+
       '<div class="stat"><div class="stat-value">'+d.sessions.length+'</div><div class="stat-label">Sessions</div></div>'+
       '<div class="stat"><div class="stat-value">'+Math.floor(d.uptime/60)+'m</div><div class="stat-label">Uptime</div></div>';
 
-    // Sessions with channel details
-    const sc=document.getElementById('sessions');
-    sc.innerHTML=d.sessions.map(s=>{
-      const wsStatus=s.wsConnections>0?'<span class="stat-ok">'+s.wsConnections+' connected</span>':'<span style="color:#8b949e">disconnected</span>';
-      const channels=s.channels.length===0?'<div style="color:#8b949e;font-size:12px;padding:4px 0">No channels</div>':
-        s.channels.map(ch=>{
-          let detail='<code>'+esc(ch.id.slice(0,12))+'</code>';
-          if(ch.type==='telegram'){
-            detail+=' @'+esc(ch.botUsername||'?');
-            if(ch.hasPairingCode) detail+=' <span class="badge badge-pending">awaiting pairing</span>';
-            else if(ch.allowedUsers&&ch.allowedUsers.length>0) detail+=' <span class="badge badge-paired">'+ch.allowedUsers.length+' user(s)</span>';
-            else detail+=' <span class="badge badge-pending">open (no allowlist)</span>';
-          }else if(ch.type==='email'){
-            detail+=' '+(ch.inboundAddress||'');
-            detail+=' '+(ch.verified?'<span class="badge badge-paired">verified</span>':'<span class="badge badge-pending">not verified</span>');
-            if(ch.allowedSenders&&ch.allowedSenders.length>0) detail+=' <span class="badge badge-paired">'+ch.allowedSenders.length+' sender(s)</span>';
-          }else if(ch.type==='discord'){
-            detail+=' '+(ch.botUsername?'@'+esc(ch.botUsername):'');
-          }else{
-            detail+=' <span class="badge badge-webhook">webhook</span>';
-          }
-          return '<div style="padding:4px 0;font-size:12px"><span class="badge badge-'+esc(ch.type)+'">'+esc(ch.type)+'</span> '+detail+'</div>';
-        }).join('');
-      return '<div class="card"><div class="card-header"><span class="card-title"><code>'+esc(s.userId.slice(0,12))+'...</code></span><span>'+wsStatus+' <button onclick="delSession(&apos;'+esc(s.userId)+'&apos;)" style="background:none;border:1px solid #f85149;color:#f85149;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:10px;margin-left:8px">Delete</button></span></div>'+
-        '<div class="channel-detail">Created: '+new Date(s.createdAt).toLocaleString()+' | ID: <code>'+esc(s.userId)+'</code></div>'+
-        '<div style="margin-top:8px">'+channels+'</div></div>';
-    }).join('')||'<div style="color:#8b949e">No sessions</div>';
-
-    // Recent messages
-    const mt=document.getElementById('messages');
-    mt.innerHTML=(d.recentMessages||[]).map(m=>
-      '<tr>'+
-      '<td class="ts">'+ago(m.timestamp)+'</td>'+
-      '<td><span class="badge badge-'+m.direction+'">'+m.direction+'</span></td>'+
-      '<td>'+esc(m.from)+'</td>'+
-      '<td><span class="badge badge-'+esc(m.channelType)+'">'+esc(m.channelType)+'</span> '+esc(m.channelId)+'</td>'+
-      '<td><code>'+esc(m.userId)+'</code></td>'+
-      '<td class="msg-content" title="'+esc(m.content)+'">'+esc(m.content)+'</td>'+
-      '</tr>'
-    ).join('')||'<tr><td colspan="6" style="color:#8b949e;text-align:center">No recent messages</td></tr>';
+    allSessions=d.sessions;
+    allMessages=d.recentMessages||[];
+    renderSessions();
+    renderMessages();
 
     document.getElementById('status').textContent='Updated '+new Date().toLocaleTimeString();
   }catch(e){
     document.getElementById('status').textContent='Error: '+e.message;
   }
 }
-load();
-setInterval(load,10000);
+
+async function viewMessages(userId){
+  const dlg=document.getElementById('session-dialog');
+  const body=document.getElementById('dialog-body');
+  document.getElementById('dialog-title').textContent='Messages — '+userId.slice(0,12)+'...';
+  body.innerHTML='<div class="empty">Loading...</div>';
+  dlg.showModal();
+
+  let cursor=undefined;
+  let allMsgs=[];
+
+  async function fetchPage(){
+    const params=new URLSearchParams({limit:'50'});
+    if(cursor)params.set('cursor',cursor);
+    const r=await fetch('/admin/sessions/'+userId+'/messages?'+params);
+    if(!r.ok){body.innerHTML='<div class="empty">Failed to load messages</div>';return}
+    const d=await r.json();
+    allMsgs=allMsgs.concat(d.messages);
+    cursor=d.cursor;
+    renderDrilldown();
+  }
+
+  function renderDrilldown(){
+    if(allMsgs.length===0){
+      body.innerHTML='<div class="empty">No messages for this session</div>';
+      return;
+    }
+    body.innerHTML='<div style="margin-bottom:12px"><input type="text" class="search-box" id="drill-search" placeholder="Filter messages..." oninput="drillFilter()" style="width:100%"></div>'+
+      '<div id="drill-msgs"></div>'+
+      (cursor?'<div style="text-align:center;margin-top:12px"><button class="btn btn-primary" id="drill-more">Load more</button></div>':'');
+    drillFilter();
+    if(cursor){document.getElementById('drill-more').onclick=fetchPage}
+  }
+
+  window.drillFilter=function(){
+    const q=(document.getElementById('drill-search')?.value||'').toLowerCase();
+    const filtered=q?allMsgs.filter(m=>
+      m.content.toLowerCase().includes(q)||m.from.toLowerCase().includes(q)||
+      m.channelType.toLowerCase().includes(q)||(m.channelId||'').toLowerCase().includes(q)
+    ):allMsgs;
+    const container=document.getElementById('drill-msgs');
+    if(!container)return;
+    if(filtered.length===0){container.innerHTML='<div class="empty">No messages matching "'+esc(q)+'"</div>';return}
+    container.innerHTML=filtered.map(m=>{
+      const dir=m.from==='agent'?'out':'in';
+      return '<div class="msg-row">'+
+        '<div class="msg-meta">'+
+        '<span class="badge badge-'+dir+'">'+dir+'</span>'+
+        '<span class="badge badge-'+esc(m.channelType)+'">'+esc(m.channelType)+'</span>'+
+        '<span style="color:#8b949e">'+esc(m.from)+'</span>'+
+        '<code>'+esc((m.channelId||'').slice(0,12))+'</code>'+
+        '<span class="ts" title="'+esc(fmtTime(m.timestamp))+'">'+ago(m.timestamp)+'</span>'+
+        '</div>'+
+        '<div class="msg-body">'+esc(m.content)+'</div>'+
+        '</div>';
+    }).join('');
+  };
+
+  await fetchPage();
+}
+
 async function delSession(userId){
   if(!confirm('Delete session '+userId.slice(0,12)+'...?'))return;
   const r=await fetch('/admin/sessions/'+userId,{method:'DELETE'});
   if(r.ok){load()}else{alert('Failed: '+(await r.json()).error)}
 }
+
+load();
+setInterval(load,10000);
 </script></body></html>`;
