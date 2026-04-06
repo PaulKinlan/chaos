@@ -1425,6 +1425,14 @@ async function handleOneShotMessage(
       return { ok: true };
     }
 
+    case 'updateAgentName': {
+      await updateAgentMeta(msg.agentId as string, {
+        name: msg.name as string,
+      });
+      console.log(`[background] Agent renamed: ${msg.agentId} → ${msg.name}`);
+      return { updated: true };
+    }
+
     case 'updateAgentVisibility': {
       await updateAgentMeta(msg.agentId as string, {
         visibility: msg.visibility as 'private' | 'visible' | 'open',

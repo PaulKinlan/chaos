@@ -1362,19 +1362,22 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
   const headerEl = document.createElement('div');
   headerEl.className = 'chat-column-header';
   // Build provider badge if agent has a custom model override
+  // Show provider badge — custom overrides prominently, global default subtly
   let providerBadgeHtml = '';
   if (agent && (agent.provider || agent.model)) {
     const providerLabel = agent.provider
       ? (listProviders().find(p => p.id === agent.provider)?.displayName || agent.provider)
       : '';
-    const modelLabel = agent.model || '';
-    const badgeText = providerLabel || modelLabel;
+    const badgeText = providerLabel || agent.model || '';
     if (badgeText) {
       providerBadgeHtml = `<span class="column-provider-badge">${escapeHtml(badgeText)}</span>`;
     }
   }
 
   headerEl.innerHTML = `
+    <span class="column-drag-handle" title="Drag to reorder">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+    </span>
     <span class="column-agent-name">${escapeHtml(aName)}</span>
     ${providerBadgeHtml}
     <span class="role-badge ${roleBadgeClass(aRole)}">${escapeHtml(aRole)}</span>
@@ -1531,6 +1534,65 @@ function addColumn(agentId: string, allowDuplicate = false): ChatColumn {
   micBtn.addEventListener('click', () => {
     focusedColumnId = colId;
     toggleVoiceInput();
+  });
+
+  // ── Drag-to-reorder ──
+  const dragHandle = headerEl.querySelector('.column-drag-handle') as HTMLElement;
+  dragHandle.setAttribute('draggable', 'true');
+
+  dragHandle.addEventListener('dragstart', (e: DragEvent) => {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', colId);
+    // Use the whole column as the drag image
+    e.dataTransfer.setDragImage(columnEl, 50, 20);
+    requestAnimationFrame(() => columnEl.classList.add('column-dragging'));
+  });
+
+  columnEl.addEventListener('dragover', (e: DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    // Only show drop target if this isn't the dragged column
+    const draggedId = columns.find(c => c.columnEl.classList.contains('column-dragging'))?.id;
+    if (draggedId && draggedId !== colId) {
+      columnEl.classList.add('column-drop-target');
+    }
+  });
+
+  columnEl.addEventListener('dragleave', () => {
+    columnEl.classList.remove('column-drop-target');
+  });
+
+  columnEl.addEventListener('drop', (e: DragEvent) => {
+    e.preventDefault();
+    columnEl.classList.remove('column-drop-target');
+    if (!e.dataTransfer) return;
+    const draggedColId = e.dataTransfer.getData('text/plain');
+    if (!draggedColId || draggedColId === colId) return;
+
+    const fromIdx = columns.findIndex(c => c.id === draggedColId);
+    const toIdx = columns.findIndex(c => c.id === colId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    // Reorder the columns array
+    const [moved] = columns.splice(fromIdx, 1);
+    columns.splice(toIdx, 0, moved);
+
+    // Reorder DOM: insert all columns before the [+] button
+    const addBtnEl = columnsContainer.querySelector('.columns-add-btn');
+    for (const col of columns) {
+      columnsContainer.insertBefore(col.columnEl, addBtnEl);
+    }
+
+    saveColumnConfig();
+  });
+
+  dragHandle.addEventListener('dragend', () => {
+    columnEl.classList.remove('column-dragging');
+    // Clean up any lingering drop targets
+    for (const col of columns) {
+      col.columnEl.classList.remove('column-drop-target');
+    }
   });
 
   // Update layout classes
@@ -3322,6 +3384,16 @@ async function loadAgentSettings(): Promise<void> {
       </div>
 
       <div class="agent-settings-section">
+        <h3>Name</h3>
+        <div class="agent-settings-field">
+          <div style="display:flex;gap:var(--sp-2);align-items:center;">
+            <input type="text" id="agent-name-input" value="${escapeHtml(meta.name)}" style="flex:1;">
+            <button class="btn btn-primary btn-sm" id="btn-save-agent-name">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="agent-settings-section">
         <h3>Visibility</h3>
         <div class="agent-settings-field">
           <label for="agent-vis-select">Who can see this agent?</label>
@@ -3461,6 +3533,20 @@ async function loadAgentSettings(): Promise<void> {
     `;
 
     // Visibility change
+    // Save agent name
+    document.getElementById('btn-save-agent-name')!.addEventListener('click', async () => {
+      const nameInput = document.getElementById('agent-name-input') as HTMLInputElement;
+      const newName = nameInput.value.trim();
+      if (!newName) return;
+      const btn = document.getElementById('btn-save-agent-name') as HTMLButtonElement;
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
+      await sendMsg({ type: 'updateAgentName', agentId: meta.id, name: newName });
+      sendPortMessage({ type: 'listAgents' });
+      btn.textContent = 'Saved!';
+      setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 2000);
+    });
+
     document.getElementById('agent-vis-select')!.addEventListener('change', async (e) => {
       const newVis = (e.target as HTMLSelectElement).value;
       await sendMsg({ type: 'updateAgentVisibility', agentId: meta.id, visibility: newVis });
