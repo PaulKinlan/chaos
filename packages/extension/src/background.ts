@@ -694,9 +694,8 @@ async function wakeAgentForMessage(agentId: string, fromAgentId: string, body: s
   const sender = agents.find(a => a.id === fromAgentId);
   const senderName = sender?.name || fromAgentId;
 
-  const port = activeUiPort;
-  if (port) {
-    try { port.postMessage({ type: 'agenticStart', agentId }); } catch { /* */ }
+  if (activeUiPort) {
+    try { activeUiPort.postMessage({ type: 'agenticStart', agentId }); } catch { /* */ }
   }
 
   startKeepalive();
@@ -704,9 +703,10 @@ async function wakeAgentForMessage(agentId: string, fromAgentId: string, body: s
     const result = await runAgenticLoop({
       agentId,
       task: `You received a message from another agent.\n\nFrom: ${senderName}\nMessage: ${body}\n\nProcess this message and take any appropriate action. If the message reports task completion, review the results. If it asks you to do something, do it.`,
-      onProgress: port ? (update: ProgressUpdate) => {
+      onProgress: (update: ProgressUpdate) => {
+        if (!activeUiPort) return;
         try {
-          port.postMessage({
+          activeUiPort.postMessage({
             type: 'agenticProgress',
             agentId,
             progressType: update.type,
@@ -718,11 +718,11 @@ async function wakeAgentForMessage(agentId: string, fromAgentId: string, body: s
             totalIterations: update.totalIterations,
           });
         } catch { /* */ }
-      } : undefined,
+      },
     });
 
-    if (port) {
-      try { port.postMessage({ type: 'agenticDone', result, agentId }); } catch { /* */ }
+    if (activeUiPort) {
+      try { activeUiPort.postMessage({ type: 'agenticDone', result, agentId }); } catch { /* */ }
     }
   } catch (err) {
     console.error(`[background] Agent ${agentId} message processing failed:`, err);
@@ -749,11 +749,10 @@ async function executeAssignedTask(agentId: string, taskId: string): Promise<voi
     data: { status: 'in_progress' },
   });
 
-  // Notify UI
-  const port = activeUiPort;
-  if (port) {
+  // Notify UI — use activeUiPort directly (not captured) so it survives reconnects
+  if (activeUiPort) {
     try {
-      port.postMessage({
+      activeUiPort.postMessage({
         type: 'channelMessageReceived',
         agentId,
         channelLabel: 'Task',
@@ -762,7 +761,7 @@ async function executeAssignedTask(agentId: string, taskId: string): Promise<voi
         channelType: 'task',
         channelId: taskId,
       });
-      port.postMessage({ type: 'agenticStart', agentId });
+      activeUiPort.postMessage({ type: 'agenticStart', agentId });
     } catch { /* port disconnected */ }
   }
 
@@ -771,9 +770,12 @@ async function executeAssignedTask(agentId: string, taskId: string): Promise<voi
     const result = await runAgenticLoop({
       agentId,
       task: `You have been assigned a task.\n\nTask: ${taskSubject}\n\nInstructions:\n${prompt}\n\nWhen done, summarize what you accomplished.`,
-      onProgress: port ? (update: ProgressUpdate) => {
+      onProgress: (update: ProgressUpdate) => {
+        // Always use activeUiPort (not a captured reference) so progress
+        // continues flowing even if the port reconnects during execution
+        if (!activeUiPort) return;
         try {
-          port.postMessage({
+          activeUiPort.postMessage({
             type: 'agenticProgress',
             agentId,
             progressType: update.type,
@@ -785,7 +787,7 @@ async function executeAssignedTask(agentId: string, taskId: string): Promise<voi
             totalIterations: update.totalIterations,
           });
         } catch { /* */ }
-      } : undefined,
+      },
     });
 
     await appendEvent({
@@ -795,8 +797,8 @@ async function executeAssignedTask(agentId: string, taskId: string): Promise<voi
       data: { status: 'completed', result: result?.slice(0, 500) || 'Task completed' },
     });
 
-    if (port) {
-      try { port.postMessage({ type: 'agenticDone', result, agentId }); } catch { /* */ }
+    if (activeUiPort) {
+      try { activeUiPort.postMessage({ type: 'agenticDone', result, agentId }); } catch { /* */ }
     }
 
     // Send result back to whoever created/assigned the task
