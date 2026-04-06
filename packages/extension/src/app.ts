@@ -2764,8 +2764,8 @@ function renderTasks(): void {
     agentCollab = agentCollab.filter((t) => t.status === filterStatus);
   }
 
-  // Show global empty state if no collaborative tasks
-  if (agentCollab.length === 0 && !filterStatus) {
+  // Show global empty state if no tasks at all
+  if (agentCollab.length === 0 && agentScheduled.length === 0 && !filterStatus) {
     container.style.display = 'none';
     empty.style.display = '';
     return;
@@ -2827,6 +2827,39 @@ function renderTasks(): void {
     html += `</tbody></table>`;
   }
   html += `</div>`;
+
+  // ── Scheduled Tasks (per-agent) ──
+  if (agentScheduled.length > 0) {
+    html += `<div class="tasks-section">`;
+    html += `<div class="tasks-section-header">
+      <h3>Scheduled Tasks</h3>
+      <p class="tasks-section-subtitle">Recurring and one-shot tasks this agent runs automatically.</p>
+    </div>`;
+    html += agentScheduled.map((t) => {
+      const scheduleLabel = t.schedule.type === 'recurring'
+        ? `Every ${formatDuration(t.schedule.periodInMinutes || 0)}`
+        : 'One-shot';
+      const runCount = t.runHistory?.length || 0;
+      return `
+      <div class="scheduled-task-item" data-alarm-id="${escapeHtml(t.alarmId)}">
+        <div class="scheduled-task-info">
+          <div class="task-desc">${escapeHtml(t.description)}</div>
+          <div class="task-schedule-badge">
+            <span class="badge badge-info">${escapeHtml(scheduleLabel)}</span>
+            <span class="badge badge-active">Active</span>
+            ${runCount > 0 ? `<span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);">${runCount} runs</span>` : ''}
+          </div>
+          <div class="task-prompt">${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
+          ${t.lastRunAt ? `<div class="task-last-run">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ' — ' + escapeHtml(t.lastResult.slice(0, 80)) + (t.lastResult.length > 80 ? '...' : '') : ''}</div>` : '<div style="font-size:12px;color:var(--text-muted);">Not run yet</div>'}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="btn btn-ghost btn-sm" data-run-task="${escapeHtml(t.alarmId)}">Run Now</button>
+          <button class="btn btn-danger btn-sm" data-cancel-task="${escapeHtml(t.alarmId)}">Cancel</button>
+        </div>
+      </div>`;
+    }).join('');
+    html += `</div>`;
+  }
 
   // ── Task Timeline ──
   html += renderTaskTimeline(taskEvents, messages);
