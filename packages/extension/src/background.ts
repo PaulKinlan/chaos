@@ -179,6 +179,12 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   setupContextMenus();
   registerContentExtractor();
 
+  // On first install, set flag for onboarding wizard
+  if (details.reason === 'install') {
+    await chrome.storage.local.set({ 'chaos:needs-onboarding': true });
+    console.log('[background] First install — onboarding flag set');
+  }
+
   // On update, reload existing NTP tabs so they pick up the new extension version
   if (details.reason === 'update') {
     try {
