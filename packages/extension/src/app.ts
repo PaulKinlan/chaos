@@ -5289,7 +5289,6 @@ function showPairingDialog(botUsername: string, pairingCode: string): void {
   dialog.style.cssText = `
     background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default);
     border-radius:12px;padding:0;max-width:440px;width:90%;font-family:var(--font-sans);
-    margin:auto;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
   `;
   dialog.innerHTML = `
     <div style="padding:24px;">
