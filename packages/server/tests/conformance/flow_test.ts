@@ -53,7 +53,11 @@ Deno.test("Full end-to-end: register -> create channel -> webhook -> poll -> rep
   );
   assertEquals(pollResp.status, 200);
   const pollData = await pollResp.json();
-  assertEquals(pollData.messages.length >= 1, true, "should have the webhook message");
+  assertEquals(
+    pollData.messages.length >= 1,
+    true,
+    "should have the webhook message",
+  );
 
   const incomingMsg = pollData.messages.find(
     (m: { id: string }) => m.id === messageId,
@@ -139,7 +143,11 @@ Deno.test("Multiple webhooks are returned in order", async () => {
     creds,
   );
   const pollData = await pollResp.json();
-  assertEquals(pollData.messages.length >= 3, true, "should have all 3 messages");
+  assertEquals(
+    pollData.messages.length >= 3,
+    true,
+    "should have all 3 messages",
+  );
 
   // Messages should be in chronological order
   for (let i = 1; i < pollData.messages.length; i++) {

@@ -28,7 +28,9 @@ function connectWs(url: string): Promise<WebSocket> {
     };
     ws.onerror = (e) => {
       clearTimeout(timeout);
-      reject(new Error(`WebSocket error: ${(e as ErrorEvent).message || "unknown"}`));
+      reject(
+        new Error(`WebSocket error: ${(e as ErrorEvent).message || "unknown"}`),
+      );
     };
   });
 }

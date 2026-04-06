@@ -29,7 +29,10 @@ Deno.test("Create a webhook channel", async () => {
   assertExists(data.channel.id, "channel should have an id");
   assertEquals(data.channel.type, "webhook");
   assertEquals(data.channel.enabled, true);
-  assertExists(data.webhookUrl, "should return a webhookUrl for webhook channels");
+  assertExists(
+    data.webhookUrl,
+    "should return a webhookUrl for webhook channels",
+  );
   // webhookUrl should contain the channel id and a token
   assertEquals(
     data.webhookUrl.includes(data.channel.id),
@@ -313,7 +316,11 @@ Deno.test("Poll messages after webhook returns the message", async () => {
   const pollData = await pollResp.json();
   assertExists(pollData.messages);
   assertEquals(Array.isArray(pollData.messages), true);
-  assertEquals(pollData.messages.length >= 1, true, "should have at least one message");
+  assertEquals(
+    pollData.messages.length >= 1,
+    true,
+    "should have at least one message",
+  );
   assertExists(pollData.since, "should return a since timestamp for next poll");
 
   // Verify the message content
@@ -378,5 +385,9 @@ Deno.test("Channels are isolated between sessions", async () => {
   // Session 2 should see no channels
   const resp = await authedFetch(`${base}/channels`, { method: "GET" }, creds2);
   const data = await resp.json();
-  assertEquals(data.channels.length, 0, "session 2 should not see session 1 channels");
+  assertEquals(
+    data.channels.length,
+    0,
+    "session 2 should not see session 1 channels",
+  );
 });

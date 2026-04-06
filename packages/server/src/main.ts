@@ -329,34 +329,93 @@ Deno.serve(serveOptions, async (req: Request) => {
       wsConnections: number;
     }> = [];
 
+    let kvError: string | undefined;
     if (isKvAvailable() && getKv()) {
-      const iter = getKv()!.list<UserSession>({ prefix: ["sessions"] });
-      for await (const entry of iter) {
-        const s = entry.value;
-        sessions.push({
-          userId: s.userId,
-          channels: s.channels.map((ch) => ({
-            id: ch.id,
-            type: ch.type,
-            agentId: ch.agentId || "(default)",
-            enabled: ch.enabled,
-            botUsername: ch.metadata["botUsername"] as string | undefined,
-            allowedUsers: ch.metadata["allowedUsers"] as string[] | undefined,
-            allowedSenders: ch.metadata["allowedSenders"] as
-              | string[]
-              | undefined,
-            inboundAddress: ch.metadata["inboundAddress"] as string | undefined,
-            verified: ch.metadata["verified"] as boolean | undefined,
-            hasPairingCode: !!ch.metadata["pairingCode"],
-          })),
-          createdAt: s.createdAt,
-          wsConnections: getConnectionCount(s.userId),
-        });
+      try {
+        const iter = getKv()!.list<UserSession>({ prefix: ["sessions"] });
+        for await (const entry of iter) {
+          const s = entry.value;
+          sessions.push({
+            userId: s.userId,
+            channels: s.channels.map((ch) => ({
+              id: ch.id,
+              type: ch.type,
+              agentId: ch.agentId || "(default)",
+              enabled: ch.enabled,
+              botUsername: ch.metadata["botUsername"] as string | undefined,
+              allowedUsers: ch.metadata["allowedUsers"] as string[] | undefined,
+              allowedSenders: ch.metadata["allowedSenders"] as
+                | string[]
+                | undefined,
+              inboundAddress: ch.metadata["inboundAddress"] as
+                | string
+                | undefined,
+              verified: ch.metadata["verified"] as boolean | undefined,
+              hasPairingCode: !!ch.metadata["pairingCode"],
+            })),
+            createdAt: s.createdAt,
+            wsConnections: getConnectionCount(s.userId),
+          });
+        }
+      } catch (err) {
+        kvError = String(err);
+        logger.error(
+          "admin",
+          "KV list sessions failed, retrying with fresh handle",
+          { error: kvError },
+        );
+        // KV handle may be stale — try to reinitialize
+        try {
+          const { initKv: reinit } = await import("./kv.ts");
+          await reinit();
+          const freshKv = getKv();
+          if (freshKv) {
+            const iter = freshKv.list<UserSession>({ prefix: ["sessions"] });
+            for await (const entry of iter) {
+              const s = entry.value;
+              sessions.push({
+                userId: s.userId,
+                channels: s.channels.map((ch) => ({
+                  id: ch.id,
+                  type: ch.type,
+                  agentId: ch.agentId || "(default)",
+                  enabled: ch.enabled,
+                  botUsername: ch.metadata["botUsername"] as string | undefined,
+                  allowedUsers: ch.metadata["allowedUsers"] as
+                    | string[]
+                    | undefined,
+                  allowedSenders: ch.metadata["allowedSenders"] as
+                    | string[]
+                    | undefined,
+                  inboundAddress: ch.metadata["inboundAddress"] as
+                    | string
+                    | undefined,
+                  verified: ch.metadata["verified"] as boolean | undefined,
+                  hasPairingCode: !!ch.metadata["pairingCode"],
+                })),
+                createdAt: s.createdAt,
+                wsConnections: getConnectionCount(s.userId),
+              });
+            }
+            kvError = undefined; // retry succeeded
+          }
+        } catch (retryErr) {
+          logger.error("admin", "KV retry also failed", {
+            error: String(retryErr),
+          });
+        }
       }
     }
 
     // Get recent messages from KV (durable across restarts)
-    const allMsgs = await getAllRecentMessages(30);
+    let allMsgs: Awaited<ReturnType<typeof getAllRecentMessages>> = [];
+    try {
+      allMsgs = await getAllRecentMessages(30);
+    } catch (err) {
+      logger.error("admin", "Failed to fetch recent messages", {
+        error: String(err),
+      });
+    }
     const recentMessages = allMsgs.map((m) => ({
       id: m.id,
       userId: m.userId.slice(0, 8),
@@ -372,6 +431,7 @@ Deno.serve(serveOptions, async (req: Request) => {
       status: "ok",
       version: VERSION,
       kv: isKvAvailable(),
+      kvError: kvError || undefined,
       websockets: getConnectionCount(),
       uptime: Math.floor(performance.now() / 1000),
       sessions,

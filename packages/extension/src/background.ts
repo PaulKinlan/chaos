@@ -161,7 +161,8 @@ chrome.action.onClicked.addListener(async () => {
 
 async function openOrFocusChaosTab(): Promise<chrome.tabs.Tab> {
   const url = chrome.runtime.getURL('app.html');
-  const existing = await chrome.tabs.query({ url });
+  // Use wildcard to match even when the tab has a hash fragment (e.g. app.html#agent-xyz)
+  const existing = await chrome.tabs.query({ url: url + '*' });
   if (existing.length > 0 && existing[0].id) {
     await chrome.tabs.update(existing[0].id, { active: true });
     if (existing[0].windowId) {
@@ -408,10 +409,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     const chaosTab = await openOrFocusChaosTab();
     if (chaosTab.id) {
-      // Small delay to let the tab load if newly created
-      setTimeout(() => {
-        chrome.tabs.sendMessage(chaosTab.id!, messagePayload);
-      }, chaosTab.status === 'complete' ? 0 : 1000);
+      if (chaosTab.status === 'complete') {
+        await chrome.tabs.sendMessage(chaosTab.id, messagePayload);
+      } else {
+        // Wait for the tab to finish loading before sending
+        await new Promise<void>((resolve) => {
+          const listener = (
+            tabId: number,
+            changeInfo: chrome.tabs.TabChangeInfo,
+          ) => {
+            if (tabId === chaosTab.id && changeInfo.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+        });
+        await chrome.tabs.sendMessage(chaosTab.id, messagePayload);
+      }
     }
   } catch (err) {
     console.error('Failed to open NTP for context menu action:', err);

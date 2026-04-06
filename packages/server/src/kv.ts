@@ -15,7 +15,17 @@ let kvAvailable = true;
  */
 export async function initKv(): Promise<void> {
   try {
+    // Close stale handle if reinitializing
+    if (kv) {
+      try {
+        kv.close();
+      } catch {
+        // ignore close errors on stale handle
+      }
+      kv = null;
+    }
     kv = await Deno.openKv();
+    kvAvailable = true;
     logger.info("kv", "Deno KV store opened");
   } catch (err) {
     kvAvailable = false;
