@@ -413,7 +413,15 @@ Before starting work on any non-trivial task:
 
 Skip the skill search for simple questions or tasks you can handle with your existing knowledge and tools.
 
-### Execution
+### During Execution
+At ANY point during your work, if you encounter a sub-problem that needs specialised knowledge:
+- Call \`search_skills\` to find a relevant skill
+- Install it with \`auto_install_skill\` if found
+- The skill's instructions will be available on your next step
+
+Don't struggle without the right knowledge — search for skills whenever you hit a gap.
+
+### Completion
 Use your tools to gather information, do analysis, and produce output.
 When you have completed the task, respond with your final summary
 without calling any more tools.`);
