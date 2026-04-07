@@ -377,13 +377,52 @@ Events are fired both when the local SDK performs an action AND when the backgro
 3. app.ts imports only from `sdk/index.ts`
 4. **Deliverable**: app.ts is a pure consumer of the SDK
 
-### Phase 6: Documentation & Examples
+### Phase 6: Extract SDK Package
 
-1. Generate API documentation from types
-2. Example: build a minimal agent manager in 50 lines using the SDK
-3. Example: build a CLI that creates and chats with agents
-4. Publish SDK types as `@chaos/sdk` (or include in `@chaos/shared`)
-5. **Deliverable**: external developers can build on the SDK
+The SDK must be a separate package, not embedded in the extension.
+
+1. Create `packages/sdk/` as a new workspace package (`@chaos/sdk`)
+2. Move all SDK types, interfaces, and implementations there
+3. Store interfaces (`SettingsStore`, `MemoryStore`, etc.) exported from `@chaos/sdk/stores`
+4. Connection interfaces (`EngineConnection`, `RelayConnection`) exported from `@chaos/sdk/connections`
+5. Browser capabilities interface exported from `@chaos/sdk/browser`
+6. Chrome-specific implementations in `@chaos/sdk/chrome` (tree-shakeable — web consumers don't pull in chrome types)
+7. `packages/extension` adds `@chaos/sdk` as a workspace dependency
+8. **Deliverable**: `@chaos/sdk` is a standalone, publishable package
+
+### Phase 7: Reference Implementation
+
+Build a separate, minimal app that proves the SDK works independently from the main extension. This is NOT the main extension — it's a standalone consumer.
+
+**Option A: Web app** (`packages/demo-web/`)
+- Vanilla HTML + JS, no framework
+- Uses `WebSocketEngine` + `OPFSMemoryStore` + `WebSettingsStore`
+- Single-page app: create an agent, chat with it, see memory files
+- No Chrome APIs — runs in any browser
+- Proves the SDK isn't coupled to the extension
+
+**Option B: CLI** (`packages/demo-cli/`)
+- Node.js / Deno script
+- Uses `WebSocketEngine` pointing at a local engine server
+- `chaos chat "summarize this URL"`
+- `chaos agents list`
+- `chaos hooks create --trigger bookmark-created --prompt "summarize it"`
+- Proves the SDK works outside a browser entirely
+
+**Recommendation:** Build both. The web app proves browser portability, the CLI proves the API surface is complete enough to be useful without a GUI.
+
+1. Create `packages/demo-web/` — minimal web app consuming `@chaos/sdk`
+2. Create `packages/demo-cli/` — CLI tool consuming `@chaos/sdk`
+3. Both share no code with `packages/extension/` except through `@chaos/sdk`
+4. Write a `README.md` for each showing how to get started
+5. **Deliverable**: two working apps that prove SDK independence
+
+### Phase 8: Documentation
+
+1. Generate API documentation from types (TypeDoc or similar)
+2. `@chaos/sdk` README with quickstart for each runtime (Chrome, web, CLI)
+3. Architecture guide: how engine, relay, stores, and capabilities fit together
+4. **Deliverable**: external developers can build on the SDK
 
 ## Connection Layer
 
