@@ -218,6 +218,7 @@ export async function handleTelegramWebhook(
   const metadata: Record<string, unknown> = {
     updateId: update.update_id,
     channelDirection: channel.direction || "bidirectional",
+    ...(channel.agentId ? { channelAgentId: channel.agentId } : {}),
   };
 
   if (telegramMsg) {

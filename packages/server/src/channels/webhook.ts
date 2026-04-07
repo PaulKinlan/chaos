@@ -79,6 +79,7 @@ export async function handleWebhook(
   metadata.channelDirection = channel.direction || "inbound";
   if (channel.name) metadata.channelName = channel.name;
   if (channel.prompt) metadata.channelPrompt = channel.prompt;
+  if (channel.agentId) metadata.channelAgentId = channel.agentId;
 
   const message: StoredMessage = {
     id: crypto.randomUUID(),

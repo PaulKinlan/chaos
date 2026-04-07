@@ -1896,8 +1896,11 @@ setMessageHandler(async (message) => {
   const agents = await listAgents();
   if (agents.length === 0) return null;
 
-  // Route to master agent, or first available
-  const master = agents.find((a) => a.master) || agents[0];
+  // Route to the agent specified on the channel, or fall back to master agent
+  const channelAgentId = message.metadata?.['channelAgentId'] as string | undefined;
+  const targetAgent = (channelAgentId && agents.find((a) => a.id === channelAgentId)) ||
+    agents.find((a) => a.master) || agents[0];
+  const master = targetAgent;
   const channelName = message.metadata?.['channelName'] as string || message.channelType;
   const channelPrompt = message.metadata?.['channelPrompt'] as string || '';
   const direction = message.metadata?.['channelDirection'] as string || 'bidirectional';

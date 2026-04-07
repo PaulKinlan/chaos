@@ -516,6 +516,7 @@ export async function handleEmailInbound(
   const metadata: Record<string, unknown> = {
     channelDirection: channel.direction || "bidirectional",
     channelName: channel.name,
+    ...(channel.agentId ? { channelAgentId: channel.agentId } : {}),
     senderAddress: senderEmail,
     subject,
     toAddress: matchedAddress,

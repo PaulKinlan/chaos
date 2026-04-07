@@ -4967,10 +4967,26 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
         </div>`;
     }
 
+    // Build agent options for this channel
+    const sortedAgents = [...agents].sort((a, b) => {
+      if (a.master && !b.master) return -1;
+      if (!a.master && b.master) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    const agentOptions = sortedAgents.map((a) => {
+      const selected = ch.agentId === a.id ? ' selected' : ((!ch.agentId && a.master) ? ' selected' : '');
+      return `<option value="${escapeHtml(a.id)}"${selected}>${escapeHtml(a.name)}${a.master ? ' (master)' : ''}</option>`;
+    }).join('');
+
     configHtml += `
+        <div>
+          <label style="color:var(--text-muted);">Assign to Agent</label>
+          <select class="channel-agent-select" data-channel-id="${ch.id}" style="width:100%;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);font-size:var(--text-xs);">${agentOptions}</select>
+        </div>
         <div style="display:flex;gap:6px;"><button class="btn btn-primary btn-xs btn-save-channel-config" data-channel-id="${ch.id}">Save</button></div>
       </div>`;
 
+    const agentName = agents.find((a) => a.id === ch.agentId)?.name || (agents.find((a) => a.master)?.name || 'default');
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <strong style="font-size:var(--text-sm);">${escapeHtml(chName || ch.type)}: ${ch.id.slice(0, 8)}...</strong>
@@ -4978,7 +4994,7 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       </div>
       ${detailHtml}
       ${configHtml}
-      <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">${dirLabel} | Agent: ${ch.agentId || '(default)'} | ${ch.enabled ? 'Enabled' : 'Disabled'}</div>
+      <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">${dirLabel} | Agent: ${escapeHtml(agentName)} | ${ch.enabled ? 'Enabled' : 'Disabled'}</div>
     `;
     listDiv.appendChild(card);
   }
@@ -5039,9 +5055,11 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       const channelId = (btn as HTMLElement).dataset.channelId!;
       const nameInput = listDiv.querySelector(`.channel-name-input[data-channel-id="${channelId}"]`) as HTMLInputElement;
       const promptInput = listDiv.querySelector(`.channel-prompt-input[data-channel-id="${channelId}"]`) as HTMLTextAreaElement;
+      const agentSelect = listDiv.querySelector(`.channel-agent-select[data-channel-id="${channelId}"]`) as HTMLSelectElement;
       const updates: Record<string, unknown> = {};
       if (nameInput) updates.name = nameInput.value.trim();
       if (promptInput) updates.prompt = promptInput.value.trim();
+      if (agentSelect) updates.agentId = agentSelect.value;
       try {
         channelLog(`Updating channel ${channelId.slice(0, 8)}...`);
         await relayUpdateChannel(config, channelId, updates);

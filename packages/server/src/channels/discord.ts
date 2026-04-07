@@ -171,6 +171,7 @@ export async function handleDiscordWebhook(
   let discordChannelId: string | undefined;
   const metadata: Record<string, unknown> = {
     channelDirection: channel.direction || "bidirectional",
+    ...(channel.agentId ? { channelAgentId: channel.agentId } : {}),
   };
 
   // Standard message event (from gateway relay or webhook forwarding)
