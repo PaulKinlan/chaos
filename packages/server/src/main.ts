@@ -131,11 +131,17 @@ let initialized = false;
 async function ensureInitialized(): Promise<void> {
   if (initialized) return;
   initialized = true;
+  const t0 = performance.now();
   await initKv();
+  const t1 = performance.now();
   await initServerKeyPair();
+  const t2 = performance.now();
   startMessageCleanup();
   logger.info("server", "Initialized", {
     kv: isKvAvailable(),
+    kvInitMs: Math.round(t1 - t0),
+    keypairMs: Math.round(t2 - t1),
+    totalMs: Math.round(t2 - t0),
     wsConnections: getConnectionCount(),
     deploy: !!Deno.env.get("DENO_DEPLOYMENT_ID"),
   });
@@ -329,93 +335,78 @@ Deno.serve(serveOptions, async (req: Request) => {
       wsConnections: number;
     }> = [];
 
+    const t0 = performance.now();
     let kvError: string | undefined;
-    if (isKvAvailable() && getKv()) {
-      try {
-        const iter = getKv()!.list<UserSession>({ prefix: ["sessions"] });
-        for await (const entry of iter) {
-          const s = entry.value;
-          sessions.push({
-            userId: s.userId,
-            channels: s.channels.map((ch) => ({
-              id: ch.id,
-              type: ch.type,
-              agentId: ch.agentId || "(default)",
-              enabled: ch.enabled,
-              botUsername: ch.metadata["botUsername"] as string | undefined,
-              allowedUsers: ch.metadata["allowedUsers"] as string[] | undefined,
-              allowedSenders: ch.metadata["allowedSenders"] as
-                | string[]
-                | undefined,
-              inboundAddress: ch.metadata["inboundAddress"] as
-                | string
-                | undefined,
-              verified: ch.metadata["verified"] as boolean | undefined,
-              hasPairingCode: !!ch.metadata["pairingCode"],
-            })),
-            createdAt: s.createdAt,
-            wsConnections: getConnectionCount(s.userId),
-          });
-        }
-      } catch (err) {
-        kvError = String(err);
-        logger.error(
-          "admin",
-          "KV list sessions failed, retrying with fresh handle",
-          { error: kvError },
-        );
-        // KV handle may be stale — try to reinitialize
-        try {
-          const { initKv: reinit } = await import("./kv.ts");
-          await reinit();
-          const freshKv = getKv();
-          if (freshKv) {
-            const iter = freshKv.list<UserSession>({ prefix: ["sessions"] });
-            for await (const entry of iter) {
-              const s = entry.value;
-              sessions.push({
-                userId: s.userId,
-                channels: s.channels.map((ch) => ({
-                  id: ch.id,
-                  type: ch.type,
-                  agentId: ch.agentId || "(default)",
-                  enabled: ch.enabled,
-                  botUsername: ch.metadata["botUsername"] as string | undefined,
-                  allowedUsers: ch.metadata["allowedUsers"] as
-                    | string[]
-                    | undefined,
-                  allowedSenders: ch.metadata["allowedSenders"] as
-                    | string[]
-                    | undefined,
-                  inboundAddress: ch.metadata["inboundAddress"] as
-                    | string
-                    | undefined,
-                  verified: ch.metadata["verified"] as boolean | undefined,
-                  hasPairingCode: !!ch.metadata["pairingCode"],
-                })),
-                createdAt: s.createdAt,
-                wsConnections: getConnectionCount(s.userId),
-              });
-            }
-            kvError = undefined; // retry succeeded
-          }
-        } catch (retryErr) {
-          logger.error("admin", "KV retry also failed", {
-            error: String(retryErr),
-          });
-        }
+
+    // Helper to map a session entry to admin format
+    function mapSession(s: UserSession) {
+      return {
+        userId: s.userId,
+        channels: s.channels.map((ch) => ({
+          id: ch.id,
+          type: ch.type,
+          agentId: ch.agentId || "(default)",
+          enabled: ch.enabled,
+          botUsername: ch.metadata["botUsername"] as string | undefined,
+          allowedUsers: ch.metadata["allowedUsers"] as string[] | undefined,
+          allowedSenders: ch.metadata["allowedSenders"] as
+            | string[]
+            | undefined,
+          inboundAddress: ch.metadata["inboundAddress"] as
+            | string
+            | undefined,
+          verified: ch.metadata["verified"] as boolean | undefined,
+          hasPairingCode: !!ch.metadata["pairingCode"],
+        })),
+        createdAt: s.createdAt,
+        wsConnections: getConnectionCount(s.userId),
+      };
+    }
+
+    async function listSessions(): Promise<void> {
+      if (!(isKvAvailable() && getKv())) return;
+      const iter = getKv()!.list<UserSession>({ prefix: ["sessions"] });
+      for await (const entry of iter) {
+        sessions.push(mapSession(entry.value));
       }
     }
 
-    // Get recent messages from KV (durable across restarts)
+    // Run session list and message fetch in parallel
     let allMsgs: Awaited<ReturnType<typeof getAllRecentMessages>> = [];
-    try {
-      allMsgs = await getAllRecentMessages(30);
-    } catch (err) {
+
+    const [sessErr, msgErr] = await Promise.all([
+      listSessions().then(() => null).catch((err) => err),
+      getAllRecentMessages(30).then((msgs) => {
+        allMsgs = msgs;
+        return null;
+      }).catch((err) => err),
+    ]);
+
+    if (sessErr) {
+      kvError = String(sessErr);
+      logger.error("admin", "KV list sessions failed, retrying", {
+        error: kvError,
+      });
+      // KV handle may be stale — try to reinitialize
+      try {
+        const { initKv: reinit } = await import("./kv.ts");
+        await reinit();
+        await listSessions();
+        kvError = undefined;
+      } catch (retryErr) {
+        logger.error("admin", "KV retry also failed", {
+          error: String(retryErr),
+        });
+      }
+    }
+
+    if (msgErr) {
       logger.error("admin", "Failed to fetch recent messages", {
-        error: String(err),
+        error: String(msgErr),
       });
     }
+
+    const adminMs = Math.round(performance.now() - t0);
     const recentMessages = allMsgs.map((m) => ({
       id: m.id,
       userId: m.userId.slice(0, 8),
@@ -432,6 +423,7 @@ Deno.serve(serveOptions, async (req: Request) => {
       version: VERSION,
       kv: isKvAvailable(),
       kvError: kvError || undefined,
+      queryMs: adminMs,
       websockets: getConnectionCount(),
       uptime: Math.floor(performance.now() / 1000),
       sessions,
@@ -1531,7 +1523,8 @@ async function load(){
       '<div class="stat"><div class="stat-value '+(d.kv?'stat-ok':'stat-err')+'">'+(d.kv?'Connected':'Offline')+(d.kvError?' *':'')+'</div><div class="stat-label">Deno KV</div></div>'+
       '<div class="stat"><div class="stat-value">'+d.websockets+'</div><div class="stat-label">WebSockets</div></div>'+
       '<div class="stat"><div class="stat-value">'+d.sessions.length+'</div><div class="stat-label">Sessions</div></div>'+
-      '<div class="stat"><div class="stat-value">'+Math.floor(d.uptime/60)+'m</div><div class="stat-label">Uptime</div></div>';
+      '<div class="stat"><div class="stat-value">'+Math.floor(d.uptime/60)+'m</div><div class="stat-label">Uptime</div></div>'+
+      '<div class="stat"><div class="stat-value">'+(d.queryMs||'?')+'ms</div><div class="stat-label">Query Time</div></div>';
 
     allSessions=d.sessions;
     allMessages=d.recentMessages||[];
