@@ -886,6 +886,7 @@ async function handleAgenticChat(
   msg: {
     agentId: string;
     message: string;
+    columnId?: string;
     pageContext?: { title: string; url: string; content: string };
     maxIterations?: number;
   },
