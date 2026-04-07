@@ -1437,6 +1437,15 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
     }
   }
 
+  // Check if smart start should be shown (on page load, not already completed)
+  if (!document.getElementById('smart-start-container')) {
+    chrome.storage.local.get('chaos:smart-start-completed').then((stored) => {
+      if (!stored['chaos:smart-start-completed']) {
+        showSmartStart();
+      }
+    });
+  }
+
   // Initialize columns if none exist
   if (activeAgentId && columns.length === 0) {
       // Try restoring saved column config first
@@ -4561,6 +4570,14 @@ document.getElementById('btn-rerun-onboarding')?.addEventListener('click', async
   }
 });
 
+// ── Re-run Smart Start ──
+document.getElementById('btn-rerun-smart-start')?.addEventListener('click', async () => {
+  await chrome.storage.local.remove('chaos:smart-start-completed');
+  // Remove any existing smart start container
+  document.getElementById('smart-start-container')?.remove();
+  await showSmartStart();
+});
+
 // ── Mic Test ──
 
 const btnTestMic = document.getElementById('btn-test-mic');
@@ -6838,6 +6855,234 @@ document.getElementById('hook-refine-btn')!.addEventListener('click', () => {
 });
 
 // ══════════════════════════════════════════
+// ── Smart Start — Context-aware first run
+// ══════════════════════════════════════════
+
+async function showSmartStart(): Promise<void> {
+  // Check if already completed
+  const stored = await chrome.storage.local.get('chaos:smart-start-completed');
+  if (stored['chaos:smart-start-completed']) {
+    console.log('[smart-start] Already completed, skipping');
+    return;
+  }
+
+  const viewChat = document.getElementById('view-chat');
+  if (!viewChat) return;
+
+  // Create the container
+  const container = document.createElement('div');
+  container.className = 'smart-start-container';
+  container.id = 'smart-start-container';
+
+  // Show loading state
+  container.innerHTML = `
+    <div class="smart-start-inner">
+      <div class="smart-start-header">
+        <h2>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          Welcome to CHAOS
+        </h2>
+      </div>
+      <div class="smart-start-loading">
+        <div class="spinner"></div>
+        <p>Analyzing your browsing context...</p>
+        <p class="smart-start-privacy">This stays between you and your AI provider</p>
+      </div>
+    </div>
+  `;
+
+  viewChat.appendChild(container);
+
+  try {
+    // Gather browsing context
+    console.log('[smart-start] Gathering browsing context...');
+    const context = await sendMsg<{
+      historyUrls: Array<{ url: string; title: string; visitTime: number }>;
+      bookmarks: Array<{ url: string; title: string; dateAdded: number }>;
+      openTabs: Array<{ url: string; title: string }>;
+      readingList: Array<{ url: string; title: string }>;
+      permissions: string[];
+    }>({ type: 'gatherBrowsingContext' });
+
+    console.log('[smart-start] Context gathered, analyzing...');
+
+    // Analyze context
+    const suggestions = await sendMsg<{
+      summary: string;
+      actions: Array<{ title: string; description: string; prompt: string }>;
+      hookSuggestions: Array<{ description: string; trigger: HookTrigger; prompt: string; reason: string }>;
+    }>({ type: 'analyzeForSmartStart', context });
+
+    console.log('[smart-start] Suggestions received:', suggestions.actions?.length, 'actions');
+
+    // Render the results
+    renderSmartStartContent(container, suggestions);
+  } catch (err) {
+    console.error('[smart-start] Failed:', err);
+    // Show fallback content
+    renderSmartStartContent(container, {
+      summary: 'Welcome! I can help you navigate the web more efficiently. Here are some things to try.',
+      actions: [
+        { title: 'Summarize this page', description: 'Read and summarize the content of your current tab', prompt: 'Summarize the current page I\'m viewing. Give me the key points and takeaways.' },
+        { title: 'Organize my tabs', description: 'Group your open tabs into logical categories', prompt: 'Look at all my open tabs and suggest how to organize them into groups. Then help me group them.' },
+        { title: 'What\'s interesting?', description: 'Find interesting patterns in your open tabs', prompt: 'Look at my open tabs and tell me what\'s interesting. What themes do you see? What should I pay attention to?' },
+      ],
+      hookSuggestions: [
+        { description: 'Auto-summarize bookmarked pages', trigger: { type: 'bookmark-created' as const }, prompt: 'A new bookmark was just created. Read the bookmarked page and write a brief summary.', reason: 'Get automatic summaries of pages you bookmark.' },
+        { description: 'Daily review', trigger: { type: 'browser-startup' as const }, prompt: 'Good morning! Do a quick review of my recent activity and suggest things to work on.', reason: 'Start each day with a quick briefing.' },
+      ],
+    });
+  }
+}
+
+function renderSmartStartContent(
+  container: HTMLElement,
+  suggestions: {
+    summary: string;
+    actions: Array<{ title: string; description: string; prompt: string }>;
+    hookSuggestions: Array<{ description: string; trigger: HookTrigger; prompt: string; reason: string }>;
+  },
+): void {
+  const inner = container.querySelector('.smart-start-inner') || container;
+
+  // Build action cards HTML
+  let actionsHtml = '';
+  for (const action of suggestions.actions) {
+    actionsHtml += `
+      <div class="smart-start-card" data-prompt="${escapeHtml(action.prompt)}">
+        <p class="smart-start-card-title">${escapeHtml(action.title)}</p>
+        <p class="smart-start-card-desc">${escapeHtml(action.description)}</p>
+      </div>
+    `;
+  }
+
+  // Build hook suggestions HTML
+  let hooksHtml = '';
+  for (let i = 0; i < suggestions.hookSuggestions.length; i++) {
+    const hook = suggestions.hookSuggestions[i];
+    hooksHtml += `
+      <div class="smart-start-hook" data-hook-index="${i}">
+        <div class="smart-start-hook-info">
+          <p class="smart-start-hook-desc">${escapeHtml(hook.description)}</p>
+          <p class="smart-start-hook-reason">${escapeHtml(hook.reason)}</p>
+        </div>
+        <div class="smart-start-hook-actions">
+          <button class="btn btn-accent smart-start-hook-enable" data-hook-index="${i}">Enable</button>
+          <button class="btn btn-ghost smart-start-hook-skip" data-hook-index="${i}">Skip</button>
+        </div>
+      </div>
+    `;
+  }
+
+  inner.innerHTML = `
+    <div class="smart-start-header">
+      <h2>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        Welcome to CHAOS
+      </h2>
+      <p class="smart-start-summary">${escapeHtml(suggestions.summary)}</p>
+    </div>
+    <h3 class="smart-start-section-title">Suggested Actions</h3>
+    <div class="smart-start-actions">
+      ${actionsHtml}
+    </div>
+    ${suggestions.hookSuggestions.length > 0 ? `
+      <h3 class="smart-start-section-title">Suggested Hooks</h3>
+      <div class="smart-start-hooks">
+        ${hooksHtml}
+      </div>
+    ` : ''}
+    <div class="smart-start-footer">
+      <button class="btn btn-ghost" id="smart-start-skip">Skip and start chatting</button>
+      <p class="smart-start-privacy">This stays between you and your AI provider</p>
+    </div>
+  `;
+
+  // Wire up action card clicks
+  const cards = inner.querySelectorAll('.smart-start-card');
+  for (const card of cards) {
+    card.addEventListener('click', async () => {
+      const prompt = (card as HTMLElement).dataset.prompt;
+      if (!prompt) return;
+
+      // Mark completed and dismiss
+      await chrome.storage.local.set({ 'chaos:smart-start-completed': true });
+      container.remove();
+
+      // Send the prompt to the agent
+      const masterAgent = agents.find((a) => a.master);
+      const targetAgent = masterAgent || agents[0];
+      if (targetAgent) {
+        sendPortMessage({
+          type: 'agenticChat',
+          agentId: targetAgent.id,
+          message: prompt,
+        });
+      }
+    });
+  }
+
+  // Wire up hook enable buttons
+  const enableBtns = inner.querySelectorAll('.smart-start-hook-enable');
+  for (const btn of enableBtns) {
+    btn.addEventListener('click', async () => {
+      const index = parseInt((btn as HTMLElement).dataset.hookIndex || '0', 10);
+      const hookSuggestion = suggestions.hookSuggestions[index];
+      if (!hookSuggestion) return;
+
+      // Find the master agent to attach the hook to
+      const masterAgent = agents.find((a) => a.master);
+      const targetAgent = masterAgent || agents[0];
+      if (!targetAgent) return;
+
+      const hook: Hook = {
+        id: `hook-ss-${Date.now()}-${index}`,
+        agentId: targetAgent.id,
+        description: hookSuggestion.description,
+        trigger: hookSuggestion.trigger,
+        prompt: hookSuggestion.prompt,
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        triggerCount: 0,
+      };
+
+      sendPortMessage({ type: 'addHook', hook });
+
+      // Update button to show enabled
+      (btn as HTMLButtonElement).textContent = 'Enabled!';
+      (btn as HTMLButtonElement).disabled = true;
+      (btn as HTMLButtonElement).classList.remove('btn-accent');
+      (btn as HTMLButtonElement).classList.add('btn-ghost');
+
+      // Hide the skip button for this hook
+      const hookEl = (btn as HTMLElement).closest('.smart-start-hook');
+      const skipBtn = hookEl?.querySelector('.smart-start-hook-skip') as HTMLButtonElement | null;
+      if (skipBtn) skipBtn.style.display = 'none';
+
+      console.log('[smart-start] Hook enabled:', hookSuggestion.description);
+    });
+  }
+
+  // Wire up hook skip buttons
+  const skipBtns = inner.querySelectorAll('.smart-start-hook-skip');
+  for (const btn of skipBtns) {
+    btn.addEventListener('click', () => {
+      const hookEl = (btn as HTMLElement).closest('.smart-start-hook');
+      if (hookEl) hookEl.remove();
+    });
+  }
+
+  // Wire up skip button
+  const skipBtn = inner.querySelector('#smart-start-skip');
+  if (skipBtn) {
+    skipBtn.addEventListener('click', async () => {
+      await chrome.storage.local.set({ 'chaos:smart-start-completed': true });
+      container.remove();
+    });
+  }
+}
+
+// ══════════════════════════════════════════
 // ── Initial load
 // ══════════════════════════════════════════
 
@@ -6869,19 +7114,11 @@ async function init(): Promise<void> {
     if (shouldOnboard) {
         const result = await showOnboarding(sendMsg);
         if (result) {
-          // Onboarding completed — now load agents and trigger intro
+          // Onboarding completed — now load agents and show Smart Start
           sendPortMessage({ type: 'listAgents' });
-          // Wait briefly for agents to load, then send intro message
+          // Wait briefly for agents to load, then show smart start
           setTimeout(() => {
-            const masterAgent = agents.find((a) => a.master);
-            const targetAgent = masterAgent || agents[0];
-            if (targetAgent) {
-              sendPortMessage({
-                type: 'agenticChat',
-                agentId: targetAgent.id,
-                message: 'Introduce yourself to a new user. Explain what you can do in a friendly, concise way. Suggest 3 things they could try right now.',
-              });
-            }
+            showSmartStart();
           }, 2000);
           return;
         }

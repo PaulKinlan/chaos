@@ -1869,6 +1869,231 @@ Return ONLY the refined prompt text, nothing else. No explanations or commentary
       }
     }
 
+    case 'gatherBrowsingContext': {
+      const permissions: string[] = [];
+      const historyUrls: Array<{ url: string; title: string; visitTime: number }> = [];
+      const bookmarks: Array<{ url: string; title: string; dateAdded: number }> = [];
+      const openTabs: Array<{ url: string; title: string }> = [];
+      const readingList: Array<{ url: string; title: string }> = [];
+
+      // Check which permissions are granted
+      const permChecks = ['history', 'bookmarks', 'tabs'] as const;
+      for (const perm of permChecks) {
+        try {
+          const granted = await chrome.permissions.contains({ permissions: [perm] });
+          if (granted) permissions.push(perm);
+        } catch { /* not available */ }
+      }
+      // readingList permission check
+      try {
+        const granted = await chrome.permissions.contains({ permissions: ['readingList' as string] as chrome.permissions.Permissions['permissions'] });
+        if (granted) permissions.push('readingList');
+      } catch { /* not available */ }
+
+      // Gather history
+      if (permissions.includes('history')) {
+        try {
+          const items = await chrome.history.search({
+            text: '',
+            startTime: Date.now() - 48 * 60 * 60 * 1000,
+            maxResults: 200,
+          });
+          for (const item of items) {
+            if (item.url && item.title) {
+              historyUrls.push({
+                url: item.url,
+                title: item.title,
+                visitTime: item.lastVisitTime || Date.now(),
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('[smart-start] Failed to gather history:', err);
+        }
+      }
+
+      // Gather bookmarks
+      if (permissions.includes('bookmarks')) {
+        try {
+          const items = await chrome.bookmarks.getRecent(20);
+          for (const item of items) {
+            if (item.url && item.title) {
+              bookmarks.push({
+                url: item.url,
+                title: item.title,
+                dateAdded: item.dateAdded || Date.now(),
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('[smart-start] Failed to gather bookmarks:', err);
+        }
+      }
+
+      // Gather open tabs
+      if (permissions.includes('tabs')) {
+        try {
+          const tabs = await chrome.tabs.query({});
+          for (const tab of tabs) {
+            if (tab.url && tab.title) {
+              openTabs.push({ url: tab.url, title: tab.title });
+            }
+          }
+        } catch (err) {
+          console.warn('[smart-start] Failed to gather tabs:', err);
+        }
+      }
+
+      // Try reading list (may not exist in all browsers)
+      if (permissions.includes('readingList')) {
+        try {
+          const items = await (chrome as any).readingList.query({});
+          for (const item of items) {
+            if (item.url && item.title) {
+              readingList.push({ url: item.url, title: item.title });
+            }
+          }
+        } catch (err) {
+          console.warn('[smart-start] readingList not available:', err);
+        }
+      }
+
+      console.log(`[smart-start] Gathered ${historyUrls.length} history items, ${bookmarks.length} bookmarks, ${openTabs.length} tabs`);
+
+      return {
+        historyUrls,
+        bookmarks,
+        openTabs,
+        readingList,
+        permissions,
+      };
+    }
+
+    case 'analyzeForSmartStart': {
+      const fallbackSuggestions = {
+        summary: 'Welcome! I can help you navigate the web more efficiently. Here are some things to try.',
+        actions: [
+          { title: 'Summarize this page', description: 'Read and summarize the content of your current tab', prompt: 'Summarize the current page I\'m viewing. Give me the key points and takeaways.' },
+          { title: 'Organize my tabs', description: 'Group your open tabs into logical categories', prompt: 'Look at all my open tabs and suggest how to organize them into groups. Then help me group them.' },
+          { title: 'What\'s interesting?', description: 'Find interesting patterns in your open tabs', prompt: 'Look at my open tabs and tell me what\'s interesting. What themes do you see? What should I pay attention to?' },
+        ],
+        hookSuggestions: [
+          { description: 'Auto-summarize bookmarked pages', trigger: { type: 'bookmark-created' as const }, prompt: 'A new bookmark was just created. Read the bookmarked page and write a brief summary of its content. Save it to memories so I can find it later.', reason: 'Get automatic summaries of pages you bookmark.' },
+          { description: 'Daily review', trigger: { type: 'browser-startup' as const }, prompt: 'Good morning! Do a quick review: check my recent history, any pending tasks, and suggest 3 things I could work on today.', reason: 'Start each day with a quick briefing.' },
+        ],
+      };
+
+      try {
+        const context = msg.context as {
+          historyUrls: Array<{ url: string; title: string; visitTime: number }>;
+          bookmarks: Array<{ url: string; title: string; dateAdded: number }>;
+          openTabs: Array<{ url: string; title: string }>;
+          readingList: Array<{ url: string; title: string }>;
+          permissions: string[];
+        };
+
+        // If no meaningful context, return fallback
+        if (!context || (context.historyUrls.length === 0 && context.bookmarks.length === 0 && context.openTabs.length === 0)) {
+          console.log('[smart-start] No browsing context available, returning fallback suggestions');
+          return fallbackSuggestions;
+        }
+
+        const settings = await getSettings();
+        const keys = await getApiKeys();
+        const provider = settings.activeProvider as keyof typeof keys;
+        const apiKey = keys[provider];
+        if (!apiKey) {
+          console.warn('[smart-start] No API key configured, returning fallback');
+          return fallbackSuggestions;
+        }
+
+        const model = createLanguageModel(settings.activeProvider, apiKey, settings.model);
+
+        // Build context description
+        let contextDesc = '';
+        if (context.historyUrls.length > 0) {
+          contextDesc += 'Recent browsing history (last 48h):\n';
+          for (const item of context.historyUrls.slice(0, 50)) {
+            contextDesc += `- ${item.title} (${item.url})\n`;
+          }
+          contextDesc += '\n';
+        }
+        if (context.openTabs.length > 0) {
+          contextDesc += 'Currently open tabs:\n';
+          for (const item of context.openTabs) {
+            contextDesc += `- ${item.title} (${item.url})\n`;
+          }
+          contextDesc += '\n';
+        }
+        if (context.bookmarks.length > 0) {
+          contextDesc += 'Recent bookmarks:\n';
+          for (const item of context.bookmarks) {
+            contextDesc += `- ${item.title} (${item.url})\n`;
+          }
+          contextDesc += '\n';
+        }
+        if (context.readingList.length > 0) {
+          contextDesc += 'Reading list:\n';
+          for (const item of context.readingList) {
+            contextDesc += `- ${item.title} (${item.url})\n`;
+          }
+          contextDesc += '\n';
+        }
+
+        const result = await generateText({
+          model,
+          system: `You are helping a new user get started with an AI browser assistant called CHAOS.
+Based on their recent browsing activity, suggest specific things the assistant could help with RIGHT NOW.
+
+You MUST respond with valid JSON matching this exact schema (no markdown, no code fences, just raw JSON):
+{
+  "summary": "A brief friendly summary of what you notice about their browsing (2-3 sentences)",
+  "actions": [
+    {
+      "title": "Short action title (max 6 words)",
+      "description": "What the assistant will do (1 sentence)",
+      "prompt": "The exact prompt to send to the assistant"
+    }
+  ],
+  "hookSuggestions": [
+    {
+      "description": "What the hook does",
+      "trigger": { "type": "trigger-type" },
+      "prompt": "The hook prompt",
+      "reason": "Why this hook would be useful for this user"
+    }
+  ]
+}
+
+For trigger types, use one of: bookmark-created, tab-navigated, tab-created, browser-startup, download-completed, history-visited, idle-changed.
+For tab-navigated and history-visited triggers, include a "urlPattern" field in the trigger object.
+
+Generate 3-5 actions and 2-3 hook suggestions. Make them specific to what the user has actually been browsing.`,
+          prompt: contextDesc,
+        });
+
+        // Parse the response
+        const text = result.text.trim();
+        // Try to extract JSON from the response (handle potential markdown wrapping)
+        let jsonStr = text;
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonStr = jsonMatch[0];
+        }
+
+        const parsed = JSON.parse(jsonStr);
+        console.log('[smart-start] LLM analysis complete:', parsed.actions?.length, 'actions,', parsed.hookSuggestions?.length, 'hooks');
+        return {
+          summary: parsed.summary || fallbackSuggestions.summary,
+          actions: Array.isArray(parsed.actions) ? parsed.actions : fallbackSuggestions.actions,
+          hookSuggestions: Array.isArray(parsed.hookSuggestions) ? parsed.hookSuggestions : fallbackSuggestions.hookSuggestions,
+        };
+      } catch (err) {
+        console.error('[smart-start] Analysis failed, returning fallback:', err);
+        return fallbackSuggestions;
+      }
+    }
+
     default:
       throw new Error(`Unknown one-shot message type: ${msg.type}`);
   }
