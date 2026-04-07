@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CHAOS SDK Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --surface-alt: #1a1a28;
+      --border: #2a2a3a;
+      --text: #e0e0e8;
+      --text-dim: #888898;
+      --accent: #7c5cff;
+      --accent-dim: #5a3fd4;
+      --danger: #ff4466;
+      --success: #44ff88;
+      --mono: 'Menlo', 'Consolas', 'Monaco', monospace;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 12px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    header span {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Left panel: agent list */
+    .panel-left {
+      width: 260px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header {
+      padding: 12px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .agent-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .agent-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      transition: background 0.15s;
+    }
+
+    .agent-item:hover { background: var(--surface-alt); }
+    .agent-item.active { background: var(--accent-dim); }
+
+    .agent-item .name {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .agent-item .role {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .agent-item.active .role { color: #c0b8ff; }
+
+    .btn {
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s;
+    }
+
+    .btn:hover { background: var(--accent-dim); border-color: var(--accent); }
+    .btn-danger { color: var(--danger); }
+    .btn-danger:hover { background: #2a1020; border-color: var(--danger); }
+
+    /* Right panel: chat */
+    .panel-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+
+    .message {
+      margin-bottom: 16px;
+      max-width: 720px;
+    }
+
+    .message .sender {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .message.user .sender { color: var(--accent); }
+    .message.assistant .sender { color: var(--success); }
+
+    .message .content {
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+    }
+
+    .message.assistant .content {
+      border-color: #1a3a2a;
+    }
+
+    .chat-input {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+    }
+
+    .chat-input input {
+      flex: 1;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .chat-input input:focus { border-color: var(--accent); }
+    .chat-input input::placeholder { color: var(--text-dim); }
+    .chat-input input:disabled { opacity: 0.5; }
+
+    /* Bottom panel: activity log */
+    .panel-bottom {
+      height: 180px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .log-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 16px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .log-entry {
+      color: var(--text-dim);
+    }
+
+    .log-entry .timestamp { color: #555568; }
+    .log-entry .event { color: var(--accent); }
+    .log-entry.error .event { color: var(--danger); }
+
+    /* Create agent dialog */
+    .dialog-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .dialog-overlay.hidden { display: none; }
+
+    .dialog {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      width: 380px;
+    }
+
+    .dialog h2 {
+      font-size: 16px;
+      margin-bottom: 16px;
+    }
+
+    .dialog label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+      margin-top: 12px;
+    }
+
+    .dialog input {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .dialog input:focus { border-color: var(--accent); }
+
+    .dialog-actions {
+      margin-top: 20px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CHAOS</h1>
+    <span>SDK Demo &mdash; in-memory stores, mock engine, no Chrome APIs</span>
+  </header>
+
+  <div class="main">
+    <div class="panel-left">
+      <div class="panel-header">
+        <span>Agents</span>
+        <button class="btn" id="btn-create">+ New</button>
+      </div>
+      <div class="agent-list" id="agent-list"></div>
+    </div>
+
+    <div class="panel-right">
+      <div class="chat-area" id="chat-area">
+        <div class="empty-state" id="empty-state">Select or create an agent to start chatting</div>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="chat-input" placeholder="Type a message..." disabled />
+        <button class="btn" id="btn-send" disabled>Send</button>
+        <button class="btn btn-danger" id="btn-delete" disabled>Delete Agent</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-bottom">
+    <div class="panel-header">Activity Log</div>
+    <div class="log-area" id="log-area"></div>
+  </div>
+
+  <div class="dialog-overlay hidden" id="dialog-overlay">
+    <div class="dialog">
+      <h2>Create Agent</h2>
+      <label>Name</label>
+      <input type="text" id="agent-name" placeholder="e.g. Research Assistant" />
+      <label>Role</label>
+      <input type="text" id="agent-role" placeholder="e.g. Helps with research tasks" />
+      <div class="dialog-actions">
+        <button class="btn" id="btn-cancel">Cancel</button>
+        <button class="btn" id="btn-confirm">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
