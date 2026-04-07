@@ -286,6 +286,8 @@ async function setupContextMenus(): Promise<void> {
     contexts: ['selection', 'page', 'link', 'image', 'video', 'audio'],
   });
 
+  const allContexts: chrome.contextMenus.ContextType[] = ['selection', 'page', 'link', 'image', 'video', 'audio'];
+
   // Add child items per agent
   const agents = await listAgents();
   for (const agent of agents) {
@@ -293,7 +295,7 @@ async function setupContextMenus(): Promise<void> {
       id: `chaos-agent-${agent.id}`,
       parentId: 'chaos-parent',
       title: agent.name,
-      contexts: ['selection', 'page'],
+      contexts: allContexts,
     });
   }
 
@@ -304,7 +306,7 @@ async function setupContextMenus(): Promise<void> {
       parentId: 'chaos-parent',
       title: '(no agents created yet)',
       enabled: false,
-      contexts: ['selection', 'page'],
+      contexts: allContexts,
     });
   }
 
@@ -318,7 +320,7 @@ async function setupContextMenus(): Promise<void> {
       id: 'chaos-hooks-separator',
       parentId: 'chaos-parent',
       type: 'separator',
-      contexts: ['selection', 'page'],
+      contexts: allContexts,
     });
     for (const hook of contextMenuHooks) {
       const trigger = hook.trigger as Extract<import('./storage/types.js').HookTrigger, { type: 'context-menu' }>;
@@ -326,7 +328,7 @@ async function setupContextMenus(): Promise<void> {
         id: `chaos-hook-${hook.id}`,
         parentId: 'chaos-parent',
         title: trigger.label || hook.description,
-        contexts: ['selection', 'page'],
+        contexts: allContexts,
       });
     }
   }
@@ -343,18 +345,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const isHook = menuId.startsWith('chaos-hook-');
   if (!isAgent && !isHook) return;
 
-  // Build rich context from all available info
+  // Build rich context from all available info — always include everything
   const parts: string[] = [];
 
-  if (info.linkUrl) {
-    parts.push(`Link URL: ${info.linkUrl}`);
+  // What was the click target?
+  if (info.mediaType) {
+    parts.push(`Context: Right-clicked on ${info.mediaType}`);
+  } else if (info.linkUrl) {
+    parts.push(`Context: Right-clicked on a link`);
+  } else if (info.selectionText) {
+    parts.push(`Context: Right-clicked on selected text`);
+  } else {
+    parts.push(`Context: Right-clicked on the page`);
   }
-  if (info.selectionText) {
-    parts.push(`Selected text: ${info.selectionText}`);
-  }
-  if (info.srcUrl) {
-    parts.push(`Media URL: ${info.srcUrl}`);
-  }
+
+  // Always include page info
   if (tab?.title) {
     parts.push(`Page title: ${tab.title}`);
   }
@@ -362,17 +367,40 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     parts.push(`Page URL: ${tab.url}`);
   }
 
-  // If no selection or link, try to extract page content
-  if (!info.selectionText && !info.linkUrl && tab?.id) {
+  // Specific click target data
+  if (info.linkUrl) {
+    parts.push(`Link URL: ${info.linkUrl}`);
+    if (info.linkText) {
+      parts.push(`Link text: ${info.linkText}`);
+    }
+  }
+  if (info.selectionText) {
+    parts.push(`Selected text: ${info.selectionText}`);
+  }
+  if (info.srcUrl) {
+    parts.push(`Media URL: ${info.srcUrl}`);
+  }
+  if (info.frameUrl && info.frameUrl !== tab?.url) {
+    parts.push(`Frame URL: ${info.frameUrl}`);
+  }
+
+  // Try to extract page content for additional context
+  // (always attempt — even with a selection or link, the page context is useful)
+  if (tab?.id) {
     try {
       const response = await chrome.tabs.sendMessage(tab.id, {
         type: 'extractContent',
       });
       if (response?.content) {
-        parts.push(`Page content:\n${response.content}`);
+        // Truncate to avoid overwhelming the prompt if there's already specific context
+        const maxLen = (info.selectionText || info.linkUrl) ? 2000 : 10000;
+        const pageContent = response.content.length > maxLen
+          ? response.content.slice(0, maxLen) + '\n...(truncated)'
+          : response.content;
+        parts.push(`Page content:\n${pageContent}`);
       }
     } catch {
-      // Content extraction failed, continue with what we have
+      // Content extraction failed (no content script), continue with what we have
     }
   }
 
