@@ -1741,6 +1741,15 @@ function removeColumn(columnId: string): void {
   if (idx === -1) return;
 
   const col = columns[idx];
+
+  // Stop any active agent loop for this column.  isStreaming may be stale if
+  // an error path didn't reset it, but sending a redundant stop is harmless —
+  // the background will simply find no matching controller and ignore it.
+  if (col.isStreaming) {
+    sendPortMessage({ type: 'stopAgenticLoop', agentId: col.agentId });
+    col.isStreaming = false;
+  }
+
   col.columnEl.remove();
   columns.splice(idx, 1);
 
