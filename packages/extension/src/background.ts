@@ -370,9 +370,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Specific click target data
   if (info.linkUrl) {
     parts.push(`Link URL: ${info.linkUrl}`);
-    if (info.linkText) {
-      parts.push(`Link text: ${info.linkText}`);
-    }
   }
   if (info.selectionText) {
     parts.push(`Selected text: ${info.selectionText}`);
