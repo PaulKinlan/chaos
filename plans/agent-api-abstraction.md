@@ -415,67 +415,96 @@ Currently the engine is locked to Chrome via two storage mechanisms:
 
 OPFS is actually a web standard — it works in any modern browser, not just extensions. The real lock-in is `chrome.storage.local` and the Chrome extension APIs (permissions, alarms, bookmarks, history, tabs, etc.).
 
-### Storage Interface
+### Storage Interface — Semantic Stores
 
-Abstract both stores behind a common interface:
+Rather than generic "KV" and "file" stores, name each store by its *purpose*. This makes the SDK self-documenting and lets different backends make different persistence decisions for each concern.
 
 ```typescript
-// Key-value store (replaces chrome.storage.local)
-interface KVStore {
+// ── Settings: global config, provider keys, preferences ──
+interface SettingsStore {
   get<T>(key: string): Promise<T | undefined>;
   set(key: string, value: unknown): Promise<void>;
   remove(key: string): Promise<void>;
   getMultiple<T>(keys: string[]): Promise<Record<string, T>>;
 }
 
-// File store (replaces direct OPFS access)
-interface FileStore {
-  read(path: string): Promise<string>;
-  write(path: string, content: string): Promise<void>;
-  delete(path: string): Promise<void>;
-  list(path: string): Promise<FileEntry[]>;
-  mkdir(path: string): Promise<void>;
-  exists(path: string): Promise<boolean>;
-  search(pattern: string, path?: string): Promise<SearchResult[]>;
+// ── Memory: per-agent file-based memory (CLAUDE.md, memories/, people/, etc.) ──
+interface MemoryStore {
+  read(agentId: string, path: string): Promise<string>;
+  write(agentId: string, path: string, content: string): Promise<void>;
+  append(agentId: string, path: string, content: string): Promise<void>;
+  delete(agentId: string, path: string): Promise<void>;
+  list(agentId: string, path?: string): Promise<FileEntry[]>;
+  mkdir(agentId: string, path: string): Promise<void>;
+  exists(agentId: string, path: string): Promise<boolean>;
+  search(agentId: string, pattern: string, path?: string): Promise<SearchResult[]>;
+}
+
+// ── Conversations: chat history per agent ──
+interface ConversationStore {
+  get(agentId: string, conversationId: string): Promise<Conversation>;
+  list(agentId: string): Promise<ConversationMeta[]>;
+  save(agentId: string, conversation: Conversation): Promise<void>;
+  delete(agentId: string, conversationId: string): Promise<void>;
+}
+
+// ── Hooks: automation rules ──
+interface HookStore {
+  list(agentId?: string): Promise<Hook[]>;
+  get(hookId: string): Promise<Hook | undefined>;
+  add(hook: Hook): Promise<void>;
+  update(hookId: string, updates: Partial<Hook>): Promise<void>;
+  remove(hookId: string): Promise<void>;
+}
+
+// ── Usage: token tracking and cost data ──
+interface UsageStore {
+  record(entry: UsageRecord): Promise<void>;
+  query(options?: UsageQueryOptions): Promise<UsageRecord[]>;
+  clear(): Promise<void>;
+}
+
+// ── Agents: agent registry ──
+interface AgentStore {
+  list(): Promise<AgentMeta[]>;
+  get(agentId: string): Promise<AgentMeta | undefined>;
+  add(agent: AgentMeta): Promise<void>;
+  update(agentId: string, updates: Partial<AgentMeta>): Promise<void>;
+  remove(agentId: string): Promise<void>;
 }
 ```
 
 ### Implementations
 
+Each semantic store can be backed by different technologies depending on the runtime:
+
+| Store | Chrome Extension | Web App | Server-Hosted |
+|-------|-----------------|---------|---------------|
+| `settings` | `chrome.storage.local` | `localStorage` | REST API |
+| `memory` | OPFS | OPFS | REST API + S3/disk |
+| `conversations` | OPFS (JSONL) | OPFS / IndexedDB | Database |
+| `hooks` | `chrome.storage.local` | IndexedDB | Database |
+| `usage` | `chrome.storage.local` | IndexedDB | Database |
+| `agents` | `chrome.storage.local` | IndexedDB | Database |
+
 ```typescript
-// Chrome Extension
-class ChromeKVStore implements KVStore {
-  async get<T>(key: string) {
-    const result = await chrome.storage.local.get(key);
-    return result[key] as T | undefined;
-  }
-  // ...
-}
+// Chrome Extension — current implementation, refactored into interfaces
+class ChromeSettingsStore implements SettingsStore { /* chrome.storage.local */ }
+class OPFSMemoryStore implements MemoryStore { /* current opfs.ts wrapper */ }
+class OPFSConversationStore implements ConversationStore { /* JSONL in OPFS */ }
+class ChromeHookStore implements HookStore { /* chrome.storage.local */ }
+class ChromeUsageStore implements UsageStore { /* chrome.storage.local */ }
+class ChromeAgentStore implements AgentStore { /* chrome.storage.local */ }
 
-// Web (localStorage + IndexedDB for large values)
-class WebKVStore implements KVStore {
-  async get<T>(key: string) {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) as T : undefined;
-  }
-  // ...
-}
+// Web App — no chrome.* APIs needed
+class WebSettingsStore implements SettingsStore { /* localStorage */ }
+class WebHookStore implements HookStore { /* IndexedDB */ }
+// Memory and Conversations use OPFS (web standard, works in all browsers)
 
-// Server-side (fetch to API)
-class RemoteKVStore implements KVStore {
-  constructor(private baseUrl: string, private token: string) {}
-  async get<T>(key: string) {
-    const resp = await fetch(`${this.baseUrl}/kv/${key}`, {
-      headers: { Authorization: `Bearer ${this.token}` },
-    });
-    return resp.ok ? await resp.json() as T : undefined;
-  }
-  // ...
-}
-
-// File store: OPFS works everywhere, but could also be backed by:
-class OPFSFileStore implements FileStore { /* current implementation */ }
-class RemoteFileStore implements FileStore { /* fetch-based, for server-hosted agents */ }
+// Server-hosted — fetch to a REST API
+class RemoteSettingsStore implements SettingsStore { /* REST */ }
+class RemoteMemoryStore implements MemoryStore { /* REST */ }
+class RemoteAgentStore implements AgentStore { /* REST */ }
 ```
 
 ### Browser API Abstraction
@@ -521,19 +550,39 @@ This means:
 5. SDK constructor accepts stores and capabilities:
 
 ```typescript
+// Chrome Extension (current)
 const sdk = new ChaosSDK({
   transport: new ChromePortTransport(),
-  kv: new ChromeKVStore(),
-  files: new OPFSFileStore(),
+  settings: new ChromeSettingsStore(),
+  memory: new OPFSMemoryStore(),
+  conversations: new OPFSConversationStore(),
+  hooks: new ChromeHookStore(),
+  usage: new ChromeUsageStore(),
+  agents: new ChromeAgentStore(),
   browser: new ChromeBrowserCapabilities(),
 });
 
-// Or for a web app:
+// Web app (no Chrome APIs)
 const sdk = new ChaosSDK({
   transport: new WebSocketTransport('ws://localhost:3000'),
-  kv: new WebKVStore(),
-  files: new OPFSFileStore(), // OPFS works in browsers too
-  // no browser capabilities — tools that need them will be unavailable
+  settings: new WebSettingsStore(),
+  memory: new OPFSMemoryStore(), // OPFS is a web standard
+  conversations: new OPFSConversationStore(),
+  hooks: new WebHookStore(),
+  usage: new WebUsageStore(),
+  agents: new WebAgentStore(),
+  // no browser capabilities — agents adapt
+});
+
+// Server-hosted (everything remote)
+const sdk = new ChaosSDK({
+  transport: new WebSocketTransport('wss://api.example.com'),
+  settings: new RemoteSettingsStore(apiUrl, token),
+  memory: new RemoteMemoryStore(apiUrl, token),
+  conversations: new RemoteConversationStore(apiUrl, token),
+  hooks: new RemoteHookStore(apiUrl, token),
+  usage: new RemoteUsageStore(apiUrl, token),
+  agents: new RemoteAgentStore(apiUrl, token),
 });
 ```
 
