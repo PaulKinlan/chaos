@@ -385,23 +385,70 @@ Events are fired both when the local SDK performs an action AND when the backgro
 4. Publish SDK types as `@chaos/sdk` (or include in `@chaos/shared`)
 5. **Deliverable**: external developers can build on the SDK
 
-## Transport Layer
+## Connection Layer
 
-The SDK needs to work across different contexts:
+There are two distinct connections the SDK needs:
 
-1. **Same extension (app.ts)**: chrome.runtime.Port + chrome.runtime.sendMessage
-2. **External extension**: chrome.runtime.sendMessage with extension ID
-3. **Web page**: window.postMessage (if exposing via content script)
-4. **Future**: WebSocket to a local agent server
+### 1. Engine Connection (`engine`)
 
-The transport layer abstracts this:
+How the SDK talks to the agent engine (the thing that runs agentic loops, manages tools, executes tasks). In the current architecture this is the background service worker. In a web app it could be a local server or a cloud-hosted engine.
 
 ```typescript
-interface Transport {
+interface EngineConnection {
+  /** Send a request and wait for a response */
   send(message: ApiMessage): Promise<ApiResponse>;
+  /** Send a request and stream back events (chat chunks, progress, etc.) */
   stream(message: ApiMessage): AsyncIterable<ApiEvent>;
+  /** Subscribe to engine-initiated events (hook triggered, task completed, etc.) */
   subscribe(event: string, handler: (data: unknown) => void): () => void;
 }
+```
+
+Implementations:
+- `ChromePortEngine` — chrome.runtime.Port + sendMessage (current)
+- `WebSocketEngine` — WebSocket to a local or remote engine server
+- `WorkerEngine` — SharedWorker/ServiceWorker postMessage (web app without a server)
+
+### 2. Relay Connection (`relay`)
+
+How the SDK talks to the relay server for external channels (Telegram, Discord, email, webhooks). Currently this is the `relay-client.ts` fetch-based client.
+
+```typescript
+interface RelayConnection {
+  /** Register with the relay server */
+  register(): Promise<{ userId: string; apiKey: string }>;
+  /** Signed fetch to relay endpoints */
+  fetch(path: string, options?: RequestInit): Promise<Response>;
+  /** WebSocket connection for real-time channel messages */
+  connect(): Promise<WebSocket>;
+}
+```
+
+Implementations:
+- `ChaosRelayConnection` — current relay-client.ts (ECDSA-signed fetch to chaos-relay.com)
+- `NoRelayConnection` — stub for environments without external channels
+- `CustomRelayConnection` — self-hosted relay server at a custom URL
+
+### SDK Constructor
+
+```typescript
+const sdk = new ChaosSDK({
+  // How to talk to the agent engine
+  engine: new ChromePortEngine(),
+  // How to talk to the relay server (optional — no channels without it)
+  relay: new ChaosRelayConnection('https://chaos-relay.com'),
+
+  // Persistence (semantic stores)
+  settings: new ChromeSettingsStore(),
+  memory: new OPFSMemoryStore(),
+  conversations: new OPFSConversationStore(),
+  hooks: new ChromeHookStore(),
+  usage: new ChromeUsageStore(),
+  agents: new ChromeAgentStore(),
+
+  // Browser capabilities (optional)
+  browser: new ChromeBrowserCapabilities(),
+});
 ```
 
 ## Storage Abstraction Layer
