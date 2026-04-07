@@ -6427,24 +6427,28 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
   const hookAgentSelect = document.getElementById('hook-agent') as HTMLSelectElement;
   const hookAgentId = hookAgentSelect?.value || agents.find((a) => a.master)?.id || activeAgentId;
 
-  const hook: Hook = {
-    id: `hook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    agentId: hookAgentId,
-    trigger,
-    prompt,
-    description,
-    enabled: true,
-    createdAt: new Date().toISOString(),
-    triggerCount: 0,
-  };
-
-  // If editing, delete the old hook first
   if (editingHookId) {
-    sendPortMessage({ type: 'removeHook', hookId: editingHookId });
+    // Update existing hook — preserve id, createdAt, triggerCount
+    sendPortMessage({
+      type: 'updateHook',
+      hookId: editingHookId,
+      updates: { agentId: hookAgentId, trigger, prompt, description },
+    });
     editingHookId = null;
+  } else {
+    // Create new hook
+    const hook: Hook = {
+      id: `hook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      agentId: hookAgentId,
+      trigger,
+      prompt,
+      description,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      triggerCount: 0,
+    };
+    sendPortMessage({ type: 'addHook', hook });
   }
-
-  sendPortMessage({ type: 'addHook', hook });
 
   // Reset form
   (document.getElementById('hook-description') as HTMLInputElement).value = '';
