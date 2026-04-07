@@ -1741,6 +1741,13 @@ function removeColumn(columnId: string): void {
   if (idx === -1) return;
 
   const col = columns[idx];
+
+  // Stop any active agent loop for this column
+  if (col.isStreaming) {
+    sendPortMessage({ type: 'stopAgenticLoop', agentId: col.agentId });
+    col.isStreaming = false;
+  }
+
   col.columnEl.remove();
   columns.splice(idx, 1);
 
