@@ -652,6 +652,9 @@ function loadCurrentViewData(): void {
     case 'hooks':
       loadHooksView();
       break;
+    case 'usage':
+      loadUsageView();
+      break;
     case 'agent-settings':
       loadAgentSettings();
       break;
@@ -6237,6 +6240,165 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
 
   // Refresh
   setTimeout(() => loadHooksView(), 200);
+});
+
+// ══════════════════════════════════════════
+// ── Usage View
+// ══════════════════════════════════════════
+
+function getUsageSince(range: string): string | undefined {
+  const now = Date.now();
+  switch (range) {
+    case '24h': return new Date(now - 24 * 60 * 60 * 1000).toISOString();
+    case '7d': return new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+    case '30d': return new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+    default: return undefined;
+  }
+}
+
+function formatCost(cost: number): string {
+  if (cost < 0.01) return '$' + cost.toFixed(4);
+  if (cost < 1) return '$' + cost.toFixed(3);
+  return '$' + cost.toFixed(2);
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
+
+function usageAgo(ts: string): string {
+  const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+async function loadUsageView(): Promise<void> {
+  const range = (document.getElementById('usage-time-range') as HTMLSelectElement)?.value || '7d';
+  const since = getUsageSince(range);
+
+  const summaryResult = await sendMsg<{ summary: {
+    totalCost: number; totalInputTokens: number; totalOutputTokens: number; totalRequests: number;
+    byProvider: Record<string, { cost: number; inputTokens: number; outputTokens: number; requests: number }>;
+    byAgent: Record<string, { name: string; cost: number; inputTokens: number; outputTokens: number; requests: number }>;
+  } }>({ type: 'getUsageSummary', since });
+  const recordsResult = await sendMsg<{ records: Array<{
+    timestamp: string; agentName: string; provider: string; model: string;
+    inputTokens: number; outputTokens: number; estimatedCost: number; source: string;
+  }> }>({ type: 'getUsageRecords', since, limit: 50 });
+
+  if (!summaryResult || !recordsResult) return;
+  const summary = summaryResult.summary;
+  const records = recordsResult.records;
+
+  // Stats cards
+  const statsEl = document.getElementById('usage-stats');
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <div class="usage-stat-card">
+        <div class="usage-stat-value">${formatCost(summary.totalCost)}</div>
+        <div class="usage-stat-label">Estimated Cost</div>
+      </div>
+      <div class="usage-stat-card">
+        <div class="usage-stat-value">${formatTokens(summary.totalInputTokens)}</div>
+        <div class="usage-stat-label">Input Tokens</div>
+      </div>
+      <div class="usage-stat-card">
+        <div class="usage-stat-value">${formatTokens(summary.totalOutputTokens)}</div>
+        <div class="usage-stat-label">Output Tokens</div>
+      </div>
+      <div class="usage-stat-card">
+        <div class="usage-stat-value">${summary.totalRequests}</div>
+        <div class="usage-stat-label">Requests</div>
+      </div>
+    `;
+  }
+
+  // By Provider
+  const providerEl = document.getElementById('usage-by-provider');
+  if (providerEl) {
+    const providers = Object.entries(summary.byProvider).sort((a, b) => b[1].cost - a[1].cost);
+    const maxCost = providers.length > 0 ? providers[0][1].cost : 1;
+    if (providers.length === 0) {
+      providerEl.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm);padding:var(--sp-2) 0;">No data yet</div>';
+    } else {
+      providerEl.innerHTML = providers.map(([name, data]) => `
+        <div class="usage-bar-row">
+          <span class="usage-bar-label">${escapeHtml(name)}</span>
+          <div class="usage-bar-track"><div class="usage-bar-fill" style="width:${maxCost > 0 ? (data.cost / maxCost * 100) : 0}%"></div></div>
+          <span class="usage-bar-value">${formatCost(data.cost)} (${data.requests})</span>
+        </div>
+      `).join('');
+    }
+  }
+
+  // By Agent
+  const agentEl = document.getElementById('usage-by-agent');
+  if (agentEl) {
+    const agents = Object.entries(summary.byAgent).sort((a, b) => b[1].cost - a[1].cost);
+    const maxCost = agents.length > 0 ? agents[0][1].cost : 1;
+    if (agents.length === 0) {
+      agentEl.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm);padding:var(--sp-2) 0;">No data yet</div>';
+    } else {
+      agentEl.innerHTML = agents.map(([, data]) => `
+        <div class="usage-bar-row">
+          <span class="usage-bar-label">${escapeHtml(data.name)}</span>
+          <div class="usage-bar-track"><div class="usage-bar-fill" style="width:${maxCost > 0 ? (data.cost / maxCost * 100) : 0}%"></div></div>
+          <span class="usage-bar-value">${formatCost(data.cost)} (${data.requests})</span>
+        </div>
+      `).join('');
+    }
+  }
+
+  // Recent Requests
+  const recentEl = document.getElementById('usage-recent');
+  if (recentEl) {
+    if (records.length === 0) {
+      recentEl.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm);padding:var(--sp-2) 0;">No requests recorded yet. Start chatting with an agent to see usage data.</div>';
+    } else {
+      recentEl.innerHTML = records.map((r) => `
+        <div class="usage-request-row">
+          <span style="color:var(--text-muted);min-width:60px;" title="${new Date(r.timestamp).toLocaleString()}">${usageAgo(r.timestamp)}</span>
+          <span style="color:var(--text-secondary);min-width:100px;font-weight:500;">${escapeHtml(r.agentName)}</span>
+          <span style="color:var(--text-muted);min-width:60px;">${escapeHtml(r.provider)}</span>
+          <span style="color:var(--text-muted);min-width:120px;font-family:var(--font-mono);">${escapeHtml(r.model)}</span>
+          <span style="color:var(--text-muted);font-family:var(--font-mono);">${formatTokens(r.inputTokens)}/${formatTokens(r.outputTokens)}</span>
+          <span style="color:var(--text-primary);font-family:var(--font-mono);min-width:60px;text-align:right;">${formatCost(r.estimatedCost)}</span>
+          <span style="color:var(--text-muted);font-size:10px;text-transform:uppercase;">${r.source}</span>
+        </div>
+      `).join('');
+    }
+  }
+}
+
+// Usage view event listeners
+document.getElementById('usage-time-range')?.addEventListener('change', () => loadUsageView());
+document.getElementById('usage-refresh')?.addEventListener('click', () => loadUsageView());
+document.getElementById('usage-clear')?.addEventListener('click', async () => {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'confirm-dialog';
+  dlg.innerHTML = `
+    <div style="padding:20px;max-width:320px;">
+      <h3 style="margin-bottom:12px;">Clear usage data?</h3>
+      <p style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:16px;">This will delete all recorded usage data. This cannot be undone.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" id="usage-clear-cancel">Cancel</button>
+        <button class="btn btn-danger" id="usage-clear-confirm">Clear</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  dlg.querySelector('#usage-clear-cancel')?.addEventListener('click', () => { dlg.close(); dlg.remove(); });
+  dlg.querySelector('#usage-clear-confirm')?.addEventListener('click', async () => {
+    await sendMsg({ type: 'clearUsage' });
+    dlg.close();
+    dlg.remove();
+    loadUsageView();
+  });
 });
 
 // ══════════════════════════════════════════

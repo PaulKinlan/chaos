@@ -49,6 +49,7 @@ import {
 } from './agents/skills.js';
 import { fetchSkillFromUrl } from './agents/skill-fetcher.js';
 import { archiveAgent, listArchivedAgents, restoreAgent } from './agents/manager.js';
+import { recordUsage, getUsageSummary, getUsage, clearUsage } from './agents/usage.js';
 import { getTaskState } from './storage/shared.js';
 import { listArtifacts } from './storage/shared.js';
 import { opfs } from './storage/opfs.js';
@@ -724,6 +725,7 @@ async function wakeAgentForMessage(agentId: string, fromAgentId: string, body: s
     const result = await runAgenticLoop({
       agentId,
       task: `You received a message from another agent.\n\nFrom: ${senderName}\nMessage: ${body}\n\nProcess this message and take any appropriate action. If the message reports task completion, review the results. If it asks you to do something, do it.`,
+      source: 'message',
       onProgress: (update: ProgressUpdate) => {
         if (!activeUiPort) return;
         try {
@@ -791,6 +793,7 @@ async function executeAssignedTask(agentId: string, taskId: string): Promise<voi
     const result = await runAgenticLoop({
       agentId,
       task: `You have been assigned a task.\n\nTask: ${taskSubject}\n\nInstructions:\n${prompt}\n\nWhen done, summarize what you accomplished.`,
+      source: 'task',
       onProgress: (update: ProgressUpdate) => {
         // Always use activeUiPort (not a captured reference) so progress
         // continues flowing even if the port reconnects during execution
@@ -884,6 +887,7 @@ async function handleAgenticChat(
       pageContext: msg.pageContext,
       maxIterations: msg.maxIterations,
       signal: abortController.signal,
+      source: 'chat',
       onProgress: (update: ProgressUpdate) => {
         if (abortController.signal.aborted) return;
         try {
@@ -1623,6 +1627,7 @@ async function handleOneShotMessage(
       const result = await runAgenticLoop({
         agentId: task.agentId,
         task: task.prompt,
+        source: 'task',
       });
       await updateScheduledTaskRun(task.alarmId, result || '(no output)');
       return { ran: true, result: (result || '').slice(0, 200) };
@@ -1667,11 +1672,46 @@ Return ONLY the refined prompt text, nothing else. No explanations or commentary
           prompt: `Context: ${context}\n\nOriginal prompt:\n${rawPrompt}`,
         });
 
+        // Record usage
+        try {
+          const settings2 = await getSettings();
+          await recordUsage({
+            agentId: 'system',
+            agentName: 'Prompt Refinement',
+            provider: settings2.activeProvider as any,
+            model: settings2.model || 'unknown',
+            inputTokens: result.usage?.inputTokens,
+            outputTokens: result.usage?.outputTokens,
+            source: 'refine',
+          });
+        } catch { /* usage tracking is best-effort */ }
+
         return { refined: result.text };
       } catch (err) {
         console.error('refinePrompt failed:', err);
         return { error: `Refinement failed: ${err instanceof Error ? err.message : String(err)}` };
       }
+    }
+
+    case 'getUsageSummary': {
+      const since = msg.since as string | undefined;
+      const summary = await getUsageSummary(since);
+      return { summary };
+    }
+
+    case 'getUsageRecords': {
+      const records = await getUsage({
+        agentId: msg.agentId as string | undefined,
+        provider: msg.provider as string | undefined,
+        since: msg.since as string | undefined,
+        limit: (msg.limit as number) || 50,
+      });
+      return { records };
+    }
+
+    case 'clearUsage': {
+      await clearUsage();
+      return { ok: true };
     }
 
     case 'startChannelPolling': {
@@ -1799,6 +1839,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       const result = await runAgenticLoop({
         agentId: task.agentId,
         task: task.prompt,
+        source: 'task',
       });
 
       // Update the task with run info
@@ -1819,6 +1860,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         await runAgenticLoop({
           agentId,
           task: 'You were woken up by a scheduled alarm. Check your TODO list and pending messages, then do any work that needs doing.',
+          source: 'task',
         });
       } else {
         console.warn(`Unknown alarm with no scheduled task: ${alarm.name}`);
@@ -1873,6 +1915,7 @@ setMessageHandler(async (message) => {
   // Run the agentic loop — stream progress to UI if available
   const result = await runAgenticLoop({
     agentId: master.id,
+    source: 'channel',
     task,
     onProgress: port ? (update: ProgressUpdate) => {
       try {

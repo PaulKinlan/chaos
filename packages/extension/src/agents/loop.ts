@@ -23,6 +23,7 @@ import type { AgentMeta } from '../storage/types.js';
 import { createToolLookup, type LookupStrategy, type ToolMeta } from '../tools/lookup/index.js';
 import { checkPermission } from '../tools/permissions.js';
 import { buildSkillsPromptSection } from './skills.js';
+import { recordUsage } from './usage.js';
 
 // ── Types ──
 
@@ -845,7 +846,23 @@ export async function runAgentLoop(
     }
   }
 
-  // 8. Log assistant response
+  // 8. Record token usage
+  try {
+    const usage = await result.totalUsage;
+    await recordUsage({
+      agentId,
+      agentName: selfMeta?.name || agentId,
+      provider: modelConfig.provider,
+      model: modelConfig.model,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+      source: 'chat',
+    });
+  } catch (err) {
+    console.warn('[usage] Failed to record loop usage:', err);
+  }
+
+  // 9. Log assistant response
   await appendActivityLog(agentId, {
     timestamp: new Date().toISOString(),
     role: 'assistant',

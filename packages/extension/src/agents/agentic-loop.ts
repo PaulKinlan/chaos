@@ -27,6 +27,7 @@ import { getSkillTools } from '../tools/skills/index.js';
 import type { AgentMeta } from '../storage/types.js';
 import { checkPermission } from '../tools/permissions.js';
 import { buildSkillsPromptSection } from './skills.js';
+import { recordUsage } from './usage.js';
 
 // ── Types ──
 
@@ -47,6 +48,8 @@ export interface AgenticLoopOptions {
   onProgress?: (update: ProgressUpdate) => void;
   maxIterations?: number;
   signal?: AbortSignal;
+  /** What triggered this loop — used for usage tracking. */
+  source?: 'chat' | 'hook' | 'channel' | 'task' | 'message';
 }
 
 // ── Constants ──
@@ -704,6 +707,22 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
     // Get the final text for this iteration
     const finalText = await result.text;
     lastText = finalText || iterationText;
+
+    // Record token usage for this iteration
+    try {
+      const usage = await result.totalUsage;
+      await recordUsage({
+        agentId,
+        agentName: selfMeta?.name || agentId,
+        provider: modelConfig.provider,
+        model: modelConfig.model,
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+        source: options.source || 'chat',
+      });
+    } catch (err) {
+      console.warn('[usage] Failed to record agentic loop usage:', err);
+    }
 
     // If no tool calls were made, the agent considers itself done
     if (!hasToolCalls) {
