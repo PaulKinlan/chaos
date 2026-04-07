@@ -80,6 +80,60 @@ The core agent capabilities (create, configure, chat, manage hooks/channels/arti
         └──────────────────────────────────┘
 ```
 
+## Type Reference
+
+All types referenced in the API surface below already exist in the codebase. The SDK should re-export them from a single entry point (`sdk/types.ts`).
+
+### Core Types (from `packages/extension/src/storage/types.ts`)
+
+| Type | Location | Description |
+|------|----------|-------------|
+| `AgentMeta` | `storage/types.ts:3` | Agent identity, role, visibility, provider/model overrides, master/temporary flags |
+| `Settings` | `storage/types.ts:21` | Global settings: active provider, theme, default model |
+| `ApiKeys` | `storage/types.ts:29` | Per-provider API keys (anthropic, openai, google, openrouter, ollama/baseURL, brave) |
+| `Hook` | `storage/types.ts:167` | Hook definition: id, agentId, trigger, prompt, description, enabled, stats |
+| `HookTrigger` | `storage/types.ts:179` | Discriminated union of 16 trigger types (bookmark-created, tab-navigated, context-menu, etc.) |
+| `Task` | `storage/types.ts:60` | Shared task: id, subject, description, owner, status, blockedBy, result |
+| `TaskData` | `storage/types.ts:60` | Task creation input (same fields minus id/timestamps) |
+| `ArtifactMeta` | `storage/types.ts:83` | Artifact reference: agentId, path, description, timestamp |
+| `Conversation` | `storage/types.ts:92` | Conversation: id, agentId, timestamp, messages array |
+| `ConversationMessage` | `storage/types.ts:99` | Message with role, content, timestamp, optional progress entries |
+| `AgenticProgressEntry` | `storage/types.ts:106` | Step detail: step-start, tool-call, tool-result, thinking, text |
+
+### Channel Types (from `packages/extension/src/channels/types.ts` and `packages/shared/src/types.ts`)
+
+| Type | Location | Description |
+|------|----------|-------------|
+| `ChannelConfig` | `channels/types.ts:18` | Channel definition: id, type, direction, agentId, name, prompt, metadata |
+| `ChannelMessage` | `channels/types.ts:4` | Inbound message: id, channelType, channelId, from, content, metadata |
+| `ChannelResponse` | `channels/types.ts:35` | Outbound reply: channelType, channelId, replyTo, content, metadata |
+| `ChannelDirection` | `shared/src/types.ts:33` | `'inbound' \| 'bidirectional'` |
+
+### Agent System Types
+
+| Type | Location | Description |
+|------|----------|-------------|
+| `AgentModelConfig` | `agents/model-config.ts:12` | Resolved config: provider, model, apiKey |
+| `ProviderConfig` | `agents/provider-registry.ts:29` | Provider definition: id, displayName, defaultModel, models, features |
+| `ProviderId` | `agents/provider-registry.ts:16` | `'anthropic' \| 'openai' \| 'google' \| 'openrouter' \| 'ollama'` |
+| `ProgressUpdate` | `agents/agentic-loop.ts:34` | Loop progress: type (thinking/tool-call/tool-result/text/step-complete/done/error), content, tool info, iteration |
+| `UsageRecord` | `agents/usage.ts:12` | Token usage: agentId, agentName, provider, model, inputTokens, outputTokens, estimatedCost, source |
+| `UsageSummary` | `agents/usage.ts:107` | Aggregated stats: totals + breakdown byProvider, byAgent, byModel |
+| `SkillMeta` | `agents/skills.ts:13` | Installed skill: id, name, description, author, version, source, files |
+| `SkillManifest` | `shared/src/types.ts:40` | Skill manifest for search/install: id, name, description, tags |
+
+### Types to Create
+
+| Type | Purpose |
+|------|---------|
+| `Job` | Not yet defined — represents a delegated job from master to sub-agent (currently tracked via Task + events) |
+| `AgentDetail` | Combine AgentMeta + CLAUDE.md content + journal + bookmarks (currently ad-hoc in getAgentDetail handler) |
+| `FileEntry` | File listing entry: name, type (file/directory), size |
+| `SkillSearchResult` | Search result from featured/GitHub skill search |
+| `ChatOptions` | Options for single-turn chat: pageContext, toolLookupStrategy |
+| `AgenticOptions` | Options for agentic chat: pageContext, maxIterations, columnId, source |
+| `PaginationOptions` | Cursor-based pagination: limit, cursor, since |
+
 ## API Surface
 
 ### 1. Agents
