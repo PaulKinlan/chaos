@@ -464,11 +464,11 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onDisconnect.addListener(() => {
     if (activeUiPort === port) activeUiPort = null;
-    // Cancel all active agent loops — the UI port is gone
-    for (const [, controller] of activeAbortControllers) {
-      controller.abort();
-    }
-    activeAbortControllers.clear();
+    // Do NOT abort active loops on disconnect — tab lifecycle events (navigation,
+    // refresh, service-worker restart) cause spurious disconnects.  Loops will
+    // continue running and post progress once the UI reconnects.  Explicit
+    // cancellation is handled by the stopAgenticLoop message (sent e.g. when the
+    // user closes a column via removeColumn()).
   });
 
   port.onMessage.addListener(async (msg) => {

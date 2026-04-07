@@ -148,7 +148,6 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
 
     case 'chatStart':
-      if (msg.agentId && msg.agentId !== activeAgentId) break;
       isStreaming = true;
       currentStreamContent = '';
       currentStreamEl = addAssistantMessage('');
@@ -157,7 +156,6 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
 
     case 'chatChunk':
-      if (msg.agentId && msg.agentId !== activeAgentId) break;
       if (currentStreamEl) {
         currentStreamContent += msg.chunk as string;
         renderMarkdown(currentStreamEl, currentStreamContent);
@@ -166,7 +164,6 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
 
     case 'chatEnd':
-      if (msg.agentId && msg.agentId !== activeAgentId) break;
       isStreaming = false;
       typingIndicator.classList.remove('visible');
       btnSend.disabled = false;
@@ -188,7 +185,6 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
 
     case 'chatError':
-      if (msg.agentId && msg.agentId !== activeAgentId) break;
       isStreaming = false;
       typingIndicator.classList.remove('visible');
       btnSend.disabled = false;
@@ -344,16 +340,6 @@ function addAgentOption(agent: AgentMeta): void {
 agentSelect.addEventListener('change', () => {
   // Save current conversation before switching
   saveConversation();
-
-  // Stop any active loop for the previous agent
-  if (isStreaming && activeAgentId) {
-    sendMessage({ type: 'stopAgenticLoop', agentId: activeAgentId });
-    isStreaming = false;
-    typingIndicator.classList.remove('visible');
-    btnSend.disabled = false;
-    currentStreamEl = null;
-    currentStreamContent = '';
-  }
 
   activeAgentId = agentSelect.value || null;
   messagesDiv.innerHTML = '';
