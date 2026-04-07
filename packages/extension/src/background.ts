@@ -465,7 +465,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => {
     if (activeUiPort === port) activeUiPort = null;
     // Cancel all active agent loops — the UI port is gone
-    for (const [agentId, controller] of activeAbortControllers) {
+    for (const [, controller] of activeAbortControllers) {
       controller.abort();
     }
     activeAbortControllers.clear();
@@ -667,6 +667,7 @@ async function handleChat(
   // Abort any existing loop for this agent before starting a new one
   const existing = activeAbortControllers.get(msg.agentId);
   if (existing) {
+    console.log(`[background] Aborting stale loop for agent ${msg.agentId}`);
     existing.abort();
   }
   const abortController = new AbortController();
@@ -895,6 +896,7 @@ async function handleAgenticChat(
   // Abort any existing loop for this agent before starting a new one
   const existing = activeAbortControllers.get(msg.agentId);
   if (existing) {
+    console.log(`[background] Aborting stale loop for agent ${msg.agentId}`);
     existing.abort();
   }
   const abortController = new AbortController();
