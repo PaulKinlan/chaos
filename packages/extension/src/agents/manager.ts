@@ -56,6 +56,16 @@ export async function createAgent(
   // Write initial empty TODO.md
   await opfs.writeFile(`${agentRoot}/TODO.md`, `# ${name} - Tasks\n\n`);
 
+  // Seed memory files so the agent has a working memory structure from the start
+  await opfs.writeFile(
+    `${agentRoot}/memories/user.md`,
+    `# User\n\nFacts about the user. Update as you learn more.\n`,
+  );
+  await opfs.writeFile(
+    `${agentRoot}/memories/preferences.md`,
+    `# Preferences\n\nHow the user likes to work. Update as you learn more.\n`,
+  );
+
   // Create Chrome bookmark folder
   let bookmarkFolderId: string | undefined;
   try {
