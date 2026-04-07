@@ -5891,12 +5891,32 @@ document.getElementById('confirm-overlay')!.addEventListener('click', (e) => {
 // ══════════════════════════════════════════
 
 function loadHooksView(): void {
-  if (!activeAgentId || !port) return;
+  if (!port) return;
 
   const listEl = document.getElementById('hooks-list')!;
   listEl.innerHTML = '<p style="color:var(--text-muted);padding:12px;">Loading...</p>';
 
-  sendPortMessage({ type: 'getHooks', agentId: activeAgentId });
+  // Load ALL hooks (not filtered by agent)
+  sendPortMessage({ type: 'getHooks' });
+
+  // Populate agent selector for hook creation
+  populateHookAgentSelect();
+}
+
+function populateHookAgentSelect(): void {
+  const select = document.getElementById('hook-agent') as HTMLSelectElement;
+  if (!select) return;
+
+  // Sort: master first, then alphabetical
+  const sorted = [...agents].sort((a, b) => {
+    if (a.master && !b.master) return -1;
+    if (!a.master && b.master) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  select.innerHTML = sorted.map((a) =>
+    `<option value="${escapeHtml(a.id)}"${a.master ? ' selected' : ''}>${escapeHtml(a.name)}${a.master ? ' (master)' : ''}</option>`
+  ).join('');
 }
 
 function renderHooksList(hooks: Hook[]): void {
@@ -5928,6 +5948,7 @@ function renderHooksList(hooks: Hook[]): void {
             </div>
             <div style="color:var(--text-secondary);font-size:var(--text-sm);">
               <span style="font-weight:500;">Trigger:</span> ${escapeHtml(triggerLabel)}
+              &middot; <span style="font-weight:500;">Agent:</span> ${escapeHtml(agents.find((a) => a.id === hook.agentId)?.name || hook.agentId.slice(0, 12))}
             </div>
             <div style="color:var(--text-muted);font-size:var(--text-xs);margin-top:4px;">
               Fired ${hook.triggerCount} time${hook.triggerCount !== 1 ? 's' : ''} &middot; Last: ${escapeHtml(lastTriggered)}
@@ -6013,6 +6034,10 @@ function renderHooksList(hooks: Hook[]): void {
       }, 50);
 
       (document.getElementById('hook-prompt') as HTMLTextAreaElement).value = hook.prompt;
+
+      // Pre-select the agent this hook is assigned to
+      const hookAgentSel = document.getElementById('hook-agent') as HTMLSelectElement;
+      if (hookAgentSel) hookAgentSel.value = hook.agentId;
 
       // Show the form
       document.getElementById('hooks-create-form')!.style.display = 'block';
@@ -6360,9 +6385,13 @@ document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
       return;
   }
 
+  // Use the agent selected in the dropdown, defaulting to master agent
+  const hookAgentSelect = document.getElementById('hook-agent') as HTMLSelectElement;
+  const hookAgentId = hookAgentSelect?.value || agents.find((a) => a.master)?.id || activeAgentId;
+
   const hook: Hook = {
     id: `hook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    agentId: activeAgentId,
+    agentId: hookAgentId,
     trigger,
     prompt,
     description,
