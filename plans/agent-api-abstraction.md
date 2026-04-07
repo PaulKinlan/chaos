@@ -199,17 +199,90 @@ sdk.usage.setSpendingLimit(agentId: string, limit: number | null): Promise<void>
 
 ### 11. Events
 
+Each domain class extends `EventTarget` and dispatches typed `CustomEvent`s, following the standard web platform pattern.
+
 ```typescript
-sdk.on('agentCreated', (agent: AgentMeta) => void)
-sdk.on('agentDeleted', (agentId: string) => void)
-sdk.on('chatStart', (agentId: string) => void)
-sdk.on('chatChunk', (agentId: string, chunk: string) => void)
-sdk.on('chatEnd', (agentId: string, response: string) => void)
-sdk.on('hookTriggered', (hookId: string, context: unknown) => void)
-sdk.on('channelMessage', (message: ChannelMessage) => void)
-sdk.on('taskCompleted', (taskId: string) => void)
-sdk.on('usageRecorded', (record: UsageRecord) => void)
+// ── Agents ──
+sdk.agents.addEventListener('created', (e: CustomEvent<AgentMeta>) => {})
+sdk.agents.addEventListener('updated', (e: CustomEvent<{ agentId: string; updates: Partial<AgentMeta> }>) => {})
+sdk.agents.addEventListener('deleted', (e: CustomEvent<{ agentId: string }>) => {})
+sdk.agents.addEventListener('archived', (e: CustomEvent<{ agentId: string }>) => {})
+sdk.agents.addEventListener('restored', (e: CustomEvent<AgentMeta>) => {})
+sdk.agents.addEventListener('configChanged', (e: CustomEvent<{ agentId: string; config: ModelConfig }>) => {})
+sdk.agents.addEventListener('claudeMdChanged', (e: CustomEvent<{ agentId: string }>) => {})
+
+// ── Chat ──
+sdk.chat.addEventListener('start', (e: CustomEvent<{ agentId: string; columnId?: string }>) => {})
+sdk.chat.addEventListener('chunk', (e: CustomEvent<{ agentId: string; columnId?: string; chunk: string }>) => {})
+sdk.chat.addEventListener('toolCall', (e: CustomEvent<{ agentId: string; columnId?: string; toolName: string; args: unknown }>) => {})
+sdk.chat.addEventListener('toolResult', (e: CustomEvent<{ agentId: string; columnId?: string; toolName: string; result: unknown }>) => {})
+sdk.chat.addEventListener('stepStart', (e: CustomEvent<{ agentId: string; columnId?: string; step: number }>) => {})
+sdk.chat.addEventListener('stepComplete', (e: CustomEvent<{ agentId: string; columnId?: string; step: number }>) => {})
+sdk.chat.addEventListener('done', (e: CustomEvent<{ agentId: string; columnId?: string; result: string }>) => {})
+sdk.chat.addEventListener('error', (e: CustomEvent<{ agentId: string; columnId?: string; error: string }>) => {})
+sdk.chat.addEventListener('aborted', (e: CustomEvent<{ agentId: string; columnId?: string }>) => {})
+
+// ── Hooks ──
+sdk.hooks.addEventListener('created', (e: CustomEvent<Hook>) => {})
+sdk.hooks.addEventListener('updated', (e: CustomEvent<Hook>) => {})
+sdk.hooks.addEventListener('removed', (e: CustomEvent<{ hookId: string }>) => {})
+sdk.hooks.addEventListener('triggered', (e: CustomEvent<{ hookId: string; agentId: string; context: unknown }>) => {})
+sdk.hooks.addEventListener('enabled', (e: CustomEvent<{ hookId: string }>) => {})
+sdk.hooks.addEventListener('disabled', (e: CustomEvent<{ hookId: string }>) => {})
+
+// ── Channels ──
+sdk.channels.addEventListener('registered', (e: CustomEvent<Channel>) => {})
+sdk.channels.addEventListener('updated', (e: CustomEvent<Channel>) => {})
+sdk.channels.addEventListener('removed', (e: CustomEvent<{ channelId: string }>) => {})
+sdk.channels.addEventListener('messageReceived', (e: CustomEvent<ChannelMessage>) => {})
+sdk.channels.addEventListener('replySent', (e: CustomEvent<{ channelId: string; content: string }>) => {})
+
+// ── Artifacts ──
+sdk.artifacts.addEventListener('created', (e: CustomEvent<Artifact>) => {})
+sdk.artifacts.addEventListener('deleted', (e: CustomEvent<{ agentId: string; artifactId: string }>) => {})
+
+// ── Files ──
+sdk.files.addEventListener('written', (e: CustomEvent<{ agentId: string; path: string }>) => {})
+sdk.files.addEventListener('deleted', (e: CustomEvent<{ agentId: string; path: string }>) => {})
+
+// ── Skills ──
+sdk.skills.addEventListener('installed', (e: CustomEvent<{ agentId: string; skill: Skill }>) => {})
+sdk.skills.addEventListener('removed', (e: CustomEvent<{ agentId: string; skillId: string }>) => {})
+
+// ── Tasks & Jobs ──
+sdk.tasks.addEventListener('created', (e: CustomEvent<Task>) => {})
+sdk.tasks.addEventListener('started', (e: CustomEvent<{ taskId: string; agentId: string }>) => {})
+sdk.tasks.addEventListener('completed', (e: CustomEvent<{ taskId: string; result: string }>) => {})
+sdk.tasks.addEventListener('failed', (e: CustomEvent<{ taskId: string; error: string }>) => {})
+sdk.tasks.addEventListener('cancelled', (e: CustomEvent<{ taskId: string }>) => {})
+sdk.jobs.addEventListener('created', (e: CustomEvent<Job>) => {})
+sdk.jobs.addEventListener('statusChanged', (e: CustomEvent<{ jobId: string; status: string }>) => {})
+sdk.jobs.addEventListener('completed', (e: CustomEvent<{ jobId: string; result: string }>) => {})
+
+// ── Usage ──
+sdk.usage.addEventListener('recorded', (e: CustomEvent<UsageRecord>) => {})
+sdk.usage.addEventListener('limitExceeded', (e: CustomEvent<{ agentId: string; spent: number; limit: number }>) => {})
+sdk.usage.addEventListener('alertTriggered', (e: CustomEvent<{ spent: number; limit: number }>) => {})
+
+// ── Settings ──
+sdk.settings.addEventListener('changed', (e: CustomEvent<{ key: string; value: unknown }>) => {})
+sdk.settings.addEventListener('providerChanged', (e: CustomEvent<{ provider: string }>) => {})
 ```
+
+Each domain class implements this via `EventTarget`:
+
+```typescript
+class AgentsAPI extends EventTarget {
+  async create(name: string, role: string): Promise<AgentMeta> {
+    const agent = await this.transport.send({ type: 'createAgent', name, role });
+    this.dispatchEvent(new CustomEvent('created', { detail: agent }));
+    return agent;
+  }
+  // ...
+}
+```
+
+Events are fired both when the local SDK performs an action AND when the background engine notifies of external changes (e.g. an agent created a task via a tool call, a hook was triggered by a browser event). This ensures any UI built on the SDK stays in sync with the engine state.
 
 ## Implementation Phases
 
