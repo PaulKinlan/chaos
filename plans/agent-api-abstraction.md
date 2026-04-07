@@ -404,6 +404,139 @@ interface Transport {
 }
 ```
 
+## Storage Abstraction Layer
+
+Currently the engine is locked to Chrome via two storage mechanisms:
+
+| Store | Used For | Chrome API | Web Alternative |
+|-------|----------|------------|-----------------|
+| `chrome.storage.local` | Settings, API keys, hooks, scheduled tasks, usage records, agent list, spending limits | `chrome.storage.local.get/set` | `localStorage`, IndexedDB, or server-side |
+| OPFS (Origin Private File System) | Agent files (CLAUDE.md, memories/, conversations/, activity logs, skills, artifacts) | `navigator.storage.getDirectory()` | Same API (OPFS is a web standard), or filesystem API, or server-side storage |
+
+OPFS is actually a web standard — it works in any modern browser, not just extensions. The real lock-in is `chrome.storage.local` and the Chrome extension APIs (permissions, alarms, bookmarks, history, tabs, etc.).
+
+### Storage Interface
+
+Abstract both stores behind a common interface:
+
+```typescript
+// Key-value store (replaces chrome.storage.local)
+interface KVStore {
+  get<T>(key: string): Promise<T | undefined>;
+  set(key: string, value: unknown): Promise<void>;
+  remove(key: string): Promise<void>;
+  getMultiple<T>(keys: string[]): Promise<Record<string, T>>;
+}
+
+// File store (replaces direct OPFS access)
+interface FileStore {
+  read(path: string): Promise<string>;
+  write(path: string, content: string): Promise<void>;
+  delete(path: string): Promise<void>;
+  list(path: string): Promise<FileEntry[]>;
+  mkdir(path: string): Promise<void>;
+  exists(path: string): Promise<boolean>;
+  search(pattern: string, path?: string): Promise<SearchResult[]>;
+}
+```
+
+### Implementations
+
+```typescript
+// Chrome Extension
+class ChromeKVStore implements KVStore {
+  async get<T>(key: string) {
+    const result = await chrome.storage.local.get(key);
+    return result[key] as T | undefined;
+  }
+  // ...
+}
+
+// Web (localStorage + IndexedDB for large values)
+class WebKVStore implements KVStore {
+  async get<T>(key: string) {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) as T : undefined;
+  }
+  // ...
+}
+
+// Server-side (fetch to API)
+class RemoteKVStore implements KVStore {
+  constructor(private baseUrl: string, private token: string) {}
+  async get<T>(key: string) {
+    const resp = await fetch(`${this.baseUrl}/kv/${key}`, {
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
+    return resp.ok ? await resp.json() as T : undefined;
+  }
+  // ...
+}
+
+// File store: OPFS works everywhere, but could also be backed by:
+class OPFSFileStore implements FileStore { /* current implementation */ }
+class RemoteFileStore implements FileStore { /* fetch-based, for server-hosted agents */ }
+```
+
+### Browser API Abstraction
+
+Chrome-specific APIs (tabs, bookmarks, history, alarms, notifications) need a separate abstraction — these are capabilities, not storage. The SDK should accept a `BrowserCapabilities` interface:
+
+```typescript
+interface BrowserCapabilities {
+  tabs?: {
+    list(): Promise<TabInfo[]>;
+    read(tabId: string): Promise<string>;
+    open(url: string): Promise<TabInfo>;
+    close(tabId: string): Promise<void>;
+    // ...
+  };
+  bookmarks?: {
+    search(query: string): Promise<BookmarkInfo[]>;
+    add(url: string, title: string): Promise<void>;
+    // ...
+  };
+  history?: {
+    search(query: string, maxResults?: number): Promise<HistoryItem[]>;
+  };
+  notifications?: {
+    show(title: string, message: string): Promise<void>;
+  };
+  // Each capability is optional — agents adapt to what's available
+}
+```
+
+This means:
+- In a Chrome extension: all capabilities available
+- In a web app: tabs/bookmarks/history not available, but chat/files/hooks still work
+- In a mobile app: could provide its own tab/bookmark equivalents
+- Agents check capability availability before using tools (already partially implemented via permission checks)
+
+### Migration Path
+
+1. **Phase 2 addition**: Create `KVStore` and `FileStore` interfaces alongside the SDK
+2. **Phase 3 addition**: `ChromeKVStore` and `OPFSFileStore` as default implementations
+3. **Phase 5 addition**: `BrowserCapabilities` interface, Chrome implementation
+4. **Phase 6 addition**: `WebKVStore` and `RemoteKVStore` for non-extension contexts
+5. SDK constructor accepts stores and capabilities:
+
+```typescript
+const sdk = new ChaosSDK({
+  transport: new ChromePortTransport(),
+  kv: new ChromeKVStore(),
+  files: new OPFSFileStore(),
+  browser: new ChromeBrowserCapabilities(),
+});
+
+// Or for a web app:
+const sdk = new ChaosSDK({
+  transport: new WebSocketTransport('ws://localhost:3000'),
+  kv: new WebKVStore(),
+  files: new OPFSFileStore(), // OPFS works in browsers too
+  // no browser capabilities — tools that need them will be unavailable
+});
+```
+
 ## Open Questions
 
 1. **Should the SDK be a separate npm package?** Pro: clean dependency. Con: adds build complexity. Recommendation: start as internal module, extract later.
