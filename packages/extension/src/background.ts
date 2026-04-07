@@ -481,15 +481,15 @@ chrome.runtime.onConnect.addListener((port) => {
           break;
 
         case 'stopAgenticLoop': {
-          const agentId = msg.agentId as string | undefined;
-          if (agentId) {
-            const controller = activeAbortControllers.get(agentId);
+          const loopKey = (msg.columnId as string) || (msg.agentId as string) || undefined;
+          if (loopKey) {
+            const controller = activeAbortControllers.get(loopKey);
             if (controller) {
               controller.abort();
-              activeAbortControllers.delete(agentId);
+              activeAbortControllers.delete(loopKey);
             }
           } else {
-            // No agentId: abort all (legacy / stop-all)
+            // No key: abort all (legacy / stop-all)
             for (const [, controller] of activeAbortControllers) {
               controller.abort();
             }
@@ -890,17 +890,19 @@ async function handleAgenticChat(
     maxIterations?: number;
   },
 ): Promise<void> {
-  console.log(`[background] handleAgenticChat: agentId=${msg.agentId}, message=${msg.message.slice(0, 80)}...`);
-  port.postMessage({ type: 'agenticStart', agentId: msg.agentId });
+  // Use columnId as the loop key to support multiple concurrent loops per agent
+  const loopKey = (msg.columnId as string) || msg.agentId;
+  console.log(`[background] handleAgenticChat: agentId=${msg.agentId}, loopKey=${loopKey}, message=${msg.message.slice(0, 80)}...`);
+  port.postMessage({ type: 'agenticStart', agentId: msg.agentId, columnId: msg.columnId });
 
-  // Abort any existing loop for this agent before starting a new one
-  const existing = activeAbortControllers.get(msg.agentId);
+  // Abort any existing loop for this column before starting a new one
+  const existing = activeAbortControllers.get(loopKey);
   if (existing) {
-    console.log(`[background] Aborting stale loop for agent ${msg.agentId}`);
+    console.log(`[background] Aborting stale loop for ${loopKey}`);
     existing.abort();
   }
   const abortController = new AbortController();
-  activeAbortControllers.set(msg.agentId, abortController);
+  activeAbortControllers.set(loopKey, abortController);
   startKeepalive();
 
   try {
@@ -918,6 +920,7 @@ async function handleAgenticChat(
           port.postMessage({
             type: 'agenticProgress',
             agentId: msg.agentId,
+            columnId: msg.columnId,
             progressType: update.type,
             content: update.content,
             toolName: update.toolName,
@@ -935,7 +938,7 @@ async function handleAgenticChat(
 
     console.log(`[background] runAgenticLoop completed for ${msg.agentId}, result length: ${result?.length ?? 0}`);
     if (!abortController.signal.aborted) {
-      port.postMessage({ type: 'agenticDone', result, agentId: msg.agentId });
+      port.postMessage({ type: 'agenticDone', result, agentId: msg.agentId, columnId: msg.columnId });
     }
   } catch (err) {
     console.error(`[background] handleAgenticChat error for ${msg.agentId}:`, err);
@@ -946,6 +949,7 @@ async function handleAgenticChat(
         error: parsed.message,
         provider: parsed.provider,
         agentId: msg.agentId,
+        columnId: msg.columnId,
         lastMessage: {
           agentId: msg.agentId,
           message: msg.message,
@@ -955,8 +959,8 @@ async function handleAgenticChat(
     }
   } finally {
     // Only delete if this is still our controller (not replaced by a newer request)
-    if (activeAbortControllers.get(msg.agentId) === abortController) {
-      activeAbortControllers.delete(msg.agentId);
+    if (activeAbortControllers.get(loopKey) === abortController) {
+      activeAbortControllers.delete(loopKey);
     }
     stopKeepalive();
   }

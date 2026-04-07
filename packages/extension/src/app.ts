@@ -791,6 +791,10 @@ const columnAddPicker = document.getElementById('column-add-picker') as HTMLDivE
 // Track which column is focused (for mention system, voice input, etc.)
 let focusedColumnId: string | null = null;
 
+function getColumnById(columnId: string): ChatColumn | undefined {
+  return columns.find((c) => c.id === columnId);
+}
+
 function getColumnForAgent(agentId: string): ChatColumn | undefined {
   // Prefer the focused column if it matches the agent
   if (focusedColumnId) {
@@ -855,8 +859,14 @@ function sendPortMessage(msg: Record<string, unknown>): void {
 }
 
 function handlePortMessage(msg: Record<string, unknown>): void {
-  // Route chat-related messages to the correct column by agentId
+  // Route chat-related messages to the correct column by columnId (preferred) or agentId
   const msgAgentId = msg.agentId as string | undefined;
+  const msgColumnId = msg.columnId as string | undefined;
+  // Resolve the target column: prefer columnId (supports multiple columns per agent)
+  const resolveColumn = () =>
+    (msgColumnId && getColumnById(msgColumnId)) ||
+    (msgAgentId && getColumnForAgent(msgAgentId)) ||
+    getFocusedColumn();
 
   switch (msg.type) {
     case 'agentList':
@@ -937,7 +947,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'chatError': {
-      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      const col = resolveColumn();
       if (col) {
         col.isStreaming = false;
         col.typingEl.classList.remove('visible');
@@ -984,7 +994,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'agenticStart': {
-      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      const col = resolveColumn();
       if (col) {
         col.isStreaming = true;
         col.typingEl.classList.add('visible');
@@ -996,7 +1006,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'agenticProgress': {
-      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      const col = resolveColumn();
       if (!col) break;
 
       const progressType = msg.progressType as string;
@@ -1227,7 +1237,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'agenticDone': {
-      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      const col = resolveColumn();
       if (col) {
         col.isStreaming = false;
         col.typingEl.classList.remove('visible');
@@ -1746,7 +1756,7 @@ function removeColumn(columnId: string): void {
   // an error path didn't reset it, but sending a redundant stop is harmless —
   // the background will simply find no matching controller and ignore it.
   if (col.isStreaming) {
-    sendPortMessage({ type: 'stopAgenticLoop', agentId: col.agentId });
+    sendPortMessage({ type: 'stopAgenticLoop', agentId: col.agentId, columnId: col.id });
     col.isStreaming = false;
   }
 
@@ -2948,6 +2958,7 @@ function renderTasks(): void {
           type: 'agenticChat',
           agentId: task.agentId,
           message: task.prompt,
+          columnId: runCol?.id,
         });
       });
     }
