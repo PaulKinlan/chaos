@@ -2,7 +2,11 @@
 
 ## Status
 
-All phases: TODO.
+- Phase 1 (Context Gathering): DONE
+- Phase 2 (Context Analysis): DONE
+- Phase 3 (Smart Start UI): DONE
+- Phase 4 (Fallback — No Permissions): DONE (built into Phase 2 fallback)
+- Phase 5 (Progressive Profiling): TODO
 
 ---
 
