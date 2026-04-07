@@ -27,7 +27,7 @@ import { getSkillTools } from '../tools/skills/index.js';
 import type { AgentMeta } from '../storage/types.js';
 import { checkPermission } from '../tools/permissions.js';
 import { buildSkillsPromptSection } from './skills.js';
-import { recordUsage } from './usage.js';
+import { recordUsage, checkSpendingLimit } from './usage.js';
 
 // ── Types ──
 
@@ -610,6 +610,22 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<strin
     if (signal?.aborted) {
       onProgress?.({ type: 'error', content: 'Aborted', iteration: i + 1, totalIterations: maxIterations });
       break;
+    }
+
+    // Check spending limit (skip on first iteration so user always gets at least one response)
+    if (i > 0) {
+      try {
+        const limitCheck = await checkSpendingLimit(agentId);
+        if (limitCheck.exceeded) {
+          onProgress?.({
+            type: 'error',
+            content: `Daily spending limit reached ($${limitCheck.spent!.toFixed(2)} / $${limitCheck.limit!.toFixed(2)}). Increase the limit in Agent Settings to continue.`,
+            iteration: i + 1,
+            totalIterations: maxIterations,
+          });
+          break;
+        }
+      } catch { /* spending check is best-effort */ }
     }
 
     onProgress?.({

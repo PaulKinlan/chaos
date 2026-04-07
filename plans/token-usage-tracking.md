@@ -4,8 +4,8 @@
 
 - Phase 1 (Core Tracking): DONE
 - Phase 2 (Global Usage View): DONE
-- Phase 3 (Per-Agent Usage): TODO
-- Phase 4 (Alerts & Limits): TODO
+- Phase 3 (Per-Agent Usage): DONE
+- Phase 4 (Alerts & Limits): DONE
 
 ---
 

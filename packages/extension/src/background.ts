@@ -1714,6 +1714,23 @@ Return ONLY the refined prompt text, nothing else. No explanations or commentary
       return { ok: true };
     }
 
+    case 'getAgentSpendingLimit': {
+      const id = msg.agentId as string;
+      const result = await chrome.storage.local.get(`chaos:spending-limit:${id}`);
+      return { limit: result[`chaos:spending-limit:${id}`] ?? null };
+    }
+
+    case 'setAgentSpendingLimit': {
+      const id = msg.agentId as string;
+      const limit = msg.limit as number | null;
+      if (limit === null) {
+        await chrome.storage.local.remove(`chaos:spending-limit:${id}`);
+      } else {
+        await chrome.storage.local.set({ [`chaos:spending-limit:${id}`]: limit });
+      }
+      return { ok: true };
+    }
+
     case 'startChannelPolling': {
       const interval = (msg.intervalMinutes as number) || 1;
       startChannelPolling(interval);

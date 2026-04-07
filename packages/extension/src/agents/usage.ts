@@ -183,3 +183,30 @@ export async function getUsageSummary(since?: string): Promise<UsageSummary> {
 export async function clearUsage(): Promise<void> {
   await chrome.storage.local.remove(STORAGE_KEY);
 }
+
+/**
+ * Check if an agent has exceeded its daily spending limit.
+ * Returns { exceeded: true, spent, limit } if over limit, or { exceeded: false } if OK.
+ */
+export async function checkSpendingLimit(agentId: string): Promise<{
+  exceeded: boolean;
+  spent?: number;
+  limit?: number;
+}> {
+  const key = `chaos:spending-limit:${agentId}`;
+  const result = await chrome.storage.local.get(key);
+  const limit = result[key] as number | undefined;
+  if (limit === undefined || limit === null) return { exceeded: false };
+
+  // Get today's spending for this agent
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const records = await getUsage({ agentId, since: todayStart.toISOString() });
+  const spent = records.reduce((sum, r) => sum + r.estimatedCost, 0);
+
+  if (spent >= limit) {
+    console.warn(`[usage] Agent ${agentId} exceeded daily spending limit: $${spent.toFixed(2)} / $${limit}`);
+    return { exceeded: true, spent, limit };
+  }
+  return { exceeded: false, spent, limit };
+}

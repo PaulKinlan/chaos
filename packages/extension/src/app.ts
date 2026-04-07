@@ -3684,6 +3684,45 @@ async function loadAgentSettings(): Promise<void> {
         </div>
       </div>
 
+      <details class="agent-settings-section" id="agent-usage-section">
+        <summary style="cursor:pointer;user-select:none;">
+          <h3 style="display:inline;">Usage</h3>
+          <span id="agent-usage-cost" style="font-size:var(--text-xs);color:var(--text-muted);margin-left:var(--sp-2);"></span>
+        </summary>
+        <div id="agent-usage-content" style="padding-top:var(--sp-3);">
+          <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-3);align-items:center;">
+            <select id="agent-usage-range" class="settings-select" style="padding:4px 8px;font-size:var(--text-xs);">
+              <option value="24h">24h</option>
+              <option value="7d" selected>7d</option>
+              <option value="30d">30d</option>
+              <option value="all">All</option>
+            </select>
+            <button class="btn btn-sm" id="agent-usage-refresh">Refresh</button>
+          </div>
+          <div id="agent-usage-stats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-2);margin-bottom:var(--sp-3);"></div>
+          <div id="agent-usage-by-model" style="margin-bottom:var(--sp-3);"></div>
+          <div id="agent-usage-recent" style="max-height:300px;overflow-y:auto;"></div>
+        </div>
+      </details>
+
+      <details class="agent-settings-section" id="agent-spending-limit-section">
+        <summary style="cursor:pointer;user-select:none;">
+          <h3 style="display:inline;">Spending Limit</h3>
+          <span id="agent-limit-status" style="font-size:var(--text-xs);color:var(--text-muted);margin-left:var(--sp-2);"></span>
+        </summary>
+        <p style="font-size:var(--text-xs);color:var(--text-muted);margin:var(--sp-3) 0;">
+          Set a daily spending limit for this agent. When the limit is reached, the agent will pause and require your confirmation to continue.
+        </p>
+        <div class="agent-settings-field">
+          <label for="agent-daily-limit">Daily Limit (USD)</label>
+          <div style="display:flex;gap:var(--sp-2);align-items:center;">
+            <input type="number" id="agent-daily-limit" min="0" step="0.1" placeholder="e.g. 5.00" style="width:120px;">
+            <button class="btn btn-primary btn-sm" id="btn-save-agent-limit">Save</button>
+            <button class="btn btn-sm" id="btn-clear-agent-limit">Clear</button>
+          </div>
+        </div>
+      </details>
+
       <div class="agent-settings-section">
         <h3>Danger Zone</h3>
         <div class="danger-zone">
@@ -4050,6 +4089,113 @@ async function loadAgentSettings(): Promise<void> {
         },
       );
     });
+
+    // ── Per-Agent Usage ──
+    const loadAgentUsage = async () => {
+      const range = (document.getElementById('agent-usage-range') as HTMLSelectElement)?.value || '7d';
+      const since = getUsageSince(range);
+      const summaryResult = await sendMsg<{ summary: {
+        totalCost: number; totalInputTokens: number; totalOutputTokens: number; totalRequests: number;
+        byModel: Record<string, { cost: number; inputTokens: number; outputTokens: number; requests: number }>;
+      } }>({ type: 'getUsageSummary', since });
+      const recordsResult = await sendMsg<{ records: Array<{
+        timestamp: string; agentName: string; provider: string; model: string;
+        inputTokens: number; outputTokens: number; estimatedCost: number; source: string;
+      }> }>({ type: 'getUsageRecords', agentId: meta.id, since, limit: 30 });
+
+      if (!summaryResult || !recordsResult) return;
+      // Filter summary to this agent only
+      const allRecords = recordsResult.records;
+      const totalCost = allRecords.reduce((s, r) => s + r.estimatedCost, 0);
+      const totalIn = allRecords.reduce((s, r) => s + r.inputTokens, 0);
+      const totalOut = allRecords.reduce((s, r) => s + r.outputTokens, 0);
+
+      // Summary label
+      const costLabel = document.getElementById('agent-usage-cost');
+      if (costLabel) costLabel.textContent = totalCost > 0 ? formatCost(totalCost) : '';
+
+      // Stats
+      const statsEl = document.getElementById('agent-usage-stats');
+      if (statsEl) {
+        statsEl.innerHTML = `
+          <div class="usage-stat-card"><div class="usage-stat-value">${formatCost(totalCost)}</div><div class="usage-stat-label">Cost</div></div>
+          <div class="usage-stat-card"><div class="usage-stat-value">${formatTokens(totalIn)}/${formatTokens(totalOut)}</div><div class="usage-stat-label">In / Out</div></div>
+          <div class="usage-stat-card"><div class="usage-stat-value">${allRecords.length}</div><div class="usage-stat-label">Requests</div></div>
+        `;
+      }
+
+      // By model
+      const byModel: Record<string, { cost: number; requests: number }> = {};
+      for (const r of allRecords) {
+        if (!byModel[r.model]) byModel[r.model] = { cost: 0, requests: 0 };
+        byModel[r.model].cost += r.estimatedCost;
+        byModel[r.model].requests += 1;
+      }
+      const modelEl = document.getElementById('agent-usage-by-model');
+      if (modelEl) {
+        const models = Object.entries(byModel).sort((a, b) => b[1].cost - a[1].cost);
+        const maxCost = models.length > 0 ? models[0][1].cost : 1;
+        modelEl.innerHTML = models.length === 0
+          ? '<div style="color:var(--text-muted);font-size:var(--text-xs);">No data</div>'
+          : models.map(([name, data]) => `
+            <div class="usage-bar-row">
+              <span class="usage-bar-label" style="font-family:var(--font-mono);font-size:var(--text-xs);">${escapeHtml(name)}</span>
+              <div class="usage-bar-track"><div class="usage-bar-fill" style="width:${maxCost > 0 ? (data.cost / maxCost * 100) : 0}%"></div></div>
+              <span class="usage-bar-value">${formatCost(data.cost)}</span>
+            </div>
+          `).join('');
+      }
+
+      // Recent
+      const recentEl = document.getElementById('agent-usage-recent');
+      if (recentEl) {
+        recentEl.innerHTML = allRecords.length === 0
+          ? '<div style="color:var(--text-muted);font-size:var(--text-xs);">No requests yet</div>'
+          : allRecords.map((r) => `
+            <div class="usage-request-row">
+              <span style="color:var(--text-muted);min-width:55px;" title="${new Date(r.timestamp).toLocaleString()}">${usageAgo(r.timestamp)}</span>
+              <span style="color:var(--text-muted);font-family:var(--font-mono);">${escapeHtml(r.model)}</span>
+              <span style="color:var(--text-muted);font-family:var(--font-mono);">${formatTokens(r.inputTokens)}/${formatTokens(r.outputTokens)}</span>
+              <span style="color:var(--text-primary);font-family:var(--font-mono);min-width:50px;text-align:right;">${formatCost(r.estimatedCost)}</span>
+            </div>
+          `).join('');
+      }
+    };
+    loadAgentUsage();
+    document.getElementById('agent-usage-range')?.addEventListener('change', loadAgentUsage);
+    document.getElementById('agent-usage-refresh')?.addEventListener('click', loadAgentUsage);
+
+    // ── Spending Limits ──
+    const limitResult = await sendMsg<{ limit: number | null }>({ type: 'getAgentSpendingLimit', agentId: meta.id });
+    const currentLimit = limitResult?.limit ?? null;
+    const limitInput = document.getElementById('agent-daily-limit') as HTMLInputElement;
+    const limitStatus = document.getElementById('agent-limit-status');
+    if (currentLimit !== null) {
+      limitInput.value = String(currentLimit);
+      if (limitStatus) limitStatus.textContent = `$${currentLimit}/day`;
+    } else {
+      if (limitStatus) limitStatus.textContent = 'none';
+    }
+
+    document.getElementById('btn-save-agent-limit')?.addEventListener('click', async () => {
+      const val = parseFloat(limitInput.value);
+      if (isNaN(val) || val < 0) return;
+      await sendMsg({ type: 'setAgentSpendingLimit', agentId: meta.id, limit: val });
+      if (limitStatus) limitStatus.textContent = `$${val}/day`;
+      const btn = document.getElementById('btn-save-agent-limit') as HTMLButtonElement;
+      btn.textContent = 'Saved!';
+      setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+    });
+
+    document.getElementById('btn-clear-agent-limit')?.addEventListener('click', async () => {
+      await sendMsg({ type: 'setAgentSpendingLimit', agentId: meta.id, limit: null });
+      limitInput.value = '';
+      if (limitStatus) limitStatus.textContent = 'none';
+      const btn = document.getElementById('btn-clear-agent-limit') as HTMLButtonElement;
+      btn.textContent = 'Cleared!';
+      setTimeout(() => { btn.textContent = 'Clear'; }, 1500);
+    });
+
   } catch (err) {
     container.innerHTML = `<div class="panel-error" style="display:block;">Failed to load agent settings: ${err instanceof Error ? err.message : String(err)}</div>`;
   }
@@ -6372,7 +6518,59 @@ async function loadUsageView(): Promise<void> {
       `).join('');
     }
   }
+
+  // Load global alert state
+  loadGlobalAlert();
+  checkGlobalAlert();
 }
+
+// Global spending alert
+async function loadGlobalAlert(): Promise<void> {
+  const result = await sendMsg<{ limit: number | null }>({ type: 'getAgentSpendingLimit', agentId: '__global__' });
+  const input = document.getElementById('global-spending-alert') as HTMLInputElement;
+  const status = document.getElementById('global-alert-status');
+  if (result?.limit !== null && result?.limit !== undefined) {
+    input.value = String(result.limit);
+    if (status) status.textContent = 'Active';
+  } else {
+    if (status) status.textContent = 'Not set';
+  }
+}
+
+async function checkGlobalAlert(): Promise<void> {
+  const result = await sendMsg<{ limit: number | null }>({ type: 'getAgentSpendingLimit', agentId: '__global__' });
+  if (!result?.limit) return;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const summaryResult = await sendMsg<{ summary: { totalCost: number } }>({ type: 'getUsageSummary', since: todayStart.toISOString() });
+  const spent = summaryResult?.summary?.totalCost || 0;
+  const warning = document.getElementById('global-alert-warning');
+  if (warning) {
+    if (spent >= result.limit) {
+      warning.style.display = 'block';
+      warning.textContent = `Daily spending alert: you've spent ${formatCost(spent)} today, exceeding your ${formatCost(result.limit)} limit.`;
+    } else if (spent >= result.limit * 0.8) {
+      warning.style.display = 'block';
+      warning.style.background = 'var(--warning-subtle, #3a3a1a)';
+      warning.style.color = 'var(--warning-text, #d29922)';
+      warning.textContent = `Approaching daily limit: ${formatCost(spent)} of ${formatCost(result.limit)} (${Math.round(spent / result.limit * 100)}%)`;
+    } else {
+      warning.style.display = 'none';
+    }
+  }
+}
+
+document.getElementById('global-alert-save')?.addEventListener('click', async () => {
+  const input = document.getElementById('global-spending-alert') as HTMLInputElement;
+  const val = input.value ? parseFloat(input.value) : null;
+  await sendMsg({ type: 'setAgentSpendingLimit', agentId: '__global__', limit: val });
+  const status = document.getElementById('global-alert-status');
+  if (status) {
+    status.textContent = val !== null ? 'Saved!' : 'Cleared';
+    setTimeout(() => { status.textContent = val !== null ? 'Active' : 'Not set'; }, 1500);
+  }
+  checkGlobalAlert();
+});
 
 // Usage view event listeners
 document.getElementById('usage-time-range')?.addEventListener('change', () => loadUsageView());
