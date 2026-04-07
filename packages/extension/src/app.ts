@@ -3190,8 +3190,8 @@ function renderMessages(): void {
       (m) => {
         const isSent = m.from === myAgentId;
         const dirBadge = isSent
-          ? '<span class="badge" style="background:#1f3a1f;color:#7ee787;font-size:10px;">Sent</span>'
-          : '<span class="badge" style="background:#3a1f1f;color:#f0883e;font-size:10px;">Received</span>';
+          ? '<span class="badge" style="background:var(--success-subtle);color:var(--success-text);font-size:10px;">Sent</span>'
+          : '<span class="badge" style="background:var(--warning-subtle);color:var(--warning-text);font-size:10px;">Received</span>';
         const otherAgent = isSent ? m.to : m.from;
         const otherName = otherAgent === 'broadcast' ? 'broadcast' : agentName(otherAgent);
         return `
@@ -4923,8 +4923,8 @@ function renderChannelsList(channels: Array<{ id: string; type: string; agentId:
       const mailtoHref = inboundAddr ? `mailto:${encodeURIComponent(inboundAddr)}?subject=${encodeURIComponent('Test')}&body=${encodeURIComponent('Test email to CHAOS agent')}` : '';
 
       detailHtml = `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px;">`;
-      detailHtml += inboundAddr ? `Inbound: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--text-link, #58a6ff);">${escapeHtml(inboundAddr)}</a>` : '';
-      detailHtml += ` | ${verified ? '<span style="color:#3fb950;">Verified</span>' : '<span style="color:#d29922;">Not verified</span>'}`;
+      detailHtml += inboundAddr ? `Inbound: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--accent-text);">${escapeHtml(inboundAddr)}</a>` : '';
+      detailHtml += ` | ${verified ? '<span style="color:var(--success);">Verified</span>' : '<span style="color:var(--warning-text);">Not verified</span>'}`;
       detailHtml += `</div>`;
       detailHtml += `
         <details style="margin-top:6px;font-size:var(--text-xs);">
@@ -5535,7 +5535,7 @@ function showPairingDialog(botUsername: string, pairingCode: string): void {
           <div>
             <div style="font-weight:500;font-size:var(--text-sm);">Open Telegram</div>
             <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:2px;">Search for <strong>@${escapeHtml(botUsername)}</strong> or tap the link below</div>
-            <a href="https://t.me/${encodeURIComponent(botUsername)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:4px;font-size:var(--text-xs);color:var(--text-link, #58a6ff);">t.me/${escapeHtml(botUsername)}</a>
+            <a href="https://t.me/${encodeURIComponent(botUsername)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:4px;font-size:var(--text-xs);color:var(--accent-text);">t.me/${escapeHtml(botUsername)}</a>
           </div>
         </div>
         <div style="display:flex;gap:12px;align-items:flex-start;">
@@ -5609,7 +5609,7 @@ function showPairingDialog(botUsername: string, pairingCode: string): void {
         clearInterval(pairingPollInterval);
         const statusEl = dialog.querySelector('#pairing-status');
         if (statusEl) {
-          statusEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg> <span style="color:#3fb950;font-weight:500;">Paired successfully!</span>';
+          statusEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg> <span style="color:var(--success);font-weight:500;">Paired successfully!</span>';
         }
         channelLog('Telegram bot paired successfully');
         // Auto-close after a brief delay and refresh
@@ -5753,13 +5753,13 @@ document.getElementById('btn-email-register')!.addEventListener('click', async (
 
     // Show verification info
     const infoDiv = document.createElement('div');
-    infoDiv.style.cssText = 'margin-top:8px;padding:10px;background:var(--bg-surface, #1a1a2e);border-radius:6px;font-size:var(--text-xs);';
+    infoDiv.style.cssText = 'margin-top:8px;padding:10px;background:var(--bg-surface);border-radius:6px;font-size:var(--text-xs);';
     const mailtoSubject = encodeURIComponent('Test from CHAOS');
     const mailtoBody = encodeURIComponent('Hello! This is a test email to my CHAOS agent.');
     const mailtoHref = `mailto:${encodeURIComponent(result.inboundAddress)}?subject=${mailtoSubject}&body=${mailtoBody}`;
     infoDiv.innerHTML = `
       <p style="margin:0 0 6px 0;color:var(--text-primary);font-weight:500;">Check your email for a verification link.</p>
-      <p style="margin:0 0 6px 0;color:var(--text-secondary);">Your inbound address: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--text-link, #58a6ff);font-weight:500;">${escapeHtml(result.inboundAddress)}</a></p>
+      <p style="margin:0 0 6px 0;color:var(--text-secondary);">Your inbound address: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--accent-text);font-weight:500;">${escapeHtml(result.inboundAddress)}</a></p>
       <p style="margin:0;color:var(--text-muted);font-size:10px;">After verifying, click the address above to send a test email.</p>
     `;
     statusSpan.parentElement!.appendChild(infoDiv);
@@ -5789,9 +5789,9 @@ document.getElementById('btn-email-register')!.addEventListener('click', async (
           infoDiv.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              <span style="color:#3fb950;font-weight:500;">Email verified!</span>
+              <span style="color:var(--success);font-weight:500;">Email verified!</span>
             </div>
-            <p style="margin:6px 0 0;color:var(--text-secondary);font-size:var(--text-xs);">Inbound: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--text-link, #58a6ff);">${escapeHtml(result.inboundAddress)}</a> — click to send a test email.</p>
+            <p style="margin:6px 0 0;color:var(--text-secondary);font-size:var(--text-xs);">Inbound: <a href="${mailtoHref}" target="_blank" rel="noopener" style="color:var(--accent-text);">${escapeHtml(result.inboundAddress)}</a> — click to send a test email.</p>
           `;
           await renderChannelsUI();
         }
