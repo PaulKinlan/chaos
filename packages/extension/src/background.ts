@@ -919,7 +919,8 @@ async function handleAgenticChat(
   // Use columnId as the loop key to support multiple concurrent loops per agent
   const loopKey = (msg.columnId as string) || msg.agentId;
   console.log(`[background] handleAgenticChat: agentId=${msg.agentId}, loopKey=${loopKey}, message=${msg.message.slice(0, 80)}...`);
-  port.postMessage({ type: 'agenticStart', agentId: msg.agentId, columnId: msg.columnId });
+  // Use activeUiPort directly (not the captured port) so messages survive port reconnects
+  try { activeUiPort?.postMessage({ type: 'agenticStart', agentId: msg.agentId, columnId: msg.columnId }); } catch { /* */ }
 
   // Abort any existing loop for this column before starting a new one
   const existing = activeAbortControllers.get(loopKey);
@@ -942,8 +943,10 @@ async function handleAgenticChat(
       source: 'chat',
       onProgress: (update: ProgressUpdate) => {
         if (abortController.signal.aborted) return;
+        // Use activeUiPort directly — captured port goes stale on reconnect
+        if (!activeUiPort) return;
         try {
-          port.postMessage({
+          activeUiPort.postMessage({
             type: 'agenticProgress',
             agentId: msg.agentId,
             columnId: msg.columnId,
@@ -956,32 +959,33 @@ async function handleAgenticChat(
             totalIterations: update.totalIterations,
           });
         } catch {
-          // Port disconnected
-          abortController.abort();
+          // Port disconnected — don't abort, UI may reconnect
         }
       },
     });
 
     console.log(`[background] runAgenticLoop completed for ${msg.agentId}, result length: ${result?.length ?? 0}`);
     if (!abortController.signal.aborted) {
-      port.postMessage({ type: 'agenticDone', result, agentId: msg.agentId, columnId: msg.columnId });
+      try { activeUiPort?.postMessage({ type: 'agenticDone', result, agentId: msg.agentId, columnId: msg.columnId }); } catch { /* */ }
     }
   } catch (err) {
     console.error(`[background] handleAgenticChat error for ${msg.agentId}:`, err);
     if (!abortController.signal.aborted) {
       const parsed = parseApiError(err);
-      port.postMessage({
-        type: 'chatError',
-        error: parsed.message,
-        provider: parsed.provider,
-        agentId: msg.agentId,
-        columnId: msg.columnId,
-        lastMessage: {
+      try {
+        activeUiPort?.postMessage({
+          type: 'chatError',
+          error: parsed.message,
+          provider: parsed.provider,
           agentId: msg.agentId,
-          message: msg.message,
-          pageContext: msg.pageContext,
-        },
-      });
+          columnId: msg.columnId,
+          lastMessage: {
+            agentId: msg.agentId,
+            message: msg.message,
+            pageContext: msg.pageContext,
+          },
+        });
+      } catch { /* */ }
     }
   } finally {
     // Only delete if this is still our controller (not replaced by a newer request)
