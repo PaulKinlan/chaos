@@ -417,12 +417,85 @@ Build a separate, minimal app that proves the SDK works independently from the m
 4. Write a `README.md` for each showing how to get started
 5. **Deliverable**: two working apps that prove SDK independence
 
-### Phase 8: Documentation
+### Phase 8: Testing & Conformance Suite
+
+Three tiers of tests that together verify any SDK integration works correctly.
+
+**Tier 1: SDK Unit Tests** (`packages/sdk/tests/unit/`)
+- Test each API domain in isolation with mock stores and mock engine
+- Every method on every domain class (agents, chat, hooks, channels, etc.)
+- Event dispatch: verify every addEventListener fires correctly
+- Error handling: invalid inputs, network failures, missing permissions
+- Streaming: chat chunks arrive in order, abort works, done fires
+- **Run with**: `vitest` (fast, no real stores or engine)
+
+**Tier 2: Store Conformance Tests** (`packages/sdk/tests/conformance/stores/`)
+- Abstract test suite that any store implementation must pass
+- Tests are written against the interfaces, not implementations
+- Run the same tests against every backend:
+
+```typescript
+// Example: conformance test for MemoryStore
+function memoryStoreConformance(createStore: () => MemoryStore) {
+  test('write and read a file', async () => {
+    const store = createStore();
+    await store.write('agent-1', 'memories/user.md', '# User\nName: Paul');
+    const content = await store.read('agent-1', 'memories/user.md');
+    expect(content).toBe('# User\nName: Paul');
+  });
+
+  test('list directory contents', async () => { ... });
+  test('delete removes the file', async () => { ... });
+  test('search finds matching content', async () => { ... });
+  test('write to nested path creates parent dirs', async () => { ... });
+  test('read nonexistent file throws', async () => { ... });
+}
+
+// Run against each implementation
+describe('OPFSMemoryStore', () => memoryStoreConformance(() => new OPFSMemoryStore()));
+describe('RemoteMemoryStore', () => memoryStoreConformance(() => new RemoteMemoryStore(testUrl)));
+```
+
+- One conformance suite per store interface:
+  - `settingsStoreConformance` — get/set/remove/getMultiple
+  - `memoryStoreConformance` — read/write/append/delete/list/mkdir/exists/search
+  - `conversationStoreConformance` — get/list/save/delete
+  - `hookStoreConformance` — list/get/add/update/remove
+  - `usageStoreConformance` — record/query/clear
+  - `agentStoreConformance` — list/get/add/update/remove
+- **Deliverable**: any new store implementation (S3, SQLite, Firebase) can verify correctness by running the conformance suite
+
+**Tier 3: Integration / End-to-End Tests** (`packages/sdk/tests/integration/`)
+- Full SDK wired to real (in-memory or local) stores and a test engine
+- Test complete flows:
+  - Create agent → chat → verify memory written → check usage recorded
+  - Create hook → simulate trigger → verify agent loop ran
+  - Register channel → receive message → verify routing to correct agent
+  - Set spending limit → run loop → verify it stops at limit
+  - Create agent → install skill → verify skill appears in system prompt
+- **Run with**: vitest with a test engine (mock LLM, real stores)
+
+**Tier 4: Conformance CLI** (`packages/sdk/tests/conformance/runner.ts`)
+- Standalone test runner that third-party integrators can run against their implementations
+- Takes a config file pointing to store implementations and an engine URL
+- Outputs a conformance report: which tests pass, which fail
+- Publishable as `@chaos/sdk-conformance` or included in the main package
+- **Usage**:
+  ```bash
+  npx @chaos/sdk-conformance --config ./my-stores.ts
+  # ✓ SettingsStore: 12/12 passed
+  # ✓ MemoryStore: 18/18 passed
+  # ✓ ConversationStore: 8/8 passed
+  # ✗ HookStore: 6/7 passed (update fails to preserve triggerCount)
+  ```
+
+### Phase 9: Documentation
 
 1. Generate API documentation from types (TypeDoc or similar)
 2. `@chaos/sdk` README with quickstart for each runtime (Chrome, web, CLI)
 3. Architecture guide: how engine, relay, stores, and capabilities fit together
-4. **Deliverable**: external developers can build on the SDK
+4. Conformance guide: how to run the test suite against custom implementations
+5. **Deliverable**: external developers can build on and verify against the SDK
 
 ## Connection Layer
 
