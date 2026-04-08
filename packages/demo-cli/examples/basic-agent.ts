@@ -11,7 +11,7 @@
 import { createAgent } from '@chaos/agent-loop';
 import { resolveModel } from './lib/model.js';
 
-const model = await resolveModel([{ text: 'The capital of France is Paris.' }]);
+const model = await resolveModel([{ text: 'The capital of France is Paris. [MOCK RESPONSE]' }]);
 
 const agent = createAgent({
   id: 'basic',
