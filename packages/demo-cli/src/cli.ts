@@ -188,12 +188,23 @@ async function createAgentLoop(id: string, name: string, model: LanguageModel, m
 // ── Commands ──
 
 async function agentsList(sdk: ChaosSDK): Promise<void> {
-  const agents = await sdk.agents.list();
-  if (agents.length === 0) { console.log('No agents found. Create one: chaos agents create "My Agent"'); return; }
+  const showAll = process.argv.includes('--all');
+  let allAgents = await sdk.agents.list();
+  const archived = allAgents.filter(a => a.role === 'archived');
+  if (!showAll) allAgents = allAgents.filter(a => a.role !== 'archived');
+  if (allAgents.length === 0) {
+    console.log('No agents found. Create one: chaos agents create "My Agent"');
+    if (archived.length > 0) console.log(`  (${archived.length} archived — use --all to show)`);
+    return;
+  }
   console.log('Agents:');
-  for (const a of agents) {
+  for (const a of allAgents) {
     const provLabel = a.provider ? `${a.provider}${a.model ? `/${a.model}` : ''}` : 'mock';
-    console.log(`  ${a.name.padEnd(20)} ${a.id}  ${provLabel}`);
+    const tag = a.role === 'archived' ? ' [archived]' : '';
+    console.log(`  ${a.name.padEnd(20)} ${a.id}  ${provLabel}${tag}`);
+  }
+  if (!showAll && archived.length > 0) {
+    console.log(`  (${archived.length} archived — use --all to show)`);
   }
 }
 
@@ -225,11 +236,31 @@ async function agentsCreate(sdk: ChaosSDK, agentStore: JsonAgentStore, memory: N
   console.log(`  CLAUDE.md seeded — edit it to customize the agent's personality.`);
 }
 
-async function agentsDelete(sdk: ChaosSDK, agentStore: JsonAgentStore, id: string): Promise<void> {
+async function agentsArchive(agentStore: JsonAgentStore, id: string): Promise<void> {
   const agent = await agentStore.get(id);
   if (!agent) { console.error(`Agent not found: ${id}`); process.exit(1); }
+  await agentStore.update(id, { visibility: 'private' as const, role: 'archived' });
+  console.log(`Archived agent: ${agent.name} (${id})`);
+  console.log(`  Memory preserved at ~/.chaos-data/memory/${id}/`);
+  console.log(`  Use 'chaos agents list --all' to see archived agents.`);
+}
+
+async function agentsDelete(agentStore: JsonAgentStore, memory: NodeFileStore, conversations: FileConversationStore, id: string): Promise<void> {
+  const agent = await agentStore.get(id);
+  if (!agent) { console.error(`Agent not found: ${id}`); process.exit(1); }
+
+  // Delete memory files
+  const memDir = path.join(DATA_DIR, 'memory', id);
+  try { await fs.rm(memDir, { recursive: true, force: true }); } catch { /* */ }
+
+  // Delete conversations
+  const convDir = path.join(DATA_DIR, 'conversations', id);
+  try { await fs.rm(convDir, { recursive: true, force: true }); } catch { /* */ }
+
+  // Remove from registry
   await agentStore.remove(id);
   console.log(`Deleted agent: ${agent.name} (${id})`);
+  console.log(`  All data removed (memory, conversations).`);
 }
 
 async function chat(sdk: ChaosSDK, memory: NodeFileStore, agentId: string, message: string): Promise<void> {
@@ -344,9 +375,10 @@ function showHelp(): void {
   console.log(`chaos — CLI for @chaos/sdk + @chaos/agent-loop
 
 Usage:
-  chaos agents list                    List all agents
+  chaos agents list [--all]             List agents (--all includes archived)
   chaos agents create <name>           Create a new agent (use --provider/--model to set LLM)
-  chaos agents delete <id>             Delete an agent
+  chaos agents archive <id>            Archive an agent (preserves memory)
+  chaos agents delete <id>             Permanently delete an agent and all its data
 
   chaos chat <agent-id> <message>      Chat with an agent
   chaos conversations <agent-id>       List conversations
@@ -401,9 +433,14 @@ async function main(): Promise<void> {
           await agentsCreate(sdk, agentStore, memory, name);
           break;
         }
+        case 'archive': {
+          if (!rest[0]) { console.error('Usage: chaos agents archive <id>'); process.exit(1); }
+          await agentsArchive(agentStore, rest[0]);
+          break;
+        }
         case 'delete': {
           if (!rest[0]) { console.error('Usage: chaos agents delete <id>'); process.exit(1); }
-          await agentsDelete(sdk, agentStore, rest[0]);
+          await agentsDelete(agentStore, memory, new FileConversationStore(DATA_DIR), rest[0]);
           break;
         }
         default: console.error(`Unknown: agents ${command}`); showHelp(); process.exit(1);
