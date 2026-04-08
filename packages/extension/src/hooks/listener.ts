@@ -8,7 +8,7 @@
  */
 
 import { getHooks, updateHook } from '../storage/chrome-storage.js';
-import { runAgenticLoop } from '../agents/agentic-loop.js';
+import { createExtensionAgent, mapProgressEvent } from '../agents/extension-agent.js';
 import type { Hook, HookTrigger } from '../storage/types.js';
 
 // ── Glob pattern matching ──
@@ -58,25 +58,32 @@ async function executeHook(hook: Hook, contextMessage: string): Promise<void> {
 
     console.log(`[hooks] Executing hook "${hook.description}" for agent ${hook.agentId}`);
 
-    const result = await runAgenticLoop({
-      agentId: hook.agentId,
+    const { agent: hookAgent } = await createExtensionAgent(hook.agentId, {
       task: fullPrompt,
-      onProgress: port ? (update) => {
-        try {
-          port.postMessage({
-            type: 'agenticProgress',
-            agentId: hook.agentId,
-            progressType: update.type,
-            content: update.content,
-            toolName: update.toolName,
-            toolArgs: update.toolArgs,
-            toolResult: update.toolResult,
-            iteration: update.iteration,
-            totalIterations: update.totalIterations,
-          });
-        } catch { /* port disconnected */ }
-      } : undefined,
+      source: 'hook',
     });
+
+    let result = '';
+    for await (const event of hookAgent.stream(fullPrompt)) {
+      if (event.type === 'done' || event.type === 'text') {
+        result = event.content;
+      }
+      if (!port) continue;
+      const update = mapProgressEvent(event, 20);
+      try {
+        port.postMessage({
+          type: 'agenticProgress',
+          agentId: hook.agentId,
+          progressType: update.type,
+          content: update.content,
+          toolName: update.toolName,
+          toolArgs: update.toolArgs,
+          toolResult: update.toolResult,
+          iteration: update.iteration,
+          totalIterations: update.totalIterations,
+        });
+      } catch { /* port disconnected */ }
+    }
 
     if (port) {
       try { port.postMessage({ type: 'agenticDone', result, agentId: hook.agentId }); } catch { /* */ }

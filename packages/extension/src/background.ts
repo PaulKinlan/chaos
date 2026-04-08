@@ -21,9 +21,8 @@ import {
   getAgent,
   updateAgentMeta,
 } from './agents/manager.js';
-import { runAgentLoop } from './agents/loop.js';
-import { runAgenticLoop } from './agents/agentic-loop.js';
-import type { ProgressUpdate } from './agents/agentic-loop.js';
+import { createExtensionAgent, mapProgressEvent, appendActivityLog } from './agents/extension-agent.js';
+import type { ProgressUpdate } from './agents/extension-agent.js';
 import {
   getApiKeys,
   setApiKeys,
@@ -78,6 +77,8 @@ import {
   getMessageHandler,
 } from './channels/poller.js';
 import { getRelaySettings } from './channels/config.js';
+
+const DEFAULT_MAX_ITERATIONS_BG = 20;
 
 // ── OPFS directory listing helper ──
 
@@ -700,29 +701,46 @@ async function handleChat(
   startKeepalive();
 
   try {
-    const fullResponse = await runAgentLoop({
-      agentId: msg.agentId,
-      userMessage: msg.message,
+    const { agent: chatAgent, skillNames: chatSkillNames } = await createExtensionAgent(msg.agentId, {
+      task: msg.message,
       pageContext: msg.pageContext,
-      onChunk: (chunk: string) => {
-        if (abortController.signal.aborted) return;
-        try {
-          port.postMessage({ type: 'chatChunk', chunk, agentId: msg.agentId });
-        } catch {
-          // Port disconnected — abort the loop
-          abortController.abort();
-        }
-      },
-      onToolCall: (call: { name: string; args: unknown; result: unknown }) => {
-        if (abortController.signal.aborted) return;
-        try {
-          port.postMessage({ type: 'toolCall', name: call.name, args: call.args, result: call.result, agentId: msg.agentId });
-        } catch {
-          // Port disconnected
-          abortController.abort();
-        }
-      },
+      maxIterations: 10,
+      signal: abortController.signal,
+      source: 'chat',
     });
+
+    if (chatSkillNames.length > 0) {
+      try {
+        port.postMessage({ type: 'chatChunk', chunk: `Loaded skills: ${chatSkillNames.join(', ')}\n\n`, agentId: msg.agentId });
+      } catch { /* */ }
+    }
+
+    let fullResponse = '';
+    for await (const event of chatAgent.stream(msg.message, msg.pageContext ? JSON.stringify(msg.pageContext) : undefined)) {
+      if (abortController.signal.aborted) break;
+      const update = mapProgressEvent(event, 10);
+      if (event.type === 'thinking') {
+        try {
+          port.postMessage({ type: 'chatChunk', chunk: event.content, agentId: msg.agentId });
+        } catch {
+          abortController.abort();
+        }
+      } else if (event.type === 'tool-call') {
+        try {
+          port.postMessage({ type: 'toolCall', name: event.toolName, args: event.toolArgs, result: undefined, agentId: msg.agentId });
+        } catch {
+          abortController.abort();
+        }
+      } else if (event.type === 'tool-result') {
+        try {
+          port.postMessage({ type: 'toolCall', name: event.toolName, args: undefined, result: event.toolResult, agentId: msg.agentId });
+        } catch {
+          abortController.abort();
+        }
+      } else if (event.type === 'done' || event.type === 'text') {
+        fullResponse = event.content;
+      }
+    }
 
     if (!abortController.signal.aborted) {
       port.postMessage({ type: 'chatEnd', fullResponse, agentId: msg.agentId });
@@ -763,29 +781,36 @@ async function wakeAgentForMessage(agentId: string, fromAgentId: string, body: s
     try { activeUiPort.postMessage({ type: 'agenticStart', agentId }); } catch { /* */ }
   }
 
+  const messageTask = `You received a message from another agent.\n\nFrom: ${senderName}\nMessage: ${body}\n\nProcess this message and take any appropriate action. If the message reports task completion, review the results. If it asks you to do something, do it.`;
+
   startKeepalive();
   try {
-    const result = await runAgenticLoop({
-      agentId,
-      task: `You received a message from another agent.\n\nFrom: ${senderName}\nMessage: ${body}\n\nProcess this message and take any appropriate action. If the message reports task completion, review the results. If it asks you to do something, do it.`,
+    const { agent: msgAgent } = await createExtensionAgent(agentId, {
+      task: messageTask,
       source: 'message',
-      onProgress: (update: ProgressUpdate) => {
-        if (!activeUiPort) return;
-        try {
-          activeUiPort.postMessage({
-            type: 'agenticProgress',
-            agentId,
-            progressType: update.type,
-            content: update.content,
-            toolName: update.toolName,
-            toolArgs: update.toolArgs,
-            toolResult: update.toolResult,
-            iteration: update.iteration,
-            totalIterations: update.totalIterations,
-          });
-        } catch { /* */ }
-      },
     });
+
+    let result = '';
+    for await (const event of msgAgent.stream(messageTask)) {
+      const update = mapProgressEvent(event, DEFAULT_MAX_ITERATIONS_BG);
+      if (!activeUiPort) continue;
+      try {
+        activeUiPort.postMessage({
+          type: 'agenticProgress',
+          agentId,
+          progressType: update.type,
+          content: update.content,
+          toolName: update.toolName,
+          toolArgs: update.toolArgs,
+          toolResult: update.toolResult,
+          iteration: update.iteration,
+          totalIterations: update.totalIterations,
+        });
+      } catch { /* */ }
+      if (event.type === 'done' || event.type === 'text') {
+        result = event.content;
+      }
+    }
 
     if (activeUiPort) {
       try { activeUiPort.postMessage({ type: 'agenticDone', result, agentId }); } catch { /* */ }
@@ -831,31 +856,38 @@ async function executeAssignedTask(agentId: string, taskId: string): Promise<voi
     } catch { /* port disconnected */ }
   }
 
+  const assignedTaskPrompt = `You have been assigned a task.\n\nTask: ${taskSubject}\n\nInstructions:\n${prompt}\n\nWhen done, summarize what you accomplished.`;
+
   startKeepalive();
   try {
-    const result = await runAgenticLoop({
-      agentId,
-      task: `You have been assigned a task.\n\nTask: ${taskSubject}\n\nInstructions:\n${prompt}\n\nWhen done, summarize what you accomplished.`,
+    const { agent: taskAgent } = await createExtensionAgent(agentId, {
+      task: assignedTaskPrompt,
       source: 'task',
-      onProgress: (update: ProgressUpdate) => {
-        // Always use activeUiPort (not a captured reference) so progress
-        // continues flowing even if the port reconnects during execution
-        if (!activeUiPort) return;
-        try {
-          activeUiPort.postMessage({
-            type: 'agenticProgress',
-            agentId,
-            progressType: update.type,
-            content: update.content,
-            toolName: update.toolName,
-            toolArgs: update.toolArgs,
-            toolResult: update.toolResult,
-            iteration: update.iteration,
-            totalIterations: update.totalIterations,
-          });
-        } catch { /* */ }
-      },
     });
+
+    let result = '';
+    for await (const event of taskAgent.stream(assignedTaskPrompt)) {
+      const update = mapProgressEvent(event, DEFAULT_MAX_ITERATIONS_BG);
+      // Always use activeUiPort (not a captured reference) so progress
+      // continues flowing even if the port reconnects during execution
+      if (!activeUiPort) continue;
+      try {
+        activeUiPort.postMessage({
+          type: 'agenticProgress',
+          agentId,
+          progressType: update.type,
+          content: update.content,
+          toolName: update.toolName,
+          toolArgs: update.toolArgs,
+          toolResult: update.toolResult,
+          iteration: update.iteration,
+          totalIterations: update.totalIterations,
+        });
+      } catch { /* */ }
+      if (event.type === 'done' || event.type === 'text') {
+        result = event.content;
+      }
+    }
 
     await appendEvent({
       taskId,
@@ -933,38 +965,59 @@ async function handleAgenticChat(
   startKeepalive();
 
   try {
-    console.log(`[background] Starting runAgenticLoop for ${msg.agentId}`);
-    const result = await runAgenticLoop({
-      agentId: msg.agentId,
+    console.log(`[background] Starting createExtensionAgent for ${msg.agentId}`);
+    const agenticMaxIter = msg.maxIterations ?? DEFAULT_MAX_ITERATIONS_BG;
+    const { agent: agenticAgent, skillNames: agenticSkillNames } = await createExtensionAgent(msg.agentId, {
       task: msg.message,
       pageContext: msg.pageContext,
-      maxIterations: msg.maxIterations,
+      maxIterations: agenticMaxIter,
       signal: abortController.signal,
       source: 'chat',
-      onProgress: (update: ProgressUpdate) => {
-        if (abortController.signal.aborted) return;
-        // Use activeUiPort directly — captured port goes stale on reconnect
-        if (!activeUiPort) return;
-        try {
-          activeUiPort.postMessage({
-            type: 'agenticProgress',
-            agentId: msg.agentId,
-            columnId: msg.columnId,
-            progressType: update.type,
-            content: update.content,
-            toolName: update.toolName,
-            toolArgs: update.toolArgs,
-            toolResult: update.toolResult,
-            iteration: update.iteration,
-            totalIterations: update.totalIterations,
-          });
-        } catch {
-          // Port disconnected — don't abort, UI may reconnect
-        }
-      },
     });
 
-    console.log(`[background] runAgenticLoop completed for ${msg.agentId}, result length: ${result?.length ?? 0}`);
+    // Report loaded skills
+    if (agenticSkillNames.length > 0) {
+      try {
+        activeUiPort?.postMessage({
+          type: 'agenticProgress',
+          agentId: msg.agentId,
+          columnId: msg.columnId,
+          progressType: 'thinking',
+          content: `Loaded skills: ${agenticSkillNames.join(', ')}`,
+          iteration: 0,
+          totalIterations: agenticMaxIter,
+        });
+      } catch { /* */ }
+    }
+
+    let result = '';
+    for await (const event of agenticAgent.stream(msg.message, msg.pageContext ? JSON.stringify(msg.pageContext) : undefined)) {
+      if (abortController.signal.aborted) break;
+      const update = mapProgressEvent(event, agenticMaxIter);
+      // Use activeUiPort directly — captured port goes stale on reconnect
+      if (!activeUiPort) continue;
+      try {
+        activeUiPort.postMessage({
+          type: 'agenticProgress',
+          agentId: msg.agentId,
+          columnId: msg.columnId,
+          progressType: update.type,
+          content: update.content,
+          toolName: update.toolName,
+          toolArgs: update.toolArgs,
+          toolResult: update.toolResult,
+          iteration: update.iteration,
+          totalIterations: update.totalIterations,
+        });
+      } catch {
+        // Port disconnected — don't abort, UI may reconnect
+      }
+      if (event.type === 'done' || event.type === 'text') {
+        result = event.content;
+      }
+    }
+
+    console.log(`[background] agent loop completed for ${msg.agentId}, result length: ${result?.length ?? 0}`);
     if (!abortController.signal.aborted) {
       try { activeUiPort?.postMessage({ type: 'agenticDone', result, agentId: msg.agentId, columnId: msg.columnId }); } catch { /* */ }
     }
@@ -1685,13 +1738,13 @@ async function handleOneShotMessage(
       const allTasks = await getScheduledTasks();
       const task = allTasks.find((t) => t.alarmId === alarmId);
       if (!task) return { error: 'Task not found' };
-      const result = await runAgenticLoop({
-        agentId: task.agentId,
+      const { agent: schedAgent } = await createExtensionAgent(task.agentId, {
         task: task.prompt,
         source: 'task',
       });
-      await updateScheduledTaskRun(task.alarmId, result || '(no output)');
-      return { ran: true, result: (result || '').slice(0, 200) };
+      const schedResult = await schedAgent.run(task.prompt);
+      await updateScheduledTaskRun(task.alarmId, schedResult || '(no output)');
+      return { ran: true, result: (schedResult || '').slice(0, 200) };
     }
 
     case 'updateScheduledTaskRun': {
@@ -2139,11 +2192,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       await executeAssignedTask(agentId, taskId);
     } else if (task) {
       // Run a full agentic loop with the stored prompt (multi-step autonomous)
-      const result = await runAgenticLoop({
-        agentId: task.agentId,
+      const { agent: alarmAgent } = await createExtensionAgent(task.agentId, {
         task: task.prompt,
         source: 'task',
       });
+      const result = await alarmAgent.run(task.prompt);
 
       // Update the task with run info
       await updateScheduledTaskRun(task.alarmId, result || '(no output)');
@@ -2160,11 +2213,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       const colonIdx = alarm.name.indexOf(':');
       if (colonIdx > 0) {
         const agentId = alarm.name.slice(0, colonIdx);
-        await runAgenticLoop({
-          agentId,
-          task: 'You were woken up by a scheduled alarm. Check your TODO list and pending messages, then do any work that needs doing.',
+        const legacyTask = 'You were woken up by a scheduled alarm. Check your TODO list and pending messages, then do any work that needs doing.';
+        const { agent: legacyAgent } = await createExtensionAgent(agentId, {
+          task: legacyTask,
           source: 'task',
         });
+        await legacyAgent.run(legacyTask);
       } else {
         console.warn(`Unknown alarm with no scheduled task: ${alarm.name}`);
       }
@@ -2219,28 +2273,34 @@ setMessageHandler(async (message) => {
   }
 
   // Run the agentic loop — stream progress to UI if available
-  const result = await runAgenticLoop({
-    agentId: master.id,
-    source: 'channel',
+  const { agent: channelAgent } = await createExtensionAgent(master.id, {
     task,
-    onProgress: port ? (update: ProgressUpdate) => {
-      try {
-        port.postMessage({
-          type: 'agenticProgress',
-          agentId: master.id,
-          progressType: update.type,
-          content: update.content,
-          toolName: update.toolName,
-          toolArgs: update.toolArgs,
-          toolResult: update.toolResult,
-          iteration: update.iteration,
-          totalIterations: update.totalIterations,
-        });
-      } catch {
-        // Port disconnected
-      }
-    } : undefined,
+    source: 'channel',
   });
+
+  let result = '';
+  for await (const event of channelAgent.stream(task)) {
+    const update = mapProgressEvent(event, DEFAULT_MAX_ITERATIONS_BG);
+    if (event.type === 'done' || event.type === 'text') {
+      result = event.content;
+    }
+    if (!port) continue;
+    try {
+      port.postMessage({
+        type: 'agenticProgress',
+        agentId: master.id,
+        progressType: update.type,
+        content: update.content,
+        toolName: update.toolName,
+        toolArgs: update.toolArgs,
+        toolResult: update.toolResult,
+        iteration: update.iteration,
+        totalIterations: update.totalIterations,
+      });
+    } catch {
+      // Port disconnected
+    }
+  }
 
   if (port) {
     try {
