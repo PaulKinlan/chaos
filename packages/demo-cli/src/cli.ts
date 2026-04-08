@@ -277,24 +277,34 @@ async function chat(sdk: ChaosSDK, memory: NodeFileStore, agentId: string, messa
 
   console.log(`\nChatting with ${agent.name}...\n`);
 
-  // Collect conversation
+  // Collect conversation with full progress history
   const messages: ConversationMessage[] = [];
   messages.push({ role: 'user', content: message, timestamp: new Date().toISOString() });
 
   let responseText = '';
+  const progressEntries: import('@chaos/sdk').ProgressEntry[] = [];
+
   for await (const update of sdk.chat.sendMessage(agentId, message)) {
+    const now = new Date().toISOString();
     switch (update.type) {
       case 'thinking':
         process.stdout.write(`  [thinking] ${update.content}\n`);
+        progressEntries.push({ type: 'thinking', content: update.content, timestamp: now });
         break;
       case 'tool-call':
         process.stdout.write(`  [tool] ${update.toolName}(${JSON.stringify(update.toolArgs).slice(0, 100)})\n`);
+        progressEntries.push({ type: 'tool-call', toolName: update.toolName, toolArgs: update.toolArgs, timestamp: now });
         break;
       case 'tool-result':
         process.stdout.write(`  [result] ${String(update.toolResult).slice(0, 200)}\n`);
+        progressEntries.push({ type: 'tool-result', toolName: update.toolName, toolResult: update.toolResult, timestamp: now });
         break;
       case 'step-complete':
         process.stdout.write(`  --- step ${update.iteration} complete ---\n`);
+        progressEntries.push({ type: 'step-start', stepNumber: update.iteration, timestamp: now });
+        break;
+      case 'text':
+        progressEntries.push({ type: 'text', content: update.content, timestamp: now });
         break;
       case 'done':
         responseText = update.content;
@@ -307,7 +317,12 @@ async function chat(sdk: ChaosSDK, memory: NodeFileStore, agentId: string, messa
 
   if (responseText) {
     console.log(`\n${agent.name}: ${responseText}`);
-    messages.push({ role: 'assistant', content: responseText, timestamp: new Date().toISOString() });
+    messages.push({
+      role: 'assistant',
+      content: responseText,
+      timestamp: new Date().toISOString(),
+      progress: progressEntries,
+    });
   }
 
   // Save conversation
@@ -333,6 +348,29 @@ async function conversationShow(sdk: ChaosSDK, agentId: string, convId: string):
   for (const m of conv.messages) {
     const role = m.role === 'user' ? 'You' : 'Agent';
     console.log(`[${role}] ${m.content.slice(0, 500)}`);
+
+    // Show progress entries (thinking, tool calls, etc.)
+    if (m.progress && m.progress.length > 0) {
+      for (const p of m.progress) {
+        switch (p.type) {
+          case 'thinking':
+            console.log(`  [thinking] ${p.content}`);
+            break;
+          case 'tool-call':
+            console.log(`  [tool] ${p.toolName}(${JSON.stringify(p.toolArgs).slice(0, 100)})`);
+            break;
+          case 'tool-result':
+            console.log(`  [result] ${String(p.toolResult).slice(0, 200)}`);
+            break;
+          case 'step-start':
+            console.log(`  --- step ${p.stepNumber} ---`);
+            break;
+          case 'text':
+            console.log(`  [text] ${p.content}`);
+            break;
+        }
+      }
+    }
   }
 }
 
