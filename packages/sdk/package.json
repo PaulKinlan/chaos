@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./stores": "./src/stores/index.ts",
+    "./stores/in-memory": "./src/stores/in-memory.ts",
     "./connections": "./src/connections/index.ts",
     "./browser": "./src/browser/index.ts"
   },
@@ -15,7 +16,11 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@chaos/agent-loop": "*"
+  },
   "devDependencies": {
+    "ai": "^6.0.0",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"
   }

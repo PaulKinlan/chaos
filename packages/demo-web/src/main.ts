@@ -2,15 +2,14 @@
  * CHAOS SDK Demo — vanilla web app
  *
  * Proves the SDK works without Chrome APIs:
- *   - In-memory stores (from @chaos/sdk/stores)
- *   - Mock EngineConnection (no real LLM)
+ *   - In-memory stores (from @chaos/sdk stores)
+ *   - Agent-loop with MockModel (no real LLM, no engine connection)
  *   - Standard DOM, runs in any browser
  */
 
+import { createMockModel } from '@chaos/agent-loop/testing';
 import { ChaosSDK } from '@chaos/sdk';
 import type { AgentMeta, ProgressUpdate } from '@chaos/sdk';
-import type { EngineConnection } from '@chaos/sdk/connections';
-import type { ApiMessage, ApiResponse, ApiEvent } from '@chaos/sdk/connections';
 import {
   InMemorySettingsStore,
   InMemoryMemoryStore,
@@ -20,139 +19,28 @@ import {
   InMemoryAgentStore,
 } from '../../sdk/src/stores/in-memory.js';
 
-// ── Mock Engine ──────────────────────────────────────────────────────
-
-/** A fake engine that returns canned responses — no network, no LLM. */
-class MockEngineConnection implements EngineConnection {
-  private agentStore: InMemoryAgentStore;
-  private nextId = 1;
-
-  constructor(agentStore: InMemoryAgentStore) {
-    this.agentStore = agentStore;
-  }
-
-  async send(message: ApiMessage): Promise<ApiResponse> {
-    console.log('[MockEngine] send:', message.type, message);
-
-    switch (message.type) {
-      case 'createAgent': {
-        const agent: AgentMeta = {
-          id: `agent-${this.nextId++}`,
-          name: message.name as string,
-          role: message.role as string,
-          visibility: 'private',
-          createdAt: new Date().toISOString(),
-        };
-        await this.agentStore.add(agent);
-        return agent as unknown as ApiResponse;
-      }
-
-      case 'deleteAgent': {
-        await this.agentStore.remove(message.agentId as string);
-        return { ok: true };
-      }
-
-      case 'getAgentDetail': {
-        const meta = await this.agentStore.get(message.agentId as string);
-        return {
-          ...meta,
-          claudeMd: '# Agent Instructions\n\nYou are a helpful assistant.',
-          journal: [],
-          bookmarks: [],
-        } as unknown as ApiResponse;
-      }
-
-      default:
-        return { ok: true };
-    }
-  }
-
-  async *stream(message: ApiMessage): AsyncIterable<ApiEvent> {
-    console.log('[MockEngine] stream:', message.type, message);
-
-    if (message.type === 'agenticChat' || message.type === 'chat') {
-      const userMsg = (message.message as string) || '';
-
-      // Simulate thinking
-      yield { type: 'thinking', content: 'Analyzing the request...' } as ApiEvent;
-      await delay(400);
-
-      // Simulate a tool call
-      yield {
-        type: 'tool-call',
-        content: '',
-        toolName: 'web_search',
-        toolArgs: { query: userMsg },
-      } as ApiEvent;
-      await delay(300);
-
-      yield {
-        type: 'tool-result',
-        content: '',
-        toolName: 'web_search',
-        toolResult: { results: ['Mock result 1', 'Mock result 2'] },
-      } as ApiEvent;
-      await delay(200);
-
-      // Step complete
-      yield {
-        type: 'step-complete',
-        content: '',
-        iteration: 1,
-        totalIterations: 1,
-      } as ApiEvent;
-      await delay(100);
-
-      // Final text
-      const reply = generateMockReply(userMsg);
-      yield { type: 'text', content: reply } as ApiEvent;
-      await delay(100);
-
-      // Done
-      yield { type: 'done', content: reply } as ApiEvent;
-    }
-  }
-
-  subscribe(_event: string, _handler: (data: unknown) => void): () => void {
-    // No-op for the demo
-    return () => {};
-  }
-
-  disconnect(): void {
-    console.log('[MockEngine] disconnected');
-  }
-}
-
-function generateMockReply(userMsg: string): string {
-  const lower = userMsg.toLowerCase();
-  if (lower.includes('hello') || lower.includes('hi')) {
-    return 'Hello! I am a mock agent running entirely in your browser. The CHAOS SDK is working without any Chrome APIs.';
-  }
-  if (lower.includes('help')) {
-    return 'I can demonstrate the SDK\'s agent management, chat streaming, and event system. Try creating more agents in the sidebar, or ask me anything.';
-  }
-  return `I received your message: "${userMsg}"\n\nThis is a mock response from the in-memory engine. In a real setup, this would be powered by an LLM via the CHAOS engine. The key point: the SDK itself has zero coupling to Chrome extension APIs.`;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// ── Initialize SDK ──────────────────────────────────────────────────
+// ── Initialize SDK with agent-loop (no engine needed) ──────────────
 
 const agentStore = new InMemoryAgentStore();
 
 const sdk = new ChaosSDK({
-  engine: new MockEngineConnection(agentStore),
   settings: new InMemorySettingsStore(),
   memory: new InMemoryMemoryStore(),
   conversations: new InMemoryConversationStore(),
   hooks: new InMemoryHookStore(),
   usage: new InMemoryUsageStore(),
   agents: agentStore,
+  agentLoop: {
+    model: createMockModel({
+      responses: [
+        { text: 'Hello! I am an agent running via @chaos/agent-loop with a MockModel. No engine connection needed.' },
+      ],
+    }) as any,
+    maxIterations: 5,
+  },
 });
 
-console.log('[Demo] ChaosSDK initialized with in-memory stores');
+console.log('[Demo] ChaosSDK initialized with agent-loop + MockModel (no engine connection)');
 
 // ── DOM references ──────────────────────────────────────────────────
 
@@ -187,23 +75,6 @@ function log(event: string, detail: string, isError = false): void {
 }
 
 // ── SDK event listeners ─────────────────────────────────────────────
-
-sdk.agents.addEventListener('created', ((e: CustomEvent) => {
-  const agent = e.detail as AgentMeta;
-  log('agent.created', `${agent.name} (${agent.id})`);
-  renderAgentList();
-}) as EventListener);
-
-sdk.agents.addEventListener('deleted', ((e: CustomEvent) => {
-  const { agentId } = e.detail as { agentId: string };
-  log('agent.deleted', agentId);
-  if (selectedAgentId === agentId) {
-    selectedAgentId = null;
-    renderChat();
-    updateInputState();
-  }
-  renderAgentList();
-}) as EventListener);
 
 sdk.chat.addEventListener('start', ((e: CustomEvent) => {
   const { agentId } = e.detail as { agentId: string };
@@ -308,15 +179,31 @@ function selectAgent(agentId: string): void {
 }
 
 async function createAgent(name: string, role: string): Promise<void> {
-  const agent = await sdk.agents.create(name, role);
+  // Create agent locally (no engine needed for basic agent creation)
+  const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const agent: AgentMeta = {
+    id,
+    name,
+    role,
+    visibility: 'private',
+    createdAt: new Date().toISOString(),
+  };
+  await agentStore.add(agent);
   selectAgent(agent.id);
+  log('agent.created', `${agent.name} (${agent.id})`);
+  renderAgentList();
 }
 
 async function deleteSelectedAgent(): Promise<void> {
   if (!selectedAgentId) return;
   const id = selectedAgentId;
   chatMessages.delete(id);
-  await sdk.agents.delete(id);
+  await agentStore.remove(id);
+  log('agent.deleted', id);
+  selectedAgentId = null;
+  renderChat();
+  updateInputState();
+  renderAgentList();
 }
 
 async function sendMessage(): Promise<void> {
@@ -335,7 +222,7 @@ async function sendMessage(): Promise<void> {
   chatMessages.get(selectedAgentId)!.push({ role: 'user', content: text });
   renderChat();
 
-  // Stream agentic chat
+  // Stream agentic chat via agent-loop
   let fullReply = '';
   try {
     const stream = sdk.chat.sendAgentic(selectedAgentId, text, {
@@ -420,8 +307,8 @@ agentNameInput.addEventListener('keydown', (e) => {
 
 // ── Boot ────────────────────────────────────────────────────────────
 
-log('sdk.init', 'ChaosSDK initialized with in-memory stores and mock engine');
-log('sdk.info', 'No Chrome APIs, no frameworks - pure SDK + DOM');
+log('sdk.init', 'ChaosSDK initialized with agent-loop + MockModel (no engine connection)');
+log('sdk.info', 'No Chrome APIs, no frameworks, no engine - pure SDK + agent-loop + DOM');
 renderAgentList();
 renderChat();
 updateInputState();

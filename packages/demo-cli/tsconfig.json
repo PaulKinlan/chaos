@@ -11,5 +11,5 @@
     "rootDir": ".",
     "skipLibCheck": true
   },
-  "include": ["src", "examples"]
+  "include": ["src", "examples", "tests"]
 }

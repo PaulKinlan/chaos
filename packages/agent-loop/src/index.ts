@@ -13,6 +13,9 @@ export {
   InMemorySkillStore,
 } from './skills.js';
 
+// File tools
+export { createFileTools } from './tools/file-tools.js';
+
 // Usage
 export { UsageTracker, estimateCost, DEFAULT_PRICING } from './usage.js';
 

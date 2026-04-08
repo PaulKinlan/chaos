@@ -34,8 +34,20 @@ import type {
 import type { EngineConnection, RelayConnection } from './connections/index.js';
 import type { BrowserCapabilities } from './browser/index.js';
 
+import type { LanguageModel, ToolSet } from 'ai';
+import type { AgentHooks, PermissionConfig } from '@chaos/agent-loop';
+import { createAgent, streamAgentLoop } from '@chaos/agent-loop';
+
+export interface AgentLoopIntegration {
+  model: LanguageModel;
+  tools?: ToolSet;
+  hooks?: AgentHooks;
+  permissions?: PermissionConfig;
+  maxIterations?: number;
+}
+
 export interface ChaosSDKOptions {
-  engine: EngineConnection;
+  engine?: EngineConnection;
   relay?: RelayConnection;
   settings: SettingsStore;
   memory: MemoryStore;
@@ -44,21 +56,27 @@ export interface ChaosSDKOptions {
   usage: UsageStore;
   agents: AgentStore;
   browser?: BrowserCapabilities;
+  agentLoop?: AgentLoopIntegration;
 }
 
 // ── Agents API ──
 
 class AgentsAPI extends EventTarget {
   constructor(
-    private engine: EngineConnection,
+    private engine: EngineConnection | undefined,
     private store: AgentStore,
     private memory: MemoryStore,
   ) {
     super();
   }
 
+  private requireEngine(): EngineConnection {
+    if (!this.engine) throw new Error('AgentsAPI: engine connection required for this operation');
+    return this.engine;
+  }
+
   async create(name: string, role: string): Promise<AgentMeta> {
-    const result = await this.engine.send({ type: 'createAgent', name, role });
+    const result = await this.requireEngine().send({ type: 'createAgent', name, role });
     const agent = result as unknown as AgentMeta;
     this.dispatchEvent(new CustomEvent('created', { detail: agent }));
     return agent;
@@ -73,7 +91,7 @@ class AgentsAPI extends EventTarget {
   }
 
   async getDetail(agentId: string): Promise<AgentDetail> {
-    const result = await this.engine.send({ type: 'getAgentDetail', agentId });
+    const result = await this.requireEngine().send({ type: 'getAgentDetail', agentId });
     return result as unknown as AgentDetail;
   }
 
@@ -83,24 +101,24 @@ class AgentsAPI extends EventTarget {
   }
 
   async delete(agentId: string): Promise<void> {
-    await this.engine.send({ type: 'deleteAgent', agentId });
+    await this.requireEngine().send({ type: 'deleteAgent', agentId });
     this.dispatchEvent(new CustomEvent('deleted', { detail: { agentId } }));
   }
 
   async archive(agentId: string): Promise<void> {
-    await this.engine.send({ type: 'archiveAgent', agentId });
+    await this.requireEngine().send({ type: 'archiveAgent', agentId });
     this.dispatchEvent(new CustomEvent('archived', { detail: { agentId } }));
   }
 
   async restore(agentId: string): Promise<AgentMeta> {
-    const result = await this.engine.send({ type: 'restoreAgent', agentId });
+    const result = await this.requireEngine().send({ type: 'restoreAgent', agentId });
     const agent = result as unknown as AgentMeta;
     this.dispatchEvent(new CustomEvent('restored', { detail: agent }));
     return agent;
   }
 
   async listArchived(): Promise<AgentMeta[]> {
-    const result = await this.engine.send({ type: 'listArchivedAgents' });
+    const result = await this.requireEngine().send({ type: 'listArchivedAgents' });
     return result as unknown as AgentMeta[];
   }
 
@@ -114,12 +132,12 @@ class AgentsAPI extends EventTarget {
   }
 
   async getModelConfig(agentId: string): Promise<AgentModelConfig> {
-    const result = await this.engine.send({ type: 'getModelConfig', agentId });
+    const result = await this.requireEngine().send({ type: 'getModelConfig', agentId });
     return result as unknown as AgentModelConfig;
   }
 
   async setModelConfig(agentId: string, config: Partial<AgentModelConfig>): Promise<void> {
-    await this.engine.send({ type: 'setModelConfig', agentId, config });
+    await this.requireEngine().send({ type: 'setModelConfig', agentId, config });
     this.dispatchEvent(new CustomEvent('configChanged', { detail: { agentId, config } }));
   }
 }
@@ -127,16 +145,25 @@ class AgentsAPI extends EventTarget {
 // ── Chat API ──
 
 class ChatAPI extends EventTarget {
+  private currentAbortController: AbortController | null = null;
+
   constructor(
-    private engine: EngineConnection,
+    private engine: EngineConnection | undefined,
     private conversationStore: ConversationStore,
+    private agentLoopConfig?: AgentLoopIntegration,
+    private memory?: MemoryStore,
   ) {
     super();
   }
 
+  private requireEngine(): EngineConnection {
+    if (!this.engine) throw new Error('ChatAPI: engine connection required for this operation');
+    return this.engine;
+  }
+
   async *send(agentId: string, message: string, options?: ChatOptions): AsyncIterable<ProgressUpdate> {
     this.dispatchEvent(new CustomEvent('start', { detail: { agentId, columnId: options?.columnId } }));
-    const stream = this.engine.stream({
+    const stream = this.requireEngine().stream({
       type: 'chat',
       agentId,
       message,
@@ -156,8 +183,70 @@ class ChatAPI extends EventTarget {
   }
 
   async *sendAgentic(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
+    if (this.agentLoopConfig) {
+      yield* this.sendAgenticViaLoop(agentId, message, options);
+    } else if (this.engine) {
+      yield* this.sendAgenticViaEngine(agentId, message, options);
+    } else {
+      throw new Error('ChatAPI: either agentLoop or engine must be configured');
+    }
+  }
+
+  private async *sendAgenticViaLoop(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
+    const config = this.agentLoopConfig!;
     this.dispatchEvent(new CustomEvent('start', { detail: { agentId, columnId: options?.columnId } }));
-    const stream = this.engine.stream({
+
+    const abortController = new AbortController();
+    this.currentAbortController = abortController;
+
+    // Build tools: merge agent-loop config tools with file tools if memory is available
+    let tools = config.tools ? { ...config.tools } : {};
+    if (this.memory) {
+      const { createFileTools } = await import('@chaos/agent-loop');
+      const fileTools = createFileTools(this.memory, agentId);
+      tools = { ...tools, ...fileTools };
+    }
+
+    try {
+      const stream = streamAgentLoop(
+        {
+          id: agentId,
+          name: agentId,
+          model: config.model,
+          tools,
+          hooks: config.hooks,
+          permissions: config.permissions,
+          maxIterations: options?.maxIterations ?? config.maxIterations ?? 20,
+          signal: abortController.signal,
+        },
+        message,
+      );
+
+      for await (const event of stream) {
+        const update: ProgressUpdate = {
+          type: event.type,
+          content: event.content,
+          toolName: event.toolName,
+          toolArgs: event.toolArgs,
+          toolResult: event.toolResult,
+          iteration: event.step,
+          totalIterations: event.totalSteps,
+        };
+        this.dispatchChatEvent(agentId, update, options?.columnId);
+        yield update;
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.dispatchEvent(new CustomEvent('error', { detail: { agentId, columnId: options?.columnId, error: errorMsg } }));
+      throw err;
+    } finally {
+      this.currentAbortController = null;
+    }
+  }
+
+  private async *sendAgenticViaEngine(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
+    this.dispatchEvent(new CustomEvent('start', { detail: { agentId, columnId: options?.columnId } }));
+    const stream = this.requireEngine().stream({
       type: 'agenticChat',
       agentId,
       message,
@@ -177,7 +266,14 @@ class ChatAPI extends EventTarget {
   }
 
   async stop(agentId: string, columnId?: string): Promise<void> {
-    await this.engine.send({ type: 'stopChat', agentId, columnId });
+    // If using agent-loop, abort via the controller
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+      this.currentAbortController = null;
+      this.dispatchEvent(new CustomEvent('aborted', { detail: { agentId, columnId } }));
+      return;
+    }
+    await this.requireEngine().send({ type: 'stopChat', agentId, columnId });
     this.dispatchEvent(new CustomEvent('aborted', { detail: { agentId, columnId } }));
   }
 
@@ -222,10 +318,15 @@ class ChatAPI extends EventTarget {
 
 class HooksAPI extends EventTarget {
   constructor(
-    private engine: EngineConnection,
+    private engine: EngineConnection | undefined,
     private store: HookStore,
   ) {
     super();
+  }
+
+  private requireEngine(): EngineConnection {
+    if (!this.engine) throw new Error('HooksAPI: engine connection required for this operation');
+    return this.engine;
   }
 
   async list(agentId?: string): Promise<Hook[]> {
@@ -261,7 +362,7 @@ class HooksAPI extends EventTarget {
   async trigger(hookId: string, context?: Record<string, unknown>): Promise<void> {
     const hook = await this.store.get(hookId);
     if (!hook) throw new Error(`Hook not found: ${hookId}`);
-    await this.engine.send({ type: 'triggerHook', hookId, context });
+    await this.requireEngine().send({ type: 'triggerHook', hookId, context });
     this.dispatchEvent(new CustomEvent('triggered', { detail: { hookId, agentId: hook.agentId, context } }));
   }
 }
@@ -270,38 +371,43 @@ class HooksAPI extends EventTarget {
 
 class ChannelsAPI extends EventTarget {
   constructor(
-    private engine: EngineConnection,
+    private engine: EngineConnection | undefined,
     private relay?: RelayConnection,
   ) {
     super();
   }
 
+  private requireEngine(): EngineConnection {
+    if (!this.engine) throw new Error('ChannelsAPI: engine connection required for this operation');
+    return this.engine;
+  }
+
   async register(config: ChannelConfig): Promise<ChannelConfig> {
-    const result = await this.engine.send({ type: 'registerChannel', config });
+    const result = await this.requireEngine().send({ type: 'registerChannel', config });
     const channel = result as unknown as ChannelConfig;
     this.dispatchEvent(new CustomEvent('registered', { detail: channel }));
     return channel;
   }
 
   async list(): Promise<ChannelConfig[]> {
-    const result = await this.engine.send({ type: 'listChannels' });
+    const result = await this.requireEngine().send({ type: 'listChannels' });
     return result as unknown as ChannelConfig[];
   }
 
   async update(channelId: string, updates: Partial<ChannelConfig>): Promise<ChannelConfig> {
-    const result = await this.engine.send({ type: 'updateChannel', channelId, updates });
+    const result = await this.requireEngine().send({ type: 'updateChannel', channelId, updates });
     const channel = result as unknown as ChannelConfig;
     this.dispatchEvent(new CustomEvent('updated', { detail: channel }));
     return channel;
   }
 
   async remove(channelId: string): Promise<void> {
-    await this.engine.send({ type: 'removeChannel', channelId });
+    await this.requireEngine().send({ type: 'removeChannel', channelId });
     this.dispatchEvent(new CustomEvent('removed', { detail: { channelId } }));
   }
 
   async getMessages(channelId: string, options?: PaginationOptions): Promise<ChannelMessage[]> {
-    const result = await this.engine.send({ type: 'getChannelMessages', channelId, ...options });
+    const result = await this.requireEngine().send({ type: 'getChannelMessages', channelId, ...options });
     return result as unknown as ChannelMessage[];
   }
 }
@@ -309,22 +415,27 @@ class ChannelsAPI extends EventTarget {
 // ── Artifacts API ──
 
 class ArtifactsAPI extends EventTarget {
-  constructor(private engine: EngineConnection) {
+  constructor(private engine: EngineConnection | undefined) {
     super();
   }
 
+  private requireEngine(): EngineConnection {
+    if (!this.engine) throw new Error('ArtifactsAPI: engine connection required for this operation');
+    return this.engine;
+  }
+
   async list(agentId?: string): Promise<ArtifactMeta[]> {
-    const result = await this.engine.send({ type: 'listArtifacts', agentId });
+    const result = await this.requireEngine().send({ type: 'listArtifacts', agentId });
     return result as unknown as ArtifactMeta[];
   }
 
   async get(agentId: string, path: string): Promise<ArtifactMeta> {
-    const result = await this.engine.send({ type: 'getArtifact', agentId, path });
+    const result = await this.requireEngine().send({ type: 'getArtifact', agentId, path });
     return result as unknown as ArtifactMeta;
   }
 
   async delete(agentId: string, path: string): Promise<void> {
-    await this.engine.send({ type: 'deleteArtifact', agentId, path });
+    await this.requireEngine().send({ type: 'deleteArtifact', agentId, path });
     this.dispatchEvent(new CustomEvent('deleted', { detail: { agentId, artifactId: path } }));
   }
 }
@@ -375,29 +486,34 @@ class FilesAPI extends EventTarget {
 // ── Skills API ──
 
 class SkillsAPI extends EventTarget {
-  constructor(private engine: EngineConnection) {
+  constructor(private engine: EngineConnection | undefined) {
     super();
   }
 
+  private requireEngine(): EngineConnection {
+    if (!this.engine) throw new Error('SkillsAPI: engine connection required for this operation');
+    return this.engine;
+  }
+
   async list(agentId: string): Promise<SkillMeta[]> {
-    const result = await this.engine.send({ type: 'listSkills', agentId });
+    const result = await this.requireEngine().send({ type: 'listSkills', agentId });
     return result as unknown as SkillMeta[];
   }
 
   async install(agentId: string, skill: SkillMeta): Promise<SkillMeta> {
-    const result = await this.engine.send({ type: 'installSkill', agentId, skill });
+    const result = await this.requireEngine().send({ type: 'installSkill', agentId, skill });
     const installed = result as unknown as SkillMeta;
     this.dispatchEvent(new CustomEvent('installed', { detail: { agentId, skill: installed } }));
     return installed;
   }
 
   async remove(agentId: string, skillId: string): Promise<void> {
-    await this.engine.send({ type: 'removeSkill', agentId, skillId });
+    await this.requireEngine().send({ type: 'removeSkill', agentId, skillId });
     this.dispatchEvent(new CustomEvent('removed', { detail: { agentId, skillId } }));
   }
 
   async search(query: string): Promise<SkillSearchResult[]> {
-    const result = await this.engine.send({ type: 'searchSkills', query });
+    const result = await this.requireEngine().send({ type: 'searchSkills', query });
     return result as unknown as SkillSearchResult[];
   }
 }
@@ -405,29 +521,34 @@ class SkillsAPI extends EventTarget {
 // ── Tasks API ──
 
 class TasksAPI extends EventTarget {
-  constructor(private engine: EngineConnection) {
+  constructor(private engine: EngineConnection | undefined) {
     super();
   }
 
+  private requireEngine(): EngineConnection {
+    if (!this.engine) throw new Error('TasksAPI: engine connection required for this operation');
+    return this.engine;
+  }
+
   async list(agentId?: string): Promise<Task[]> {
-    const result = await this.engine.send({ type: 'listTasks', agentId });
+    const result = await this.requireEngine().send({ type: 'listTasks', agentId });
     return result as unknown as Task[];
   }
 
   async create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
-    const result = await this.engine.send({ type: 'createTask', task });
+    const result = await this.requireEngine().send({ type: 'createTask', task });
     const created = result as unknown as Task;
     this.dispatchEvent(new CustomEvent('created', { detail: created }));
     return created;
   }
 
   async get(taskId: string): Promise<Task> {
-    const result = await this.engine.send({ type: 'getTask', taskId });
+    const result = await this.requireEngine().send({ type: 'getTask', taskId });
     return result as unknown as Task;
   }
 
   async cancel(taskId: string): Promise<void> {
-    await this.engine.send({ type: 'cancelTask', taskId });
+    await this.requireEngine().send({ type: 'cancelTask', taskId });
     this.dispatchEvent(new CustomEvent('cancelled', { detail: { taskId } }));
   }
 }
@@ -436,7 +557,7 @@ class TasksAPI extends EventTarget {
 
 class UsageAPI extends EventTarget {
   constructor(
-    private engine: EngineConnection,
+    private engine: EngineConnection | undefined,
     private store: UsageStore,
     private settingsStore: SettingsStore,
   ) {
@@ -570,7 +691,7 @@ export class ChaosSDK {
 
   constructor(options: ChaosSDKOptions) {
     this.agents = new AgentsAPI(options.engine, options.agents, options.memory);
-    this.chat = new ChatAPI(options.engine, options.conversations);
+    this.chat = new ChatAPI(options.engine, options.conversations, options.agentLoop, options.memory);
     this.hooks = new HooksAPI(options.engine, options.hooks);
     this.channels = new ChannelsAPI(options.engine, options.relay);
     this.artifacts = new ArtifactsAPI(options.engine);

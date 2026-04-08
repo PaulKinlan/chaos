@@ -9,13 +9,16 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@chaos/sdk": "*"
+    "@chaos/sdk": "*",
+    "@chaos/agent-loop": "*"
   },
   "devDependencies": {
     "typescript": "^5.5.0",
-    "tsx": "^4.0.0"
+    "tsx": "^4.0.0",
+    "vitest": "^3.0.0"
   }
 }

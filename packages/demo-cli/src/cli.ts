@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createMockModel } from '@chaos/agent-loop/testing';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ChaosSDK } from '@chaos/sdk';
@@ -11,7 +12,7 @@ import {
   InMemoryUsageStore,
   InMemoryAgentStore,
 } from './stores/in-memory.js';
-import { MockEngine } from './mock-engine.js';
+import type { AgentMeta } from '@chaos/sdk';
 
 // ── Data directory ──
 
@@ -19,24 +20,33 @@ const DATA_DIR = path.join(os.homedir(), '.chaos-data');
 
 // ── Build SDK ──
 
-function createSDK(): ChaosSDK {
+function createSDK(): { sdk: ChaosSDK; agentStore: InMemoryAgentStore } {
   const agentStore = new InMemoryAgentStore();
-  const engine = new MockEngine(agentStore);
   const memory = new NodeFileStore(path.join(DATA_DIR, 'memory'));
   const settings = new JsonSettingsStore(path.join(DATA_DIR, 'settings.json'));
   const conversations = new InMemoryConversationStore();
   const hooks = new InMemoryHookStore();
   const usage = new InMemoryUsageStore();
 
-  return new ChaosSDK({
-    engine,
+  const sdk = new ChaosSDK({
+    // No engine — using agent-loop directly
     settings,
     memory,
     conversations,
     hooks,
     usage,
     agents: agentStore,
+    agentLoop: {
+      model: createMockModel({
+        responses: [
+          { text: 'I can help you with research, writing, and analysis. This response comes from @chaos/agent-loop with a MockModel.' },
+        ],
+      }) as any,
+      maxIterations: 10,
+    },
   });
+
+  return { sdk, agentStore };
 }
 
 // ── Commands ──
@@ -53,13 +63,21 @@ async function agentsList(sdk: ChaosSDK): Promise<void> {
   }
 }
 
-async function agentsCreate(sdk: ChaosSDK, name: string): Promise<void> {
-  const agent = await sdk.agents.create(name, 'neutral');
+async function agentsCreate(sdk: ChaosSDK, agentStore: InMemoryAgentStore, name: string): Promise<void> {
+  const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const agent: AgentMeta = {
+    id,
+    name,
+    role: 'neutral',
+    visibility: 'visible',
+    createdAt: new Date().toISOString(),
+  };
+  await agentStore.add(agent);
   console.log(`Created agent: ${agent.name} (${agent.id})`);
 }
 
-async function agentsDelete(sdk: ChaosSDK, id: string): Promise<void> {
-  await sdk.agents.delete(id);
+async function agentsDelete(sdk: ChaosSDK, agentStore: InMemoryAgentStore, id: string): Promise<void> {
+  await agentStore.remove(id);
   console.log(`Deleted agent: ${id}`);
 }
 
@@ -152,7 +170,8 @@ Usage:
   chaos usage summary            Show usage summary
   chaos help                     Show this help message
 
-Data is stored in ~/.chaos-data/`);
+Data is stored in ~/.chaos-data/
+Uses @chaos/agent-loop with MockModel (no engine connection needed).`);
 }
 
 // ── Main ──
@@ -165,7 +184,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const sdk = createSDK();
+  const { sdk, agentStore } = createSDK();
   const [group, command, ...rest] = args;
 
   switch (group) {
@@ -180,7 +199,7 @@ async function main(): Promise<void> {
             console.error('Usage: chaos agents create <name>');
             process.exit(1);
           }
-          await agentsCreate(sdk, name);
+          await agentsCreate(sdk, agentStore, name);
           break;
         }
         case 'delete': {
@@ -189,7 +208,7 @@ async function main(): Promise<void> {
             console.error('Usage: chaos agents delete <id>');
             process.exit(1);
           }
-          await agentsDelete(sdk, id);
+          await agentsDelete(sdk, agentStore, id);
           break;
         }
         default:
