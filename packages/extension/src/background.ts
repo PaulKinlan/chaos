@@ -87,6 +87,7 @@ import {
   OPFSMemoryStore,
   OPFSConversationStore,
 } from './stores/chrome-stores.js';
+import { createChromeBrowser, ChromeTaskScheduler, ChromePageParser } from './stores/chrome-browser.js';
 
 // ── SDK instance ──
 
@@ -97,6 +98,9 @@ export const sdk = new ChaosSDK({
   usage: new ChromeUsageStore(),
   memory: new OPFSMemoryStore(),
   conversations: new OPFSConversationStore(),
+  browser: createChromeBrowser(),
+  scheduler: new ChromeTaskScheduler(),
+  pageParser: new ChromePageParser(),
 });
 
 const DEFAULT_MAX_ITERATIONS_BG = 20;

@@ -9,7 +9,8 @@
     "./stores": "./src/stores/index.ts",
     "./stores/in-memory": "./src/stores/in-memory.ts",
     "./connections": "./src/connections/index.ts",
-    "./browser": "./src/browser/index.ts"
+    "./browser": "./src/browser/index.ts",
+    "./services": "./src/services/index.ts"
   },
   "scripts": {
     "build": "tsc",

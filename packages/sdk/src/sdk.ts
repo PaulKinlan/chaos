@@ -33,6 +33,7 @@ import type {
 
 import type { EngineConnection, RelayConnection } from './connections/index.js';
 import type { BrowserCapabilities } from './browser/index.js';
+import type { TaskScheduler, PageParser } from './services/index.js';
 
 import type { Agent as AgentLoop } from '@chaos/agent-loop';
 
@@ -46,6 +47,8 @@ export interface ChaosSDKOptions {
   usage: UsageStore;
   agentStore: AgentStore;
   browser?: BrowserCapabilities;
+  scheduler?: TaskScheduler;
+  pageParser?: PageParser;
   /** Pre-configured agents — each has its own model, tools, hooks, permissions */
   agents?: AgentLoop[];
 }
@@ -712,6 +715,9 @@ export class ChaosSDK {
   readonly tasks: TasksAPI;
   readonly usage: UsageAPI;
   readonly settings: SettingsAPI;
+  readonly browser?: BrowserCapabilities;
+  readonly scheduler?: TaskScheduler;
+  readonly pageParser?: PageParser;
 
   constructor(options: ChaosSDKOptions) {
     this.agents = new AgentsAPI(options.engine, options.agentStore, options.memory);
@@ -724,5 +730,8 @@ export class ChaosSDK {
     this.tasks = new TasksAPI(options.engine);
     this.usage = new UsageAPI(options.engine, options.usage, options.settings);
     this.settings = new SettingsAPI(options.settings);
+    this.browser = options.browser;
+    this.scheduler = options.scheduler;
+    this.pageParser = options.pageParser;
   }
 }
