@@ -4168,7 +4168,7 @@
       <div class="view-panel" id="view-global-settings">
         <div class="view-padded">
           <div class="section-header">
-            <h2>Global Settings</h2>
+            <h2 id="global-settings-title">Global Settings</h2>
             <button class="help-btn" data-help="global-settings" title="Help: Global Settings">
               <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             </button>
@@ -4295,6 +4295,100 @@
               </button>
             </div>
           </div>
+
+          <!-- Debug Panel (hidden by default) -->
+          <div id="debug-panel" style="display:none;">
+            <div class="settings-grid">
+              <div class="settings-card" style="grid-column: 1 / -1;border-color:var(--danger);">
+                <h3 style="color:var(--danger);">Debug Tools</h3>
+                <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">Developer tools for testing. These actions can reset state.</p>
+
+                <div style="display:flex;flex-direction:column;gap:var(--sp-3);">
+                  <!-- First Run Experience -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Reset First Run</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Clear onboarding + smart start flags to re-trigger the first run experience</p>
+                    </div>
+                    <button class="btn btn-sm" id="debug-reset-first-run">Reset</button>
+                  </div>
+
+                  <!-- Reset Smart Start only -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Reset Smart Start</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Re-trigger the smart start suggestions without full onboarding</p>
+                    </div>
+                    <button class="btn btn-sm" id="debug-reset-smart-start">Reset</button>
+                  </div>
+
+                  <!-- Clear all usage data -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Clear Usage Data</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Wipe all token usage and cost tracking records</p>
+                    </div>
+                    <button class="btn btn-sm" id="debug-clear-usage">Clear</button>
+                  </div>
+
+                  <!-- Clear all conversations -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Clear Conversations</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Delete all saved conversation history for all agents</p>
+                    </div>
+                    <button class="btn btn-sm" id="debug-clear-conversations">Clear</button>
+                  </div>
+
+                  <!-- Clear all hooks -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Clear All Hooks</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Remove all hooks (browser event automations)</p>
+                    </div>
+                    <button class="btn btn-sm" id="debug-clear-hooks">Clear</button>
+                  </div>
+
+                  <!-- Reset all agent memory -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Reset Agent Memory</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Delete all agent files (CLAUDE.md, memories, activity logs). Agents remain but lose all memory.</p>
+                    </div>
+                    <button class="btn btn-sm btn-danger" id="debug-reset-memory">Reset</button>
+                  </div>
+
+                  <!-- Factory Reset -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Factory Reset</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Delete everything: agents, hooks, conversations, memory, settings. Extension returns to first-install state.</p>
+                    </div>
+                    <button class="btn btn-sm btn-danger" id="debug-factory-reset">Factory Reset</button>
+                  </div>
+
+                  <!-- Dump State -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Dump State</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Log all storage state to console for debugging</p>
+                    </div>
+                    <button class="btn btn-sm" id="debug-dump-state">Dump</button>
+                  </div>
+
+                  <!-- Toggle verbose logging -->
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <strong style="font-size:var(--text-sm);">Verbose Logging</strong>
+                      <p style="font-size:var(--text-xs);color:var(--text-muted);">Enable detailed console logging for all agent operations</p>
+                    </div>
+                    <button class="btn btn-sm" id="debug-toggle-verbose">Enable</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

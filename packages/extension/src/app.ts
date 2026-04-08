@@ -513,6 +513,7 @@ function showGlobalSettings(updateURL = true): void {
   loadPermissions();
   loadBrowserPermissions();
   loadArchivedAgents();
+  checkDebugMode();
 }
 
 // Global settings buttons (old top-bar one kept for compatibility, plus new sidebar one)
@@ -4594,6 +4595,217 @@ document.getElementById('btn-rerun-smart-start')?.addEventListener('click', asyn
   // Remove any existing smart start container
   document.getElementById('smart-start-container')?.remove();
   await showSmartStart();
+});
+
+// ══════════════════════════════════════════
+// ── Debug Panel
+// ══════════════════════════════════════════
+
+async function checkDebugMode(): Promise<void> {
+  const hashDebug = window.location.hash.includes('debug');
+  const stored = await chrome.storage.local.get('chaos:debug-mode');
+  const debugMode = hashDebug || stored['chaos:debug-mode'] === true;
+
+  if (hashDebug && !stored['chaos:debug-mode']) {
+    await chrome.storage.local.set({ 'chaos:debug-mode': true });
+  }
+
+  const panel = document.getElementById('debug-panel');
+  if (panel) panel.style.display = debugMode ? '' : 'none';
+
+  // Update verbose toggle button text
+  if (debugMode) {
+    const verboseStored = await chrome.storage.local.get('chaos:verbose-logging');
+    const verboseBtn = document.getElementById('debug-toggle-verbose');
+    if (verboseBtn) {
+      verboseBtn.textContent = verboseStored['chaos:verbose-logging'] ? 'Disable' : 'Enable';
+    }
+  }
+}
+
+// Click gesture on settings header: 5 clicks within 2s toggles debug mode
+{
+  const settingsHeader = document.getElementById('global-settings-title');
+  let debugClickCount = 0;
+  let debugClickTimer: ReturnType<typeof setTimeout> | null = null;
+
+  settingsHeader?.addEventListener('click', () => {
+    debugClickCount++;
+    if (debugClickTimer) clearTimeout(debugClickTimer);
+    debugClickTimer = setTimeout(() => { debugClickCount = 0; }, 2000);
+    if (debugClickCount >= 5) {
+      debugClickCount = 0;
+      chrome.storage.local.get('chaos:debug-mode').then((r) => {
+        const newVal = !r['chaos:debug-mode'];
+        chrome.storage.local.set({ 'chaos:debug-mode': newVal });
+        const panel = document.getElementById('debug-panel');
+        if (panel) panel.style.display = newVal ? '' : 'none';
+        console.log(`[CHAOS] Debug mode ${newVal ? 'enabled' : 'disabled'}`);
+      });
+    }
+  });
+}
+
+// Debug action handlers
+document.getElementById('debug-reset-first-run')?.addEventListener('click', async () => {
+  await chrome.storage.local.remove(['chaos:onboarding-completed', 'chaos:needs-onboarding', 'chaos:smart-start-completed']);
+  await chrome.storage.local.set({ 'chaos:needs-onboarding': true });
+  const btn = document.getElementById('debug-reset-first-run')!;
+  btn.textContent = 'Done! Reload to see.';
+  console.log('[CHAOS debug] First run flags reset');
+});
+
+document.getElementById('debug-reset-smart-start')?.addEventListener('click', async () => {
+  await chrome.storage.local.remove('chaos:smart-start-completed');
+  const btn = document.getElementById('debug-reset-smart-start')!;
+  btn.textContent = 'Done! Reload to see.';
+  console.log('[CHAOS debug] Smart start flag reset');
+});
+
+document.getElementById('debug-clear-usage')?.addEventListener('click', async () => {
+  await sendMsg({ type: 'clearUsage' });
+  const btn = document.getElementById('debug-clear-usage')!;
+  btn.textContent = 'Cleared!';
+  console.log('[CHAOS debug] Usage data cleared');
+});
+
+document.getElementById('debug-clear-conversations')?.addEventListener('click', async () => {
+  const btn = document.getElementById('debug-clear-conversations')!;
+  btn.textContent = 'Clearing...';
+  try {
+    // Clear conversation for each known agent
+    for (const agent of agents) {
+      sendPortMessage({ type: 'clearConversation', agentId: agent.id });
+    }
+    btn.textContent = 'Cleared!';
+    console.log('[CHAOS debug] All conversations cleared');
+  } catch (err) {
+    btn.textContent = 'Error!';
+    console.error('[CHAOS debug] Failed to clear conversations:', err);
+  }
+});
+
+document.getElementById('debug-clear-hooks')?.addEventListener('click', async () => {
+  const btn = document.getElementById('debug-clear-hooks')!;
+  btn.textContent = 'Clearing...';
+  try {
+    // Read hooks directly from storage and remove each via port
+    const stored = await chrome.storage.local.get('chaos:hooks');
+    const hooks = (stored['chaos:hooks'] as Hook[] | undefined) || [];
+    for (const hook of hooks) {
+      sendPortMessage({ type: 'removeHook', hookId: hook.id });
+    }
+    btn.textContent = `Cleared ${hooks.length} hooks!`;
+    console.log(`[CHAOS debug] Cleared ${hooks.length} hooks`);
+  } catch (err) {
+    btn.textContent = 'Error!';
+    console.error('[CHAOS debug] Failed to clear hooks:', err);
+  }
+});
+
+document.getElementById('debug-reset-memory')?.addEventListener('click', () => {
+  showConfirm('Reset Agent Memory', 'This will delete all agent files (CLAUDE.md, memories, activity logs). Agents will remain but lose all memory. Continue?', async () => {
+    const btn = document.getElementById('debug-reset-memory')!;
+    btn.textContent = 'Resetting...';
+    try {
+      const root = await navigator.storage.getDirectory();
+      for (const agent of agents) {
+        try {
+          const agentDir = await root.getDirectoryHandle(agent.id, { create: false });
+          // Remove all files and subdirectories in the agent directory
+          for await (const [name] of (agentDir as any).entries()) {
+            try {
+              await agentDir.removeEntry(name, { recursive: true });
+            } catch { /* ignore individual failures */ }
+          }
+        } catch { /* agent dir may not exist */ }
+      }
+      btn.textContent = 'Reset!';
+      console.log('[CHAOS debug] Agent memory reset');
+    } catch (err) {
+      btn.textContent = 'Error!';
+      console.error('[CHAOS debug] Failed to reset memory:', err);
+    }
+  });
+});
+
+document.getElementById('debug-factory-reset')?.addEventListener('click', () => {
+  showConfirm('Factory Reset', 'This will delete ALL data: agents, hooks, conversations, memory, settings. The extension will return to first-install state. This cannot be undone. Continue?', async () => {
+    const btn = document.getElementById('debug-factory-reset')!;
+    btn.textContent = 'Resetting...';
+    try {
+      // Clear all chrome storage
+      await chrome.storage.local.clear();
+      await chrome.storage.sync.clear();
+
+      // Clear OPFS
+      try {
+        const root = await navigator.storage.getDirectory();
+        for await (const [name] of (root as any).entries()) {
+          try {
+            await root.removeEntry(name, { recursive: true });
+          } catch { /* ignore individual failures */ }
+        }
+      } catch (err) {
+        console.warn('[CHAOS debug] OPFS clear failed:', err);
+      }
+
+      // Clear IDB
+      try {
+        const dbs = await indexedDB.databases();
+        for (const db of dbs) {
+          if (db.name) indexedDB.deleteDatabase(db.name);
+        }
+      } catch (err) {
+        console.warn('[CHAOS debug] IDB clear failed:', err);
+      }
+
+      console.log('[CHAOS debug] Factory reset complete, reloading...');
+      location.reload();
+    } catch (err) {
+      btn.textContent = 'Error!';
+      console.error('[CHAOS debug] Factory reset failed:', err);
+    }
+  });
+});
+
+document.getElementById('debug-dump-state')?.addEventListener('click', async () => {
+  const btn = document.getElementById('debug-dump-state')!;
+  try {
+    const local = await chrome.storage.local.get(null);
+    const sync = await chrome.storage.sync.get(null);
+    console.log('=== CHAOS Debug State Dump ===');
+    console.log('chrome.storage.local:', local);
+    console.log('chrome.storage.sync:', sync);
+    console.log('Agents in memory:', agents);
+
+    // List OPFS contents
+    try {
+      const root = await navigator.storage.getDirectory();
+      const opfsEntries: string[] = [];
+      for await (const [name, handle] of (root as any).entries()) {
+        opfsEntries.push(`${name} (${handle.kind})`);
+      }
+      console.log('OPFS root entries:', opfsEntries);
+    } catch (err) {
+      console.log('OPFS listing failed:', err);
+    }
+
+    btn.textContent = 'Dumped to console!';
+    console.log('=== End Debug State Dump ===');
+  } catch (err) {
+    btn.textContent = 'Error!';
+    console.error('[CHAOS debug] Dump failed:', err);
+  }
+});
+
+document.getElementById('debug-toggle-verbose')?.addEventListener('click', async () => {
+  const btn = document.getElementById('debug-toggle-verbose')!;
+  const current = await chrome.storage.local.get('chaos:verbose-logging');
+  const newVal = !current['chaos:verbose-logging'];
+  await chrome.storage.local.set({ 'chaos:verbose-logging': newVal });
+  btn.textContent = newVal ? 'Disable' : 'Enable';
+  console.log(`[CHAOS debug] Verbose logging ${newVal ? 'enabled' : 'disabled'}`);
 });
 
 // ── Mic Test ──
