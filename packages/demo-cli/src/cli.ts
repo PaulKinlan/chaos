@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createAgent } from '@chaos/agent-loop';
 import { createMockModel } from '@chaos/agent-loop/testing';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -29,24 +30,30 @@ function createSDK(): { sdk: ChaosSDK; agentStore: InMemoryAgentStore } {
   const usage = new InMemoryUsageStore();
 
   const sdk = new ChaosSDK({
-    // No engine — using agent-loop directly
     settings,
     memory,
     conversations,
     hooks,
     usage,
     agents: agentStore,
-    agentLoop: {
-      model: createMockModel({
-        responses: [
-          { text: 'I can help you with research, writing, and analysis. This response comes from @chaos/agent-loop with a MockModel.' },
-        ],
-      }) as any,
-      maxIterations: 10,
-    },
+    // No agentLoops here — agents are registered when created
   });
 
   return { sdk, agentStore };
+}
+
+/** Create a mock agent loop for a given agent ID/name */
+function createMockAgentLoop(id: string, name: string) {
+  return createAgent({
+    id,
+    name,
+    model: createMockModel({
+      responses: [
+        { text: `I'm ${name}. I can help you with research, writing, and analysis. (MockModel response)` },
+      ],
+    }) as any,
+    maxIterations: 10,
+  });
 }
 
 // ── Commands ──
@@ -73,6 +80,10 @@ async function agentsCreate(sdk: ChaosSDK, agentStore: InMemoryAgentStore, name:
     createdAt: new Date().toISOString(),
   };
   await agentStore.add(agent);
+
+  // Register an agent loop so chat works for this agent
+  sdk.chat.registerAgent(createMockAgentLoop(id, name));
+
   console.log(`Created agent: ${agent.name} (${agent.id})`);
 }
 

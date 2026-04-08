@@ -7,6 +7,7 @@
  *   - Standard DOM, runs in any browser
  */
 
+import { createAgent } from '@chaos/agent-loop';
 import { createMockModel } from '@chaos/agent-loop/testing';
 import { ChaosSDK } from '@chaos/sdk';
 import type { AgentMeta, ProgressUpdate } from '@chaos/sdk';
@@ -19,7 +20,7 @@ import {
   InMemoryAgentStore,
 } from '../../sdk/src/stores/in-memory.js';
 
-// ── Initialize SDK with agent-loop (no engine needed) ──────────────
+// ── Initialize SDK ──────────────
 
 const agentStore = new InMemoryAgentStore();
 
@@ -30,14 +31,7 @@ const sdk = new ChaosSDK({
   hooks: new InMemoryHookStore(),
   usage: new InMemoryUsageStore(),
   agents: agentStore,
-  agentLoop: {
-    model: createMockModel({
-      responses: [
-        { text: 'Hello! I am an agent running via @chaos/agent-loop with a MockModel. No engine connection needed.' },
-      ],
-    }) as any,
-    maxIterations: 5,
-  },
+  // No agentLoops yet — agents are registered dynamically when created
 });
 
 console.log('[Demo] ChaosSDK initialized with agent-loop + MockModel (no engine connection)');
@@ -178,19 +172,32 @@ function selectAgent(agentId: string): void {
   log('ui.selectAgent', agentId);
 }
 
-async function createAgent(name: string, role: string): Promise<void> {
-  // Create agent locally (no engine needed for basic agent creation)
+async function createNewAgent(name: string, role: string): Promise<void> {
   const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const agent: AgentMeta = {
+  const meta: AgentMeta = {
     id,
     name,
     role,
     visibility: 'private',
     createdAt: new Date().toISOString(),
   };
-  await agentStore.add(agent);
-  selectAgent(agent.id);
-  log('agent.created', `${agent.name} (${agent.id})`);
+  await agentStore.add(meta);
+
+  // Create an agent loop for this agent — each agent has its own model/config
+  const agentLoop = createAgent({
+    id,
+    name,
+    model: createMockModel({
+      responses: [
+        { text: `Hello! I'm ${name}. I'm running with a MockModel — no real LLM needed.` },
+      ],
+    }) as any,
+    maxIterations: 5,
+  });
+  sdk.chat.registerAgent(agentLoop);
+
+  selectAgent(meta.id);
+  log('agent.created', `${meta.name} (${meta.id})`);
   renderAgentList();
 }
 
@@ -268,7 +275,7 @@ btnConfirm.addEventListener('click', () => {
   const role = agentRoleInput.value.trim();
   if (!name) return;
   dialogOverlay.classList.add('hidden');
-  createAgent(name, role || 'General assistant');
+  createNewAgent(name, role || 'General assistant');
 });
 
 dialogOverlay.addEventListener('click', (e) => {

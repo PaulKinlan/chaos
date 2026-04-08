@@ -34,31 +34,7 @@ import type {
 import type { EngineConnection, RelayConnection } from './connections/index.js';
 import type { BrowserCapabilities } from './browser/index.js';
 
-import type { LanguageModel, ToolSet } from 'ai';
-import type { AgentHooks, PermissionConfig } from '@chaos/agent-loop';
-import { createAgent, streamAgentLoop } from '@chaos/agent-loop';
-
-/**
- * Factory that resolves a LanguageModel for a given agent.
- * Called each time a chat is started — allows per-agent model config.
- */
-export type ModelResolver = (agentId: string) => LanguageModel | Promise<LanguageModel>;
-
-/**
- * Factory that resolves tools for a given agent.
- * Called each time a chat is started — allows per-agent tool sets.
- */
-export type ToolResolver = (agentId: string) => ToolSet | Promise<ToolSet>;
-
-export interface AgentLoopIntegration {
-  /** Resolve a model per agent (different agents can use different providers/models) */
-  model: ModelResolver | LanguageModel;
-  /** Resolve tools per agent, or a static set shared by all */
-  tools?: ToolResolver | ToolSet;
-  hooks?: AgentHooks;
-  permissions?: PermissionConfig;
-  maxIterations?: number;
-}
+import type { Agent as AgentLoop } from '@chaos/agent-loop';
 
 export interface ChaosSDKOptions {
   engine?: EngineConnection;
@@ -70,7 +46,8 @@ export interface ChaosSDKOptions {
   usage: UsageStore;
   agents: AgentStore;
   browser?: BrowserCapabilities;
-  agentLoop?: AgentLoopIntegration;
+  /** Pre-configured agent loops — each agent has its own model, tools, hooks, permissions */
+  agentLoops?: AgentLoop[];
 }
 
 // ── Agents API ──
@@ -159,21 +136,35 @@ class AgentsAPI extends EventTarget {
 // ── Chat API ──
 
 class ChatAPI extends EventTarget {
-  /** Active abort controllers keyed by chatId (agentId:columnId or agentId) */
-  private activeLoops = new Map<string, AbortController>();
+  /** Registered agent loops by ID */
+  private agentLoops = new Map<string, AgentLoop>();
 
   constructor(
     private engine: EngineConnection | undefined,
     private conversationStore: ConversationStore,
-    private agentStore: AgentStore,
-    private agentLoopConfig?: AgentLoopIntegration,
-    private memory?: MemoryStore,
+    agentLoops?: AgentLoop[],
   ) {
     super();
+    if (agentLoops) {
+      for (const agent of agentLoops) {
+        this.agentLoops.set(agent.id, agent);
+      }
+    }
   }
 
-  private chatKey(agentId: string, columnId?: string): string {
-    return columnId ? `${agentId}:${columnId}` : agentId;
+  /** Register an agent loop (can be added after construction) */
+  registerAgent(agent: AgentLoop): void {
+    this.agentLoops.set(agent.id, agent);
+  }
+
+  /** Unregister an agent loop */
+  unregisterAgent(agentId: string): void {
+    this.agentLoops.delete(agentId);
+  }
+
+  /** Get a registered agent loop */
+  getAgent(agentId: string): AgentLoop | undefined {
+    return this.agentLoops.get(agentId);
   }
 
   private requireEngine(): EngineConnection {
@@ -203,73 +194,22 @@ class ChatAPI extends EventTarget {
   }
 
   async *sendAgentic(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
-    if (this.agentLoopConfig) {
-      yield* this.sendAgenticViaLoop(agentId, message, options);
+    const agent = this.agentLoops.get(agentId);
+    if (agent) {
+      yield* this.sendAgenticViaAgent(agent, message, options);
     } else if (this.engine) {
       yield* this.sendAgenticViaEngine(agentId, message, options);
     } else {
-      throw new Error('ChatAPI: either agentLoop or engine must be configured');
+      throw new Error(`ChatAPI: no agent loop registered for "${agentId}" and no engine configured`);
     }
   }
 
-  private async *sendAgenticViaLoop(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
-    const config = this.agentLoopConfig!;
-    const key = this.chatKey(agentId, options?.columnId);
+  private async *sendAgenticViaAgent(agent: AgentLoop, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
+    const agentId = agent.id;
     this.dispatchEvent(new CustomEvent('start', { detail: { agentId, columnId: options?.columnId } }));
 
-    // Abort any existing loop for this chat (same agent + column)
-    const existing = this.activeLoops.get(key);
-    if (existing) existing.abort();
-
-    const abortController = new AbortController();
-    this.activeLoops.set(key, abortController);
-
-    // Resolve model for this agent (may differ per agent)
-    const model = typeof config.model === 'function'
-      ? await config.model(agentId)
-      : config.model;
-
-    // Resolve tools for this agent
-    let tools: ToolSet = typeof config.tools === 'function'
-      ? await config.tools(agentId)
-      : (config.tools ? { ...config.tools } : {});
-
-    // Add file tools if memory store is available
-    if (this.memory) {
-      const { createFileTools } = await import('@chaos/agent-loop');
-      const fileTools = createFileTools(this.memory, agentId);
-      tools = { ...tools, ...fileTools };
-    }
-
-    // Look up agent name from store
-    const agentMeta = await this.agentStore.get(agentId);
-    const agentName = agentMeta?.name ?? agentId;
-
-    // Read CLAUDE.md from memory store if available
-    let systemPrompt: string | undefined;
-    if (this.memory) {
-      try {
-        systemPrompt = await this.memory.read(agentId, 'CLAUDE.md');
-      } catch { /* no CLAUDE.md — that's fine */ }
-    }
-
     try {
-      const stream = streamAgentLoop(
-        {
-          id: agentId,
-          name: agentName,
-          model,
-          systemPrompt,
-          tools,
-          hooks: config.hooks,
-          permissions: config.permissions,
-          maxIterations: options?.maxIterations ?? config.maxIterations ?? 20,
-          signal: abortController.signal,
-        },
-        message,
-      );
-
-      for await (const event of stream) {
+      for await (const event of agent.stream(message, options?.pageContext ? JSON.stringify(options.pageContext) : undefined)) {
         const update: ProgressUpdate = {
           type: event.type,
           content: event.content,
@@ -286,11 +226,6 @@ class ChatAPI extends EventTarget {
       const errorMsg = err instanceof Error ? err.message : String(err);
       this.dispatchEvent(new CustomEvent('error', { detail: { agentId, columnId: options?.columnId, error: errorMsg } }));
       throw err;
-    } finally {
-      // Only remove if this is still our controller (not replaced by a newer chat)
-      if (this.activeLoops.get(key) === abortController) {
-        this.activeLoops.delete(key);
-      }
     }
   }
 
@@ -315,32 +250,17 @@ class ChatAPI extends EventTarget {
     }
   }
 
-  async stop(agentId: string, columnId?: string): Promise<void> {
-    const key = this.chatKey(agentId, columnId);
-    const controller = this.activeLoops.get(key);
-    if (controller) {
-      // Using agent-loop: abort this specific chat
-      controller.abort();
-      this.activeLoops.delete(key);
-      this.dispatchEvent(new CustomEvent('aborted', { detail: { agentId, columnId } }));
+  async stop(agentId: string, _columnId?: string): Promise<void> {
+    const agent = this.agentLoops.get(agentId);
+    if (agent) {
+      agent.abort();
+      this.dispatchEvent(new CustomEvent('aborted', { detail: { agentId, columnId: _columnId } }));
       return;
     }
-    // Fall back to engine for Chrome extension transport
     if (this.engine) {
-      await this.engine.send({ type: 'stopChat', agentId, columnId });
+      await this.engine.send({ type: 'stopChat', agentId, columnId: _columnId });
     }
-    this.dispatchEvent(new CustomEvent('aborted', { detail: { agentId, columnId } }));
-  }
-
-  /** Stop all active chats for a given agent */
-  async stopAll(agentId: string): Promise<void> {
-    for (const [key, controller] of this.activeLoops) {
-      if (key === agentId || key.startsWith(`${agentId}:`)) {
-        controller.abort();
-        this.activeLoops.delete(key);
-      }
-    }
-    this.dispatchEvent(new CustomEvent('aborted', { detail: { agentId } }));
+    this.dispatchEvent(new CustomEvent('aborted', { detail: { agentId, columnId: _columnId } }));
   }
 
   async getConversation(agentId: string, conversationId: string): Promise<Conversation | undefined> {
@@ -757,7 +677,7 @@ export class ChaosSDK {
 
   constructor(options: ChaosSDKOptions) {
     this.agents = new AgentsAPI(options.engine, options.agents, options.memory);
-    this.chat = new ChatAPI(options.engine, options.conversations, options.agents, options.agentLoop, options.memory);
+    this.chat = new ChatAPI(options.engine, options.conversations, options.agentLoops);
     this.hooks = new HooksAPI(options.engine, options.hooks);
     this.channels = new ChannelsAPI(options.engine, options.relay);
     this.artifacts = new ArtifactsAPI(options.engine);
