@@ -3,7 +3,7 @@
  *
  * Smoke tests to verify the extension loads correctly:
  * - Service worker is active
- * - Side panel page is accessible
+ * - App page is accessible
  * - Dashboard page is accessible
  * - Popup is accessible
  */
@@ -46,23 +46,7 @@ describe.skipIf(SKIP)('Extension loads', () => {
     expect(swTarget).toBeDefined();
   });
 
-  it('should load the side panel page', async () => {
-    const page = await ctx.browser.newPage();
-    try {
-      const url = extensionUrl(ctx.extensionId, 'sidepanel.html');
-      const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
-      expect(response).not.toBeNull();
-      expect(response!.status()).toBe(200);
-
-      // Check that the page has expected content
-      const title = await page.title();
-      expect(title).toBeTruthy();
-    } finally {
-      await page.close();
-    }
-  }, 15000);
-
-  it('should load the dashboard page', async () => {
+  it('should load the app page', async () => {
     const page = await ctx.browser.newPage();
     try {
       const url = extensionUrl(ctx.extensionId, 'app.html');

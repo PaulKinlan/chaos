@@ -53,7 +53,7 @@ The extension is built as a Manifest V3 Chrome extension using Vite for bundling
 | `src/background.ts` | Service worker. Message routing, alarm handling, hook listeners, channel polling, context menus, agent lifecycle. |
 | `src/app.ts` | Main dashboard UI (opened on extension icon click or `Ctrl+Shift+C`). Agent tabs, chat columns, task board, settings. |
 | `src/popup.ts` | Minimal popup that redirects to the main app. |
-| `src/sidepanel.ts` | Side panel interface (alternative to the main app). |
+| `src/agents/extension-agent.ts` | Adapter bridging Chrome-specific code with @chaos/agent-loop. |
 | `src/content/` | Content scripts for page extraction (Readability + Turndown). |
 | `src/offscreen-parser.ts` | Offscreen document for DOM parsing when content scripts are unavailable. |
 

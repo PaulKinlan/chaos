@@ -485,7 +485,7 @@ function stopKeepalive(): void {
 let activeUiPort: chrome.runtime.Port | null = null;
 
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'chaos-sidepanel') return;
+  if (port.name !== 'chaos-ui') return;
   activeUiPort = port;
 
   port.onDisconnect.addListener(() => {

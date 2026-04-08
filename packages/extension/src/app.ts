@@ -7,7 +7,7 @@
  * - Main area: The selected view, filtered to the active agent
  * - Global settings accessible via gear icon in top bar
  *
- * Chat uses a long-lived port (like sidepanel.ts) for streaming.
+ * Chat uses a long-lived port for streaming.
  * Dashboard views use chrome.runtime.sendMessage (one-shot request/response).
  */
 
@@ -817,7 +817,7 @@ function getFocusedColumn(): ChatColumn | undefined {
 }
 
 function connectPort(): chrome.runtime.Port {
-  const p = chrome.runtime.connect({ name: 'chaos-sidepanel' });
+  const p = chrome.runtime.connect({ name: 'chaos-ui' });
 
   p.onMessage.addListener((msg: Record<string, unknown>) => {
     handlePortMessage(msg);
