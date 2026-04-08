@@ -1,0 +1,391 @@
+# @chaos/sdk
+
+> SDK for building AI agent applications with pluggable stores, connections, and browser capabilities.
+
+## Install
+
+```bash
+npm install @chaos/sdk
+```
+
+## Quick Start
+
+```typescript
+import { ChaosSDK } from '@chaos/sdk';
+import {
+  InMemorySettingsStore,
+  InMemoryMemoryStore,
+  InMemoryConversationStore,
+  InMemoryHookStore,
+  InMemoryUsageStore,
+  InMemoryAgentStore,
+} from '@chaos/sdk/stores/in-memory';
+
+const sdk = new ChaosSDK({
+  settings: new InMemorySettingsStore(),
+  memory: new InMemoryMemoryStore(),
+  conversations: new InMemoryConversationStore(),
+  hooks: new InMemoryHookStore(),
+  usage: new InMemoryUsageStore(),
+  agentStore: new InMemoryAgentStore(),
+});
+
+// Register an agent loop
+import { createAgent } from '@chaos/agent-loop';
+import { anthropic } from '@ai-sdk/anthropic';
+
+const agent = createAgent({
+  id: 'assistant',
+  name: 'Assistant',
+  model: anthropic('claude-sonnet-4-5'),
+});
+sdk.chat.registerAgent(agent);
+
+// Send a message
+for await (const update of sdk.chat.sendMessage('assistant', 'Hello!')) {
+  if (update.type === 'text') console.log(update.content);
+}
+```
+
+## API
+
+### ChaosSDK
+
+```typescript
+class ChaosSDK {
+  readonly agents: AgentsAPI;
+  readonly chat: ChatAPI;
+  readonly hooks: HooksAPI;
+  readonly channels: ChannelsAPI;
+  readonly artifacts: ArtifactsAPI;
+  readonly files: FilesAPI;
+  readonly skills: SkillsAPI;
+  readonly tasks: TasksAPI;
+  readonly usage: UsageAPI;
+  readonly settings: SettingsAPI;
+
+  constructor(options: ChaosSDKOptions);
+}
+
+interface ChaosSDKOptions {
+  engine?: EngineConnection;       // Backend engine connection
+  relay?: RelayConnection;         // Relay service connection
+  settings: SettingsStore;         // Required
+  memory: MemoryStore;             // Required
+  conversations: ConversationStore; // Required
+  hooks: HookStore;                // Required
+  usage: UsageStore;               // Required
+  agentStore: AgentStore;          // Required
+  browser?: BrowserCapabilities;   // Optional browser APIs
+  agents?: Agent[];                // Pre-registered agent loops
+}
+```
+
+All domain APIs extend `EventTarget`. Use `addEventListener(eventName, handler)` for reactive updates.
+
+### Domain APIs
+
+#### AgentsAPI
+
+```typescript
+agents.create(name: string, role: string): Promise<AgentMeta>
+agents.list(): Promise<AgentMeta[]>
+agents.get(agentId: string): Promise<AgentMeta | undefined>
+agents.getDetail(agentId: string): Promise<AgentDetail>
+agents.update(agentId: string, updates: Partial<AgentMeta>): Promise<void>
+agents.delete(agentId: string): Promise<void>
+agents.archive(agentId: string): Promise<void>
+agents.restore(agentId: string): Promise<AgentMeta>
+agents.listArchived(): Promise<AgentMeta[]>
+agents.getClaudeMd(agentId: string): Promise<string>
+agents.setClaudeMd(agentId: string, content: string): Promise<void>
+agents.getModelConfig(agentId: string): Promise<AgentModelConfig>
+agents.setModelConfig(agentId: string, config: Partial<AgentModelConfig>): Promise<void>
+```
+
+Events: `created`, `updated`, `deleted`, `archived`, `restored`, `claudeMdChanged`, `configChanged`
+
+#### ChatAPI
+
+```typescript
+chat.registerAgent(agent: Agent): void
+chat.unregisterAgent(agentId: string): void
+chat.getAgent(agentId: string): Agent | undefined
+chat.send(agentId: string, message: string, options?: ChatOptions): AsyncIterable<ProgressUpdate>
+chat.sendMessage(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate>
+chat.stop(agentId: string, columnId?: string): Promise<void>
+chat.getConversation(agentId: string, conversationId: string): Promise<Conversation | undefined>
+chat.listConversations(agentId: string): Promise<Array<{ id: string; timestamp: string }>>
+chat.deleteConversation(agentId: string, conversationId: string): Promise<void>
+```
+
+`sendMessage` auto-routes: if an agent loop is registered for that ID, it runs locally; otherwise it uses the engine connection.
+
+Events: `start`, `chunk`, `toolCall`, `toolResult`, `stepComplete`, `done`, `error`, `aborted`
+
+#### HooksAPI
+
+```typescript
+hooks.list(agentId?: string): Promise<Hook[]>
+hooks.get(hookId: string): Promise<Hook | undefined>
+hooks.create(hook: Hook): Promise<Hook>
+hooks.update(hookId: string, updates: Partial<Hook>): Promise<void>
+hooks.delete(hookId: string): Promise<void>
+hooks.trigger(hookId: string, context?: Record<string, unknown>): Promise<void>
+```
+
+Events: `created`, `updated`, `removed`, `enabled`, `disabled`, `triggered`
+
+#### ChannelsAPI
+
+```typescript
+channels.register(config: ChannelConfig): Promise<ChannelConfig>
+channels.list(): Promise<ChannelConfig[]>
+channels.update(channelId: string, updates: Partial<ChannelConfig>): Promise<ChannelConfig>
+channels.remove(channelId: string): Promise<void>
+channels.getMessages(channelId: string, options?: PaginationOptions): Promise<ChannelMessage[]>
+```
+
+Events: `registered`, `updated`, `removed`
+
+#### FilesAPI
+
+```typescript
+files.read(agentId: string, path: string): Promise<string>
+files.write(agentId: string, path: string, content: string): Promise<void>
+files.append(agentId: string, path: string, content: string): Promise<void>
+files.list(agentId: string, path?: string): Promise<FileEntry[]>
+files.delete(agentId: string, path: string): Promise<void>
+files.search(agentId: string, pattern: string, path?: string): Promise<Array<{ path: string; line: string }>>
+files.mkdir(agentId: string, path: string): Promise<void>
+files.exists(agentId: string, path: string): Promise<boolean>
+```
+
+Events: `written`, `deleted`
+
+#### ArtifactsAPI
+
+```typescript
+artifacts.list(agentId?: string): Promise<ArtifactMeta[]>
+artifacts.get(agentId: string, path: string): Promise<ArtifactMeta>
+artifacts.delete(agentId: string, path: string): Promise<void>
+```
+
+Events: `deleted`
+
+#### SkillsAPI
+
+```typescript
+skills.list(agentId: string): Promise<SkillMeta[]>
+skills.install(agentId: string, skill: SkillMeta): Promise<SkillMeta>
+skills.remove(agentId: string, skillId: string): Promise<void>
+skills.search(query: string): Promise<SkillSearchResult[]>
+```
+
+Events: `installed`, `removed`
+
+#### TasksAPI
+
+```typescript
+tasks.list(agentId?: string): Promise<Task[]>
+tasks.create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task>
+tasks.get(taskId: string): Promise<Task>
+tasks.cancel(taskId: string): Promise<void>
+```
+
+Events: `created`, `cancelled`
+
+#### UsageAPI
+
+```typescript
+usage.getSummary(since?: string): Promise<UsageSummary>
+usage.getRecords(options?: UsageQueryOptions): Promise<UsageRecord[]>
+usage.record(entry: UsageRecord): Promise<void>
+usage.clear(): Promise<void>
+usage.getSpendingLimit(agentId: string): Promise<number | null>
+usage.setSpendingLimit(agentId: string, limit: number | null): Promise<void>
+```
+
+Events: `recorded`
+
+#### SettingsAPI
+
+```typescript
+settings.get(): Promise<Settings>
+settings.update(updates: Partial<Settings>): Promise<Settings>
+settings.getApiKeys(): Promise<ApiKeys>
+settings.setApiKeys(keys: ApiKeys): Promise<void>
+```
+
+Events: `changed`, `providerChanged`
+
+### Stores
+
+Import interfaces from `@chaos/sdk/stores`, in-memory implementations from `@chaos/sdk/stores/in-memory`.
+
+```typescript
+interface SettingsStore {
+  get<T>(key: string): Promise<T | undefined>;
+  set(key: string, value: unknown): Promise<void>;
+  remove(key: string): Promise<void>;
+  getMultiple<T>(keys: string[]): Promise<Record<string, T>>;
+}
+
+interface MemoryStore {
+  read(agentId: string, path: string): Promise<string>;
+  write(agentId: string, path: string, content: string): Promise<void>;
+  append(agentId: string, path: string, content: string): Promise<void>;
+  delete(agentId: string, path: string): Promise<void>;
+  list(agentId: string, path?: string): Promise<FileEntry[]>;
+  mkdir(agentId: string, path: string): Promise<void>;
+  exists(agentId: string, path: string): Promise<boolean>;
+  search(agentId: string, pattern: string, path?: string): Promise<Array<{ path: string; line: string }>>;
+}
+
+interface ConversationStore {
+  get(agentId: string, conversationId: string): Promise<Conversation | undefined>;
+  list(agentId: string): Promise<Array<{ id: string; timestamp: string }>>;
+  save(agentId: string, conversation: Conversation): Promise<void>;
+  delete(agentId: string, conversationId: string): Promise<void>;
+}
+
+interface HookStore {
+  list(agentId?: string): Promise<Hook[]>;
+  get(hookId: string): Promise<Hook | undefined>;
+  add(hook: Hook): Promise<void>;
+  update(hookId: string, updates: Partial<Hook>): Promise<void>;
+  remove(hookId: string): Promise<void>;
+}
+
+interface UsageStore {
+  record(entry: UsageRecord): Promise<void>;
+  query(options?: UsageQueryOptions): Promise<UsageRecord[]>;
+  clear(): Promise<void>;
+}
+
+interface AgentStore {
+  list(): Promise<AgentMeta[]>;
+  get(agentId: string): Promise<AgentMeta | undefined>;
+  add(agent: AgentMeta): Promise<void>;
+  update(agentId: string, updates: Partial<AgentMeta>): Promise<void>;
+  remove(agentId: string): Promise<void>;
+}
+```
+
+In-memory implementations: `InMemorySettingsStore`, `InMemoryMemoryStore`, `InMemoryConversationStore`, `InMemoryHookStore`, `InMemoryUsageStore`, `InMemoryAgentStore`.
+
+### Events
+
+All domain APIs extend `EventTarget`:
+
+```typescript
+sdk.chat.addEventListener('done', (e) => {
+  const { agentId, result } = (e as CustomEvent).detail;
+});
+```
+
+### Connections
+
+Import from `@chaos/sdk/connections`:
+
+```typescript
+interface EngineConnection {
+  send(message: ApiMessage): Promise<ApiResponse>;
+  stream(message: ApiMessage): AsyncIterable<ApiEvent>;
+  subscribe(event: string, handler: (data: unknown) => void): () => void;
+  disconnect(): void;
+}
+
+interface RelayConnection {
+  register(): Promise<{ userId: string; apiKey: string }>;
+  fetch(path: string, options?: RequestInit): Promise<Response>;
+  connect(): Promise<{ close(): void; onMessage(handler: (msg: unknown) => void): void }>;
+}
+
+// Messages are { type: string; [key: string]: unknown }
+```
+
+### Key Types
+
+```typescript
+interface AgentMeta {
+  id: string; name: string; role: string;
+  visibility: 'private' | 'visible' | 'open';
+  createdAt: string;
+  bookmarkFolderId?: string; enabledTools?: string[]; disabledTools?: string[];
+  master?: boolean; temporary?: boolean; createdBy?: string;
+  provider?: string; model?: string;
+}
+
+interface Settings { defaultAgentId?: string; activeProvider: string; theme: 'dark' | 'light' | 'system'; model?: string; }
+interface ApiKeys { [provider: string]: string | undefined; }
+
+interface Hook {
+  id: string; agentId: string; trigger: HookTrigger; prompt: string;
+  description: string; enabled: boolean; createdAt: string;
+  lastTriggeredAt?: string; triggerCount: number;
+}
+
+// HookTrigger is a discriminated union: bookmark-created, tab-navigated, tab-created,
+// tab-closed, download-completed, history-visited, idle-changed, browser-startup,
+// omnibox, reading-list-changed, window-created, window-focused, window-closed,
+// context-menu, clipboard-changed, filesystem-changed
+
+interface Task {
+  id: string; subject: string; description?: string; owner?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  blockedBy?: string[]; result?: string; createdAt: string; updatedAt: string;
+}
+
+interface ProgressUpdate {
+  type: 'thinking' | 'tool-call' | 'tool-result' | 'text' | 'step-complete' | 'done' | 'error';
+  content: string; toolName?: string; toolArgs?: unknown; toolResult?: unknown;
+  iteration?: number; totalIterations?: number;
+}
+
+interface ChatOptions { pageContext?: { title: string; url: string; content: string }; columnId?: string; }
+interface AgenticOptions extends ChatOptions { maxIterations?: number; source?: 'chat' | 'hook' | 'channel' | 'task' | 'message'; }
+
+interface UsageRecord {
+  id: string; timestamp: string; agentId: string; agentName: string;
+  provider: string; model: string; inputTokens: number; outputTokens: number;
+  totalTokens: number; estimatedCost: number;
+  source: 'chat' | 'hook' | 'channel' | 'task' | 'message' | 'refine';
+}
+
+interface UsageSummary {
+  totalCost: number; totalInputTokens: number; totalOutputTokens: number; totalRequests: number;
+  byProvider: Record<string, { cost: number; inputTokens: number; outputTokens: number; requests: number }>;
+  byAgent: Record<string, { name: string; cost: number; inputTokens: number; outputTokens: number; requests: number }>;
+  byModel: Record<string, { cost: number; inputTokens: number; outputTokens: number; requests: number }>;
+}
+
+interface FileEntry { name: string; type: 'file' | 'directory'; }
+interface PaginationOptions { limit?: number; cursor?: string; since?: string; }
+```
+
+### Browser Capabilities
+
+Import from `@chaos/sdk/browser`. Optional -- only for browser-extension environments.
+
+```typescript
+interface BrowserCapabilities {
+  tabs?: {
+    list(): Promise<TabInfo[]>;
+    read(tabId: string): Promise<string>;
+    open(url: string): Promise<TabInfo>;
+    close(tabId: string): Promise<void>;
+    focus(tabId: string): Promise<void>;
+    navigate(tabId: string, url: string): Promise<void>;
+  };
+  bookmarks?: {
+    search(query: string): Promise<BookmarkInfo[]>;
+    list(folderId?: string): Promise<BookmarkInfo[]>;
+    add(url: string, title: string, folderId?: string): Promise<BookmarkInfo>;
+    remove(id: string): Promise<void>;
+  };
+  history?: { search(query: string, maxResults?: number): Promise<HistoryItem[]>; };
+  notifications?: { show(title: string, message: string, options?: { iconUrl?: string }): Promise<void>; };
+  clipboard?: { write(text: string): Promise<void>; read(): Promise<string>; };
+}
+```

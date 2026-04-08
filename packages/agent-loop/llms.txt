@@ -1,0 +1,310 @@
+# @chaos/agent-loop
+
+> Provider-agnostic autonomous agent loop for JavaScript/TypeScript, built on Vercel AI SDK.
+
+The agent loop calls streamText() repeatedly, executing tools each iteration, until the model responds with text only (no tool calls) or the iteration limit is reached.
+
+## Install
+
+```bash
+npm install @chaos/agent-loop ai zod
+```
+
+## Quick Start
+
+```typescript
+import { createAgent } from '@chaos/agent-loop';
+import { anthropic } from '@ai-sdk/anthropic';
+import { tool } from 'ai';
+import { z } from 'zod';
+
+const agent = createAgent({
+  id: 'my-agent',
+  name: 'My Agent',
+  model: anthropic('claude-sonnet-4-5'),
+  systemPrompt: 'You are a helpful assistant.',
+  tools: {
+    get_weather: tool({
+      description: 'Get weather for a city.',
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ city }) => `Sunny, 22C in ${city}`,
+    }),
+  },
+  maxIterations: 10,
+});
+
+// Run to completion
+const result = await agent.run('What is the weather in Tokyo?');
+
+// Or stream progress
+for await (const event of agent.stream('What is the weather in Tokyo?')) {
+  console.log(event.type, event.content);
+}
+```
+
+## API
+
+### createAgent(config: AgentConfig): Agent
+
+Create an agent instance.
+
+```typescript
+interface AgentConfig {
+  id: string;                    // Unique identifier
+  name: string;                  // Human-readable name
+  model: LanguageModel;          // Vercel AI SDK model (e.g. anthropic('claude-sonnet-4-5'))
+  systemPrompt?: string;         // System prompt / CLAUDE.md content
+  tools?: ToolSet;               // Vercel AI SDK tools
+  skills?: SkillStore;           // Skill store for dynamic skills
+  maxIterations?: number;        // Max outer loop iterations (default: 20)
+  innerStepLimit?: number;       // Max tool calls per streamText call (default: 5)
+  hooks?: AgentHooks;            // Lifecycle hooks
+  permissions?: PermissionConfig; // Tool permission config
+  usage?: {
+    enabled?: boolean;           // Track usage (default: true)
+    pricing?: PricingTable;      // Custom pricing (default: DEFAULT_PRICING)
+    limits?: {
+      perRun?: number;           // Max USD per run
+      perDay?: number;           // Max USD per day
+    };
+    onLimitExceeded?: (event: { type: string; spent: number; limit: number }) => Promise<boolean>;
+  };
+  signal?: AbortSignal;          // Abort signal
+}
+```
+
+### Agent
+
+```typescript
+interface Agent {
+  readonly id: string;
+  readonly name: string;
+  run(task: string, context?: string): Promise<string>;
+  stream(task: string, context?: string): AsyncIterable<ProgressEvent>;
+  abort(): void;
+}
+```
+
+### ProgressEvent
+
+```typescript
+interface ProgressEvent {
+  type: 'thinking' | 'tool-call' | 'tool-result' | 'text' | 'step-complete' | 'done' | 'error';
+  content: string;
+  toolName?: string;
+  toolArgs?: unknown;
+  toolResult?: unknown;
+  step?: number;
+  totalSteps?: number;
+}
+```
+
+### Lower-Level Loop Functions
+
+```typescript
+// Run to completion, get full result
+function runAgentLoop(config: AgentConfig, task: string, context?: string): Promise<RunResult>;
+
+// Stream progress events
+function streamAgentLoop(config: AgentConfig, task: string, context?: string): AsyncGenerator<ProgressEvent>;
+
+interface RunResult {
+  text: string;
+  usage: RunUsage;
+  steps: number;
+  aborted: boolean;
+}
+
+interface RunUsage {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  steps: number;
+  records: UsageRecord[];
+}
+```
+
+### Tools
+
+Tools use Vercel AI SDK's `tool()` function:
+
+```typescript
+import { tool } from 'ai';
+import { z } from 'zod';
+
+const myTool = tool({
+  description: 'What the tool does',
+  inputSchema: z.object({ param: z.string() }),
+  execute: async ({ param }) => `Result for ${param}`,
+});
+```
+
+#### createFileTools(store: MemoryStore, agentId: string): ToolSet
+
+Creates file tools backed by a MemoryStore: `read_file`, `write_file`, `list_directory`, `delete_file`, `grep_file`, `find_files`.
+
+```typescript
+import { createFileTools } from '@chaos/agent-loop';
+import { InMemoryMemoryStore } from '@chaos/sdk/stores/in-memory';
+
+const tools = createFileTools(new InMemoryMemoryStore(), 'agent-id');
+```
+
+### Skills
+
+Skills inject instructions into the system prompt. They are not executable tools -- they provide domain knowledge.
+
+```typescript
+interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  content: string;      // Instructions injected into system prompt
+  author?: string;
+  version?: string;
+}
+
+interface SkillStore {
+  list(): Promise<Skill[]>;
+  get(skillId: string): Promise<Skill | undefined>;
+  install(skill: Skill): Promise<void>;
+  remove(skillId: string): Promise<void>;
+  search(query: string): Promise<Array<{ id: string; name: string; description: string; url?: string }>>;
+}
+```
+
+Built-in: `InMemorySkillStore` implements `SkillStore`.
+
+Parse SKILL.md files (YAML frontmatter + markdown body):
+
+```typescript
+import { parseSkillMd } from '@chaos/agent-loop';
+const skill = parseSkillMd('---\nname: Review\ndescription: Code review\n---\nReview instructions...');
+```
+
+`createSkillTools(store: SkillStore): ToolSet` -- creates `search_skills`, `install_skill`, `list_skills`, `remove_skill` tools.
+
+`buildSkillsPrompt(skills: Skill[]): string` -- formats skills for system prompt injection.
+
+### Hooks
+
+```typescript
+interface AgentHooks {
+  onPreToolUse?: (event: PreToolUseEvent) => Promise<HookDecision | void>;
+  onPostToolUse?: (event: PostToolUseEvent) => Promise<void>;
+  onStepStart?: (event: StepStartEvent) => Promise<HookDecision | void>;
+  onStepComplete?: (event: StepCompleteEvent) => Promise<void>;
+  onComplete?: (event: CompleteEvent) => Promise<void>;
+  onUsage?: (record: UsageRecord) => Promise<void>;
+}
+
+interface PreToolUseEvent { toolName: string; args: unknown; step: number; }
+interface PostToolUseEvent { toolName: string; args: unknown; result: unknown; step: number; durationMs: number; }
+interface StepStartEvent { step: number; totalSteps: number; tokensSoFar: number; costSoFar: number; }
+interface StepCompleteEvent { step: number; hasToolCalls: boolean; text: string; }
+interface CompleteEvent { result: string; totalSteps: number; usage: RunUsage; aborted: boolean; }
+
+interface HookDecision {
+  decision: 'allow' | 'deny' | 'ask' | 'stop' | 'continue';
+  reason?: string;
+  modifiedArgs?: unknown;  // onPreToolUse only: replace tool args
+}
+```
+
+Example -- block dangerous commands:
+
+```typescript
+hooks: {
+  onPreToolUse: async ({ toolName, args }) => {
+    if (toolName === 'run_command' && (args as any).command.includes('rm -rf')) {
+      return { decision: 'deny', reason: 'Destructive command blocked' };
+    }
+  },
+  onStepStart: async ({ costSoFar }) => {
+    if (costSoFar > 1.0) return { decision: 'stop', reason: 'Budget exceeded' };
+  },
+}
+```
+
+### Permissions
+
+```typescript
+type PermissionMode = 'accept-all' | 'deny-all' | 'ask';
+type PermissionLevel = 'always' | 'ask' | 'never';
+
+interface PermissionConfig {
+  mode: PermissionMode;
+  tools?: Record<string, PermissionLevel>;  // per-tool overrides
+  onPermissionRequest?: (request: { toolName: string; args: unknown }) => Promise<boolean>;
+}
+```
+
+Evaluation order:
+1. Mode `'accept-all'` -> allow (unless per-tool `'never'`)
+2. Mode `'deny-all'` -> deny (unless per-tool `'always'`)
+3. Mode `'ask'` -> check per-tool override, then call `onPermissionRequest` (default: allow)
+
+```typescript
+import { evaluatePermission } from '@chaos/agent-loop';
+const allowed = await evaluatePermission('write_file', { path: '/tmp/x' }, {
+  mode: 'ask',
+  tools: { write_file: 'always' },
+});
+// allowed === true
+```
+
+### Usage
+
+```typescript
+import { UsageTracker, estimateCost, DEFAULT_PRICING } from '@chaos/agent-loop';
+
+// Estimate cost
+const cost = estimateCost('claude-sonnet-4-5', 1000, 500);
+
+// Track usage across steps
+const tracker = new UsageTracker({ perRunLimit: 0.50 });
+const record = tracker.record(0, 'claude-sonnet-4-5', 1000, 500);
+const summary = tracker.getSummary();
+const ok = await tracker.checkLimits(); // false if limit exceeded
+
+// DEFAULT_PRICING covers: Anthropic, OpenAI, Gemini, Mistral, Groq, Perplexity, local
+// Type: Record<string, { input: number; output: number }>  (per 1M tokens, USD)
+```
+
+### Testing
+
+Import from `@chaos/agent-loop/testing`:
+
+```typescript
+import { createMockModel } from '@chaos/agent-loop/testing';
+
+const model = createMockModel({
+  responses: [
+    { toolCalls: [{ toolName: 'read_file', args: { path: 'data.txt' } }] },
+    { text: 'The file contains: hello world' },
+  ],
+  modelId: 'mock-model',
+  inputTokensPerCall: 10,
+  outputTokensPerCall: 20,
+});
+
+const agent = createAgent({
+  id: 'test',
+  name: 'Test',
+  model,
+  tools: { read_file: myReadFileTool },
+});
+
+const result = await agent.run('Read data.txt');
+```
+
+`MockModelOptions`:
+- `responses: MockResponse[]` -- predetermined responses, used in order, last one repeats
+- `modelId?: string` -- defaults to `'mock-model'`
+- `provider?: string` -- defaults to `'mock-provider'`
+- `inputTokensPerCall?: number` -- defaults to `10`
+- `outputTokensPerCall?: number` -- defaults to `20`
+
+`MockResponse`:
+- `text?: string` -- text response
+- `toolCalls?: Array<{ toolName: string; args: Record<string, unknown> }>` -- tool calls
