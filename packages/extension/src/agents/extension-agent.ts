@@ -30,9 +30,16 @@ import { checkPermission } from '../tools/permissions.js';
 import { buildSkillsPromptSection } from './skills.js';
 import { recordUsage, checkSpendingLimit } from './usage.js';
 
-// Re-export ProgressUpdate from agentic-loop so existing consumers keep working
-export type { ProgressUpdate } from './agentic-loop.js';
-import type { ProgressUpdate } from './agentic-loop.js';
+// ProgressUpdate type — previously in agentic-loop.ts, now defined here
+export interface ProgressUpdate {
+  type: 'thinking' | 'tool-call' | 'tool-result' | 'text' | 'step-complete' | 'done' | 'error';
+  content: string;
+  toolName?: string;
+  toolArgs?: unknown;
+  toolResult?: unknown;
+  iteration?: number;
+  totalIterations?: number;
+}
 
 // ── Constants ──
 

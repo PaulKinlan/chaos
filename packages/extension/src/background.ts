@@ -78,6 +78,27 @@ import {
 } from './channels/poller.js';
 import { getRelaySettings } from './channels/config.js';
 
+import { ChaosSDK } from '@chaos/sdk';
+import {
+  ChromeAgentStore,
+  ChromeSettingsStore,
+  ChromeHookStore,
+  ChromeUsageStore,
+  OPFSMemoryStore,
+  OPFSConversationStore,
+} from './stores/chrome-stores.js';
+
+// ── SDK instance ──
+
+export const sdk = new ChaosSDK({
+  agentStore: new ChromeAgentStore(),
+  settings: new ChromeSettingsStore(),
+  hooks: new ChromeHookStore(),
+  usage: new ChromeUsageStore(),
+  memory: new OPFSMemoryStore(),
+  conversations: new OPFSConversationStore(),
+});
+
 const DEFAULT_MAX_ITERATIONS_BG = 20;
 
 // ── OPFS directory listing helper ──
