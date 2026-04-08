@@ -104,13 +104,17 @@ function parseFlag(flag: string): string | undefined {
   return idx >= 0 ? process.argv[idx + 1] : undefined;
 }
 
-async function resolveModel(mockResponses?: Array<{ text?: string }>): Promise<LanguageModel> {
-  const provider = parseFlag('provider');
+async function resolveModel(
+  mockResponses?: Array<{ text?: string }>,
+  agentConfig?: { provider?: string; model?: string },
+): Promise<LanguageModel> {
+  // CLI flags override agent config, agent config overrides mock
+  const provider = parseFlag('provider') || agentConfig?.provider;
   if (!provider) {
     return createMockModel({ responses: mockResponses || [{ text: 'Mock response.' }] }) as any;
   }
 
-  const modelId = parseFlag('model');
+  const modelId = parseFlag('model') || agentConfig?.model;
 
   switch (provider) {
     case 'anthropic': {
@@ -188,13 +192,25 @@ async function agentsList(sdk: ChaosSDK): Promise<void> {
   if (agents.length === 0) { console.log('No agents found. Create one: chaos agents create "My Agent"'); return; }
   console.log('Agents:');
   for (const a of agents) {
-    console.log(`  ${a.name.padEnd(20)} ${a.id}  role:${a.role}  ${a.visibility}`);
+    const provLabel = a.provider ? `${a.provider}${a.model ? `/${a.model}` : ''}` : 'mock';
+    console.log(`  ${a.name.padEnd(20)} ${a.id}  ${provLabel}`);
   }
 }
 
 async function agentsCreate(sdk: ChaosSDK, agentStore: JsonAgentStore, memory: NodeFileStore, name: string): Promise<void> {
   const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const agent: AgentMeta = { id, name, role: 'neutral', visibility: 'visible', createdAt: new Date().toISOString() };
+  const provider = parseFlag('provider');
+  const model = parseFlag('model');
+
+  const agent: AgentMeta = {
+    id,
+    name,
+    role: 'neutral',
+    visibility: 'visible',
+    createdAt: new Date().toISOString(),
+    provider: provider || undefined,
+    model: model || undefined,
+  };
   await agentStore.add(agent);
 
   // Seed memory files
@@ -203,6 +219,8 @@ async function agentsCreate(sdk: ChaosSDK, agentStore: JsonAgentStore, memory: N
   await memory.write(id, 'memories/user.md', '# User\n\nFacts about the user.\n');
 
   console.log(`Created agent: ${name} (${id})`);
+  if (provider) console.log(`  Provider: ${provider}${model ? ` (${model})` : ''}`);
+  else console.log(`  Provider: mock (use --provider to set a real LLM)`);
   console.log(`  Memory: ~/.chaos-data/memory/${id}/`);
   console.log(`  CLAUDE.md seeded — edit it to customize the agent's personality.`);
 }
@@ -219,7 +237,10 @@ async function chat(sdk: ChaosSDK, memory: NodeFileStore, agentId: string, messa
   const agent = await agentStore.get(agentId);
   if (!agent) { console.error(`Agent not found: ${agentId}\nRun 'chaos agents list' to see available agents.`); process.exit(1); }
 
-  const model = await resolveModel([{ text: `I'm ${agent.name}. I can help with research, writing, and analysis.` }]);
+  const model = await resolveModel(
+    [{ text: `I'm ${agent.name}. I can help with research, writing, and analysis.` }],
+    { provider: agent.provider, model: agent.model },
+  );
   const agentLoop = await createAgentLoop(agentId, agent.name, model, memory);
   sdk.chat.registerAgent(agentLoop);
 
@@ -324,7 +345,7 @@ function showHelp(): void {
 
 Usage:
   chaos agents list                    List all agents
-  chaos agents create <name>           Create a new agent
+  chaos agents create <name>           Create a new agent (use --provider/--model to set LLM)
   chaos agents delete <id>             Delete an agent
 
   chaos chat <agent-id> <message>      Chat with an agent
@@ -353,7 +374,17 @@ Data: ~/.chaos-data/`);
 // ── Main ──
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  // Strip flags and their values from positional args
+  const rawArgs = process.argv.slice(2);
+  const args: string[] = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    if (rawArgs[i].startsWith('--')) {
+      // Skip --flag=value (single arg) or --flag value (two args)
+      if (!rawArgs[i].includes('=')) i++; // skip the next arg too
+      continue;
+    }
+    args.push(rawArgs[i]);
+  }
 
   if (args.length === 0 || args[0] === 'help') { showHelp(); return; }
 
