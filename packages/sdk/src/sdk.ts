@@ -67,13 +67,33 @@ class AgentsAPI extends EventTarget {
   }
 
   async create(name: string, role: string): Promise<AgentMeta> {
-    const result = await this.requireEngine().send({ type: 'createAgent', name, role });
-    const agent = result as unknown as AgentMeta;
+    const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const agent: AgentMeta = {
+      id,
+      name,
+      role,
+      visibility: 'visible',
+      createdAt: new Date().toISOString(),
+    };
+    await this.store.add(agent);
+
+    // Seed memory files
+    try {
+      await this.memory.write(id, 'CLAUDE.md', `# ${name}\n\nYou are ${name}, an AI assistant.\n`);
+      await this.memory.mkdir(id, 'memories');
+      await this.memory.write(id, 'memories/user.md', '# User\n\nFacts about the user.\n');
+    } catch { /* memory seeding is best-effort */ }
+
     this.dispatchEvent(new CustomEvent('created', { detail: agent }));
     return agent;
   }
 
   async list(): Promise<AgentMeta[]> {
+    const all = await this.store.list();
+    return all.filter(a => a.role !== 'archived');
+  }
+
+  async listAll(): Promise<AgentMeta[]> {
     return this.store.list();
   }
 
@@ -82,8 +102,11 @@ class AgentsAPI extends EventTarget {
   }
 
   async getDetail(agentId: string): Promise<AgentDetail> {
-    const result = await this.requireEngine().send({ type: 'getAgentDetail', agentId });
-    return result as unknown as AgentDetail;
+    const meta = await this.store.get(agentId);
+    if (!meta) throw new Error(`Agent not found: ${agentId}`);
+    let claudeMd = '';
+    try { claudeMd = await this.memory.read(agentId, 'CLAUDE.md'); } catch { /* */ }
+    return { ...meta, claudeMd, journal: [], bookmarks: [] };
   }
 
   async update(agentId: string, updates: Partial<AgentMeta>): Promise<void> {
@@ -92,25 +115,26 @@ class AgentsAPI extends EventTarget {
   }
 
   async delete(agentId: string): Promise<void> {
-    await this.requireEngine().send({ type: 'deleteAgent', agentId });
+    await this.store.remove(agentId);
     this.dispatchEvent(new CustomEvent('deleted', { detail: { agentId } }));
   }
 
   async archive(agentId: string): Promise<void> {
-    await this.requireEngine().send({ type: 'archiveAgent', agentId });
+    await this.store.update(agentId, { role: 'archived', visibility: 'private' });
     this.dispatchEvent(new CustomEvent('archived', { detail: { agentId } }));
   }
 
   async restore(agentId: string): Promise<AgentMeta> {
-    const result = await this.requireEngine().send({ type: 'restoreAgent', agentId });
-    const agent = result as unknown as AgentMeta;
+    await this.store.update(agentId, { role: 'neutral', visibility: 'visible' });
+    const agent = await this.store.get(agentId);
+    if (!agent) throw new Error(`Agent not found: ${agentId}`);
     this.dispatchEvent(new CustomEvent('restored', { detail: agent }));
     return agent;
   }
 
   async listArchived(): Promise<AgentMeta[]> {
-    const result = await this.requireEngine().send({ type: 'listArchivedAgents' });
-    return result as unknown as AgentMeta[];
+    const all = await this.store.list();
+    return all.filter(a => a.role === 'archived');
   }
 
   async getClaudeMd(agentId: string): Promise<string> {
