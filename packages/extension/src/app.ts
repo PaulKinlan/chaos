@@ -966,15 +966,23 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       // Open a column for the incoming channel message
       // NEVER take over the user's existing chat column
       const agentId = msg.agentId as string;
+      const channelColId = msg.columnId as string | undefined;
       const channelLabel = msg.channelLabel as string || 'Channel';
       const from = msg.from as string || 'unknown';
       const content = msg.content as string || '';
 
-      // Only reuse an existing CHANNEL column for this agent (not user chat columns)
-      let col = columns.find(c => c.agentId === agentId && c.isChannelColumn);
+      // Try to find an existing channel column, or create a new one
+      let col = channelColId ? getColumnById(channelColId) : columns.find(c => c.agentId === agentId && c.isChannelColumn);
       if (!col) {
         col = addColumn(agentId, true); // true = allow duplicate (separate from user chat)
-        if (col) col.isChannelColumn = true;
+        if (col) {
+          col.isChannelColumn = true;
+          // Override the column ID to match what the background assigned
+          if (channelColId) {
+            col.id = channelColId;
+            col.columnEl.dataset.columnId = channelColId;
+          }
+        }
       }
       if (col) {
         // Rename the column header to show channel name

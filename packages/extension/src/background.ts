@@ -2249,6 +2249,9 @@ setMessageHandler(async (message) => {
     : 'Respond to this message.';
   const task = `You received a message from an external channel.\n\nChannel: ${channelName} (${message.channelType})\nFrom: ${message.from}\nMessage:\n${message.content}\n\n${channelPrompt || defaultInstruction}`;
 
+  // Generate a unique column ID for this channel conversation
+  const channelColumnId = `channel-${message.channelId}-${Date.now()}`;
+
   // Notify UI to open a channel column (if UI is open)
   const port = activeUiPort;
   if (port) {
@@ -2259,6 +2262,7 @@ setMessageHandler(async (message) => {
     port.postMessage({
       type: 'channelMessageReceived',
       agentId: master.id,
+      columnId: channelColumnId,
       channelLabel,
       from: message.from,
       content: message.content,
@@ -2269,7 +2273,7 @@ setMessageHandler(async (message) => {
 
   // Signal UI that agentic loop is starting
   if (port) {
-    try { port.postMessage({ type: 'agenticStart', agentId: master.id }); } catch { /* */ }
+    try { port.postMessage({ type: 'agenticStart', agentId: master.id, columnId: channelColumnId }); } catch { /* */ }
   }
 
   // Run the agentic loop — stream progress to UI if available
@@ -2289,6 +2293,7 @@ setMessageHandler(async (message) => {
       port.postMessage({
         type: 'agenticProgress',
         agentId: master.id,
+        columnId: channelColumnId,
         progressType: update.type,
         content: update.content,
         toolName: update.toolName,
@@ -2304,7 +2309,7 @@ setMessageHandler(async (message) => {
 
   if (port) {
     try {
-      port.postMessage({ type: 'agenticDone', result, agentId: master.id });
+      port.postMessage({ type: 'agenticDone', result, agentId: master.id, columnId: channelColumnId });
     } catch {
       // Port disconnected
     }
