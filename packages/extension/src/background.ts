@@ -2271,7 +2271,7 @@ setMessageHandler(async (message) => {
   const direction = message.metadata?.['channelDirection'] as string || 'bidirectional';
   const defaultInstruction = direction === 'inbound'
     ? 'Process this message according to the instructions below.'
-    : 'Respond to this message.';
+    : `Your final response will be sent back to ${message.from} via ${channelName} as a direct reply. Include the full answer in your response — do not just describe what you did, provide the actual content they asked for. For example, if they ask you to summarise a page, your response should BE the summary, not "I summarised the page."`;
   const task = `You received a message from an external channel.\n\nChannel: ${channelName} (${message.channelType})\nFrom: ${message.from}\nMessage:\n${message.content}\n\n${channelPrompt || defaultInstruction}`;
 
   // Generate a unique column ID for this channel conversation
