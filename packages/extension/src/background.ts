@@ -2277,29 +2277,32 @@ setMessageHandler(async (message) => {
   // Generate a unique column ID for this channel conversation
   const channelColumnId = `channel-${message.channelId}-${Date.now()}`;
 
-  // Notify UI to open a channel column (if UI is open)
-  const port = activeUiPort;
-  if (port) {
-    const channelLabel = message.channelType === 'telegram'
-      ? `Telegram`
-      : message.channelType.charAt(0).toUpperCase() + message.channelType.slice(1);
+  // Notify UI to open a channel column — use activeUiPort directly (not captured)
+  const channelLabel = message.channelType === 'telegram'
+    ? `Telegram`
+    : message.channelType.charAt(0).toUpperCase() + message.channelType.slice(1);
 
-    port.postMessage({
-      type: 'channelMessageReceived',
-      agentId: master.id,
-      columnId: channelColumnId,
-      channelLabel,
-      from: message.from,
-      content: message.content,
-      channelType: message.channelType,
-      channelId: message.channelId,
-    });
+  if (activeUiPort) {
+    try {
+      activeUiPort.postMessage({
+        type: 'channelMessageReceived',
+        agentId: master.id,
+        columnId: channelColumnId,
+        channelLabel,
+        from: message.from,
+        content: message.content,
+        channelType: message.channelType,
+        channelId: message.channelId,
+      });
+    } catch { /* port disconnected */ }
   }
 
   // Signal UI that agentic loop is starting
-  if (port) {
-    try { port.postMessage({ type: 'agenticStart', agentId: master.id, columnId: channelColumnId }); } catch { /* */ }
+  if (activeUiPort) {
+    try { activeUiPort.postMessage({ type: 'agenticStart', agentId: master.id, columnId: channelColumnId }); } catch { /* */ }
   }
+
+  console.log(`[channel] Starting agent loop for ${master.name} (${master.id}), channel: ${channelName}, columnId: ${channelColumnId}`);
 
   // Run the agentic loop — stream progress to UI if available
   const { agent: channelAgent } = await createExtensionAgent(master.id, {
@@ -2313,9 +2316,10 @@ setMessageHandler(async (message) => {
     if (event.type === 'done' || event.type === 'text') {
       result = event.content;
     }
-    if (!port) continue;
+    // Use activeUiPort directly — survives reconnects
+    if (!activeUiPort) continue;
     try {
-      port.postMessage({
+      activeUiPort.postMessage({
         type: 'agenticProgress',
         agentId: master.id,
         columnId: channelColumnId,
@@ -2328,16 +2332,16 @@ setMessageHandler(async (message) => {
         totalIterations: update.totalIterations,
       });
     } catch {
-      // Port disconnected
+      // Port disconnected — don't abort, agent keeps working
     }
   }
 
-  if (port) {
+  console.log(`[channel] Agent loop completed for channel ${channelName}, result length: ${result.length}`);
+
+  if (activeUiPort) {
     try {
-      port.postMessage({ type: 'agenticDone', result, agentId: master.id, columnId: channelColumnId });
-    } catch {
-      // Port disconnected
-    }
+      activeUiPort.postMessage({ type: 'agenticDone', result, agentId: master.id, columnId: channelColumnId });
+    } catch { /* */ }
   }
 
   return result || null;

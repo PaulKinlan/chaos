@@ -964,6 +964,15 @@ function handlePortMessage(msg: Record<string, unknown>): void {
 
     case 'channelMessageReceived': {
       // Open a column for the incoming channel message
+      // Switch to chat view so the column is visible
+      if (activeView !== 'chat') {
+        activeView = 'chat';
+        document.querySelectorAll<HTMLElement>('.sidebar-item').forEach((b) => {
+          b.classList.toggle('active', b.dataset.view === 'chat');
+        });
+        updateViewVisibility();
+      }
+
       // NEVER take over the user's existing chat column
       const agentId = msg.agentId as string;
       const channelColId = msg.columnId as string | undefined;
