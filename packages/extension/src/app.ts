@@ -6998,6 +6998,16 @@ function renderSmartStartContent(
     </div>
   `;
 
+  // Track interactions to update skip button text
+  const skipBtnEl = inner.querySelector('#smart-start-skip') as HTMLButtonElement | null;
+  function markInteracted() {
+    if (skipBtnEl && skipBtnEl.textContent !== 'Continue') {
+      skipBtnEl.textContent = 'Continue';
+      skipBtnEl.classList.remove('btn-ghost');
+      skipBtnEl.classList.add('btn-primary');
+    }
+  }
+
   // Wire up action card clicks
   const cards = inner.querySelectorAll('.smart-start-card');
   for (const card of cards) {
@@ -7050,6 +7060,7 @@ function renderSmartStartContent(
 
       // Update button to show enabled
       (btn as HTMLButtonElement).textContent = 'Enabled!';
+      markInteracted();
       (btn as HTMLButtonElement).disabled = true;
       (btn as HTMLButtonElement).classList.remove('btn-accent');
       (btn as HTMLButtonElement).classList.add('btn-ghost');
