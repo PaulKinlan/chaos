@@ -6,14 +6,15 @@
  * 'thinking', 'text', 'step-complete', and 'done'.
  *
  * Run: npx tsx examples/streaming.ts
+ *      npx tsx examples/streaming.ts --provider anthropic
  */
 
 import { createAgent } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { resolveModel } from './lib/model.js';
 
-const model = createMockModel({
-  responses: [{ text: 'Streaming works! Here is the answer to your question.' }],
-});
+const model = await resolveModel([
+  { text: 'Streaming works! Here is the answer to your question.' },
+]);
 
 const agent = createAgent({
   id: 'streamer',

@@ -5,10 +5,11 @@
  * short timeout. Demonstrates how AbortSignal integrates with the agent loop.
  *
  * Run: npx tsx examples/abort-demo.ts
+ *      npx tsx examples/abort-demo.ts --provider anthropic
  */
 
 import { createAgent } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { resolveModel, isRealProvider } from './lib/model.js';
 import { tool } from 'ai';
 import { z } from 'zod';
 
@@ -26,12 +27,10 @@ const slowTask = tool({
   },
 });
 
-const model = createMockModel({
-  responses: [
-    { toolCalls: [{ toolName: 'slowTask', args: { duration: 10 } }] },
-    { text: 'All done!' },
-  ],
-});
+const model = await resolveModel([
+  { toolCalls: [{ toolName: 'slowTask', args: { duration: 10 } }] },
+  { text: 'All done!' },
+]);
 
 // Use AbortController for timeout-based cancellation
 const controller = new AbortController();
@@ -44,6 +43,11 @@ const agent = createAgent({
   signal: controller.signal,
 });
 
+// Use a more natural prompt for real providers
+const prompt = isRealProvider()
+  ? 'Use the slowTask tool with a duration of 10 seconds.'
+  : 'Run the slow task for 10 seconds.';
+
 console.log('Starting agent (will abort after 500ms)...\n');
 
 // Set a timeout to abort
@@ -53,7 +57,7 @@ setTimeout(() => {
 }, 500);
 
 try {
-  for await (const event of agent.stream('Run the slow task for 10 seconds.')) {
+  for await (const event of agent.stream(prompt)) {
     console.log(`  [${event.type}] ${event.content}`);
   }
 } catch (err) {

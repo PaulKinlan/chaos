@@ -1,6 +1,6 @@
 # @chaos/agent-loop Examples
 
-Runnable examples demonstrating the `@chaos/agent-loop` API. All examples use mock models (no API keys needed).
+Runnable examples demonstrating the `@chaos/agent-loop` API. By default, all examples use mock models (no API keys needed).
 
 ## Examples
 
@@ -31,6 +31,30 @@ npx tsx examples/usage-tracking.ts
 npx tsx examples/multi-step.ts
 npx tsx examples/abort-demo.ts
 ```
+
+## Using a real LLM
+
+By default, examples use a mock model. To use a real provider:
+
+```bash
+ANTHROPIC_API_KEY=sk-... npx tsx examples/basic-agent.ts --provider anthropic
+GOOGLE_API_KEY=AI... npx tsx examples/basic-agent.ts --provider google
+OPENAI_API_KEY=sk-... npx tsx examples/basic-agent.ts --provider openai
+```
+
+Optionally specify a model:
+
+```bash
+npx tsx examples/basic-agent.ts --provider anthropic --model=claude-haiku-4-5
+```
+
+Supported providers and their defaults:
+
+| Provider | Default model | Env variable |
+|----------|---------------|--------------|
+| `anthropic` | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
+| `google` | `gemini-2.5-flash` | `GOOGLE_API_KEY` |
+| `openai` | `gpt-4.1-mini` | `OPENAI_API_KEY` |
 
 ## Prerequisites
 

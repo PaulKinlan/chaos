@@ -6,10 +6,11 @@
  * decision system with 'allow', 'deny', and 'continue' decisions.
  *
  * Run: npx tsx examples/hooks-demo.ts
+ *      npx tsx examples/hooks-demo.ts --provider anthropic
  */
 
 import { createAgent, type AgentHooks } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { resolveModel, isRealProvider } from './lib/model.js';
 import { tool } from 'ai';
 import { z } from 'zod';
 
@@ -54,12 +55,10 @@ const hooks: AgentHooks = {
   },
 };
 
-const model = createMockModel({
-  responses: [
-    { toolCalls: [{ toolName: 'greet', args: { name: 'World' } }] },
-    { text: 'Greeting sent successfully!' },
-  ],
-});
+const model = await resolveModel([
+  { toolCalls: [{ toolName: 'greet', args: { name: 'World' } }] },
+  { text: 'Greeting sent successfully!' },
+]);
 
 const agent = createAgent({
   id: 'hooked',
@@ -69,6 +68,11 @@ const agent = createAgent({
   hooks,
 });
 
+// Use a more natural prompt for real providers
+const prompt = isRealProvider()
+  ? 'Use the greet tool to greet "World".'
+  : 'Greet the world';
+
 console.log('Running agent with lifecycle hooks...\n');
-const result = await agent.run('Greet the world');
+const result = await agent.run(prompt);
 console.log('\nAgent response:', result);

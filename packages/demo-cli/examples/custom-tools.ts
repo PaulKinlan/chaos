@@ -5,10 +5,11 @@
  * schemas. The mock model calls the calculator, gets the result, then responds.
  *
  * Run: npx tsx examples/custom-tools.ts
+ *      npx tsx examples/custom-tools.ts --provider anthropic
  */
 
 import { createAgent } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { resolveModel, isRealProvider } from './lib/model.js';
 import { tool } from 'ai';
 import { z } from 'zod';
 
@@ -39,12 +40,10 @@ const weather = tool({
   },
 });
 
-const model = createMockModel({
-  responses: [
-    { toolCalls: [{ toolName: 'calculator', args: { expression: '42 * 7' } }] },
-    { text: '42 times 7 equals 294.' },
-  ],
-});
+const model = await resolveModel([
+  { toolCalls: [{ toolName: 'calculator', args: { expression: '42 * 7' } }] },
+  { text: '42 times 7 equals 294.' },
+]);
 
 const agent = createAgent({
   id: 'tooled',
@@ -53,6 +52,11 @@ const agent = createAgent({
   tools: { calculator, weather },
 });
 
+// Use a more natural prompt for real providers so the LLM actually uses the tools
+const prompt = isRealProvider()
+  ? 'Use the calculator tool to compute 42 times 7, then tell me the result.'
+  : 'What is 42 times 7?';
+
 console.log('Running agent with custom tools...\n');
-const result = await agent.run('What is 42 times 7?');
+const result = await agent.run(prompt);
 console.log('\nAgent response:', result);

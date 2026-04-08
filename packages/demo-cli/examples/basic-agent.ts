@@ -5,14 +5,13 @@
  * Shows how little code is needed to get an agent running.
  *
  * Run: npx tsx examples/basic-agent.ts
+ *      npx tsx examples/basic-agent.ts --provider anthropic
  */
 
 import { createAgent } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { resolveModel } from './lib/model.js';
 
-const model = createMockModel({
-  responses: [{ text: 'The capital of France is Paris.' }],
-});
+const model = await resolveModel([{ text: 'The capital of France is Paris.' }]);
 
 const agent = createAgent({
   id: 'basic',

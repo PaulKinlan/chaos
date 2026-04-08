@@ -6,10 +6,11 @@
  * are loaded into the system prompt and discoverable at runtime.
  *
  * Run: npx tsx examples/skills-demo.ts
+ *      npx tsx examples/skills-demo.ts --provider anthropic
  */
 
 import { createAgent, InMemorySkillStore, buildSkillsPrompt } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { resolveModel, isRealProvider } from './lib/model.js';
 
 // Create and populate a skill store
 const store = new InMemorySkillStore();
@@ -26,12 +27,10 @@ console.log('Skills prompt section:');
 console.log(buildSkillsPrompt(skills));
 
 // The agent gets skill tools automatically: search_skills, install_skill, list_skills, remove_skill
-const model = createMockModel({
-  responses: [
-    { toolCalls: [{ toolName: 'list_skills', args: {} }] },
-    { text: 'You have the Code Review skill installed. It provides PR review guidelines.' },
-  ],
-});
+const model = await resolveModel([
+  { toolCalls: [{ toolName: 'list_skills', args: {} }] },
+  { text: 'You have the Code Review skill installed. It provides PR review guidelines.' },
+]);
 
 const agent = createAgent({
   id: 'skilled',
@@ -40,6 +39,11 @@ const agent = createAgent({
   skills: store,
 });
 
+// Use a more natural prompt for real providers
+const prompt = isRealProvider()
+  ? 'Use the list_skills tool to show me what skills are installed.'
+  : 'What skills do I have?';
+
 console.log('\nRunning agent with skills...\n');
-const result = await agent.run('What skills do I have?');
+const result = await agent.run(prompt);
 console.log('Agent response:', result);

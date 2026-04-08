@@ -6,10 +6,11 @@
  * execution when exceeded.
  *
  * Run: npx tsx examples/usage-tracking.ts
+ *      npx tsx examples/usage-tracking.ts --provider anthropic
  */
 
 import { createAgent, UsageTracker, type AgentHooks } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { resolveModel } from './lib/model.js';
 
 const usageRecords: Array<{ step: number; input: number; output: number; cost: number }> = [];
 
@@ -35,11 +36,7 @@ const hooks: AgentHooks = {
   },
 };
 
-const model = createMockModel({
-  responses: [{ text: 'Here is a thoughtful analysis of the topic.' }],
-  inputTokensPerCall: 500,
-  outputTokensPerCall: 200,
-});
+const model = await resolveModel([{ text: 'Here is a thoughtful analysis of the topic.' }]);
 
 const agent = createAgent({
   id: 'tracked',

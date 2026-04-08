@@ -6,10 +6,11 @@
  * the base mode.
  *
  * Run: npx tsx examples/permissions-demo.ts
+ *      npx tsx examples/permissions-demo.ts --provider anthropic
  */
 
 import { createAgent, type PermissionConfig } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { resolveModel, isRealProvider } from './lib/model.js';
 import { tool } from 'ai';
 import { z } from 'zod';
 
@@ -28,14 +29,16 @@ const deleteFile = tool({
   execute: async ({ path }: { path: string }) => `Deleted ${path}`,
 });
 
-function makeModel() {
-  return createMockModel({
-    responses: [
-      { toolCalls: [{ toolName: 'readFile', args: { path: '/tmp/test.txt' } }] },
-      { text: 'Done reading the file.' },
-    ],
-  });
+async function makeModel() {
+  return resolveModel([
+    { toolCalls: [{ toolName: 'readFile', args: { path: '/tmp/test.txt' } }] },
+    { text: 'Done reading the file.' },
+  ]);
 }
+
+const prompt = isRealProvider()
+  ? 'Use the readFile tool to read /tmp/test.txt.'
+  : 'Read the test file';
 
 const configs: Array<{ label: string; permissions: PermissionConfig }> = [
   { label: 'accept-all', permissions: { mode: 'accept-all' } },
@@ -58,10 +61,10 @@ for (const { label, permissions } of configs) {
   const agent = createAgent({
     id: `perm-${label}`,
     name: `Permission Agent (${label})`,
-    model: makeModel(),
+    model: await makeModel(),
     tools: { readFile, deleteFile },
     permissions,
   });
-  const result = await agent.run('Read the test file');
+  const result = await agent.run(prompt);
   console.log('Result:', result);
 }
