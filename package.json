@@ -6,8 +6,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace=packages/extension",
-    "test": "npm run test --workspace=packages/extension",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build:extension": "npm run build --workspace=packages/extension",
     "dev": "npm run dev --workspace=packages/extension"
   }
 }
