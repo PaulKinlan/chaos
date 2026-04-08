@@ -271,6 +271,10 @@ class ChatAPI extends EventTarget {
     return this.conversationStore.list(agentId);
   }
 
+  async saveConversation(agentId: string, conversationId: string, conversation: Conversation): Promise<void> {
+    await this.conversationStore.save(agentId, conversation);
+  }
+
   async deleteConversation(agentId: string, conversationId: string): Promise<void> {
     await this.conversationStore.delete(agentId, conversationId);
   }
