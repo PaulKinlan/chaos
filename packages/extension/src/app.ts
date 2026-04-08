@@ -893,7 +893,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
 
     case 'chatStart': {
-      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      const col = resolveColumn();
       if (col) {
         col.isStreaming = true;
         col.currentStreamContent = '';
@@ -905,7 +905,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'chatChunk': {
-      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      const col = resolveColumn();
       if (col && col.currentStreamEl) {
         col.currentStreamContent += msg.chunk as string;
         renderChatMarkdown(col.currentStreamEl, col.currentStreamContent);
@@ -915,7 +915,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'toolCall': {
-      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      const col = resolveColumn();
       if (col) {
         addToolCallCardToColumn(col, msg.name as string, msg.args as unknown, msg.result as unknown);
       }
@@ -923,7 +923,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'chatEnd': {
-      const col = msgAgentId ? getColumnForAgent(msgAgentId) : getFocusedColumn();
+      const col = resolveColumn();
       if (col) {
         col.isStreaming = false;
         col.typingEl.classList.remove('visible');
@@ -2007,6 +2007,7 @@ function sendColumnMessage(col: ChatColumn): void {
     type: 'chat',
     agentId: col.agentId,
     message: text,
+    columnId: col.id,
   };
 
   if (col.pageContext) {
