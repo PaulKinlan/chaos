@@ -8,8 +8,10 @@ type WsMessageHandler = (message: ChannelMessage) => void;
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let pingTimer: ReturnType<typeof setInterval> | null = null;
 let currentBackoff = 5000; // Start at 5 seconds
 const MAX_BACKOFF = 60000; // Cap at 60 seconds
+const PING_INTERVAL = 25000; // Send ping every 25s to keep connection alive
 let messageHandler: WsMessageHandler | null = null;
 let logHandler: ((msg: string) => void) | null = null;
 let currentSettings: RelaySettings | null = null;
@@ -36,6 +38,26 @@ function clearReconnectTimer(): void {
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
+  }
+}
+
+function startPingTimer(): void {
+  stopPingTimer();
+  pingTimer = setInterval(() => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      try {
+        socket.send(JSON.stringify({ type: 'ping' }));
+      } catch {
+        // Send failed — close event will trigger reconnect
+      }
+    }
+  }, PING_INTERVAL);
+}
+
+function stopPingTimer(): void {
+  if (pingTimer !== null) {
+    clearInterval(pingTimer);
+    pingTimer = null;
   }
 }
 
@@ -90,6 +112,8 @@ export function connectWebSocket(settings: RelaySettings): void {
     log('WebSocket connected to relay server');
     // Reset backoff on successful connection
     currentBackoff = 5000;
+    // Start sending pings to keep the connection alive
+    startPingTimer();
   });
 
   socket.addEventListener('message', (event) => {
@@ -115,6 +139,7 @@ export function connectWebSocket(settings: RelaySettings): void {
   socket.addEventListener('close', (event) => {
     log(`Connection closed (code=${event.code}, reason=${event.reason || 'none'})`);
     socket = null;
+    stopPingTimer();
     // Don't reconnect with stale credentials — let the poll alarm handle re-registration
     if (event.code === 1008 || event.reason?.includes('401') || event.reason?.includes('auth')) {
       log('Auth failure — waiting for poll alarm to re-register');
@@ -138,6 +163,7 @@ export function connectWebSocket(settings: RelaySettings): void {
 export function disconnectWebSocket(): void {
   currentSettings = null;
   clearReconnectTimer();
+  stopPingTimer();
   if (socket) {
     try {
       socket.close();

@@ -4629,7 +4629,9 @@ async function checkDebugMode(): Promise<void> {
   let debugClickCount = 0;
   let debugClickTimer: ReturnType<typeof setTimeout> | null = null;
 
-  settingsHeader?.addEventListener('click', () => {
+  if (settingsHeader) settingsHeader.style.userSelect = 'none';
+  settingsHeader?.addEventListener('click', (e) => {
+    e.preventDefault();
     debugClickCount++;
     if (debugClickTimer) clearTimeout(debugClickTimer);
     debugClickTimer = setTimeout(() => { debugClickCount = 0; }, 2000);

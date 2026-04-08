@@ -191,12 +191,13 @@ export async function startWebSocket(): Promise<void> {
 
   connectWebSocket(settings);
 
-  // Slow down polling to fallback rate since WS handles the fast path
+  // Use a 1-minute alarm to check WS health and reconnect if needed
+  // This survives SW suspension (unlike setTimeout/setInterval)
   chrome.alarms.create(ALARM_NAME, {
-    delayInMinutes: FALLBACK_INTERVAL_MINUTES,
-    periodInMinutes: FALLBACK_INTERVAL_MINUTES,
+    delayInMinutes: 0.5,
+    periodInMinutes: 1,
   });
-  console.log(`WebSocket connected — polling slowed to every ${FALLBACK_INTERVAL_MINUTES} min (fallback)`);
+  console.log(`WebSocket started — health check alarm every 1 min`);
 }
 
 /**
