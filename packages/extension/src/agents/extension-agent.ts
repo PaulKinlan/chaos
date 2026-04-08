@@ -649,7 +649,7 @@ export function mapProgressEvent(event: ProgressEvent, maxIterations: number): P
     toolName: event.toolName,
     toolArgs: event.toolArgs,
     toolResult: event.toolResult,
-    iteration: event.step,
+    iteration: (event.step ?? 0) + 1, // agent-loop is 0-indexed, UI is 1-indexed
     totalIterations: maxIterations,
   };
 }
