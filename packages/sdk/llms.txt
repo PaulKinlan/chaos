@@ -87,21 +87,25 @@ All domain APIs extend `EventTarget`. Use `addEventListener(eventName, handler)`
 
 #### AgentsAPI
 
+`create`, `delete`, `archive`, `restore` work without an engine connection -- they use the store directly. `create` also seeds `CLAUDE.md` and `memories/user.md` in the agent's memory.
+
 ```typescript
 agents.create(name: string, role: string): Promise<AgentMeta>
-agents.list(): Promise<AgentMeta[]>
+agents.list(filter?: { includeArchived?: boolean; role?: string; visibility?: string; provider?: string }): Promise<AgentMeta[]>
 agents.get(agentId: string): Promise<AgentMeta | undefined>
 agents.getDetail(agentId: string): Promise<AgentDetail>
 agents.update(agentId: string, updates: Partial<AgentMeta>): Promise<void>
 agents.delete(agentId: string): Promise<void>
-agents.archive(agentId: string): Promise<void>
-agents.restore(agentId: string): Promise<AgentMeta>
-agents.listArchived(): Promise<AgentMeta[]>
+agents.archive(agentId: string): Promise<void>  // sets role='archived', visibility='private'
+agents.restore(agentId: string): Promise<AgentMeta>  // sets role='neutral', visibility='visible'
+agents.listArchived(): Promise<AgentMeta[]>  // @deprecated -- use list({ includeArchived: true, role: 'archived' })
 agents.getClaudeMd(agentId: string): Promise<string>
 agents.setClaudeMd(agentId: string, content: string): Promise<void>
-agents.getModelConfig(agentId: string): Promise<AgentModelConfig>
-agents.setModelConfig(agentId: string, config: Partial<AgentModelConfig>): Promise<void>
+agents.getModelConfig(agentId: string): Promise<AgentModelConfig>  // requires engine
+agents.setModelConfig(agentId: string, config: Partial<AgentModelConfig>): Promise<void>  // requires engine
 ```
+
+`list()` excludes archived agents by default. Pass `{ includeArchived: true }` to include them.
 
 Events: `created`, `updated`, `deleted`, `archived`, `restored`, `claudeMdChanged`, `configChanged`
 
@@ -116,6 +120,7 @@ chat.sendMessage(agentId: string, message: string, options?: AgenticOptions): As
 chat.stop(agentId: string, columnId?: string): Promise<void>
 chat.getConversation(agentId: string, conversationId: string): Promise<Conversation | undefined>
 chat.listConversations(agentId: string): Promise<Array<{ id: string; timestamp: string }>>
+chat.saveConversation(agentId: string, conversationId: string, conversation: Conversation): Promise<void>
 chat.deleteConversation(agentId: string, conversationId: string): Promise<void>
 ```
 
@@ -126,7 +131,7 @@ Events: `start`, `chunk`, `toolCall`, `toolResult`, `stepComplete`, `done`, `err
 #### HooksAPI
 
 ```typescript
-hooks.list(agentId?: string): Promise<Hook[]>
+hooks.list(filter?: { agentId?: string; enabled?: boolean; triggerType?: string }): Promise<Hook[]>
 hooks.get(hookId: string): Promise<Hook | undefined>
 hooks.create(hook: Hook): Promise<Hook>
 hooks.update(hookId: string, updates: Partial<Hook>): Promise<void>
@@ -166,7 +171,7 @@ Events: `written`, `deleted`
 #### ArtifactsAPI
 
 ```typescript
-artifacts.list(agentId?: string): Promise<ArtifactMeta[]>
+artifacts.list(filter?: { agentId?: string }): Promise<ArtifactMeta[]>
 artifacts.get(agentId: string, path: string): Promise<ArtifactMeta>
 artifacts.delete(agentId: string, path: string): Promise<void>
 ```
@@ -187,7 +192,7 @@ Events: `installed`, `removed`
 #### TasksAPI
 
 ```typescript
-tasks.list(agentId?: string): Promise<Task[]>
+tasks.list(filter?: { agentId?: string; status?: string }): Promise<Task[]>
 tasks.create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task>
 tasks.get(taskId: string): Promise<Task>
 tasks.cancel(taskId: string): Promise<void>

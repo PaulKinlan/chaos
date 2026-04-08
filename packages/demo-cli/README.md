@@ -26,7 +26,9 @@ A minimal CLI reference implementation proving the `@chaos/sdk` works entirely o
 # From the repo root
 npm install
 npm run dev --workspace=packages/demo-cli -- agents create "Research Assistant"
+npm run dev --workspace=packages/demo-cli -- agents create "Claude Agent" --provider anthropic
 npm run dev --workspace=packages/demo-cli -- agents list
+npm run dev --workspace=packages/demo-cli -- agents archive <id>
 npm run dev --workspace=packages/demo-cli -- chat agent-id "Hello"
 npm run dev --workspace=packages/demo-cli -- help
 ```
@@ -34,12 +36,18 @@ npm run dev --workspace=packages/demo-cli -- help
 ## Commands
 
 ```
-chaos agents list              List all agents
-chaos agents create <name>     Create a new agent
-chaos agents delete <id>       Delete an agent by ID
-chaos chat <agent-id> <msg>    Send a message and stream the response
-chaos hooks list               List all hooks
-chaos hooks create             Create a sample hook
-chaos usage summary            Show usage summary
-chaos help                     Show this help message
+chaos agents list                          List all agents (excludes archived)
+chaos agents create <name>                 Create a new agent
+chaos agents create <name> --provider <p>  Create an agent with a specific provider
+chaos agents delete <id>                   Delete an agent by ID
+chaos agents archive <id>                  Archive an agent (preserves memory)
+chaos agents restore <id>                  Restore an archived agent
+chaos agents memory <id>                   Show agent memory files
+chaos chat <agent-id> <msg>                Send a message and stream the response
+chaos conversations list <agent-id>        List conversations for an agent
+chaos conversations get <agent-id> <id>    Get a conversation by ID
+chaos hooks list                           List all hooks
+chaos hooks create                         Create a sample hook
+chaos usage summary                        Show usage summary
+chaos help                                 Show this help message
 ```

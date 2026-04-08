@@ -123,17 +123,33 @@ sdk.chat.registerAgent(agent3);
 sdk.chat.unregisterAgent('researcher');
 ```
 
-Agent metadata (name, role, visibility, model config) is stored in the `AgentStore`:
+Agent metadata (name, role, visibility, model config) is stored in the `AgentStore`. When you call `agents.create()`, it stores the metadata and seeds initial memory files (`CLAUDE.md` and `memories/user.md`) -- no engine connection required.
 
 ```ts
-// List agents from the store
+// Create an agent (works without an engine -- uses store directly)
+const newAgent = await sdk.agents.create('Research Assistant', 'researcher');
+
+// List agents (excludes archived by default)
 const agents = await sdk.agents.list();
+
+// Filter agents
+const visible = await sdk.agents.list({ visibility: 'visible' });
+const allIncludingArchived = await sdk.agents.list({ includeArchived: true });
+const archivedOnly = await sdk.agents.list({ includeArchived: true, role: 'archived' });
+const anthropicAgents = await sdk.agents.list({ provider: 'anthropic' });
 
 // Get agent details
 const agent = await sdk.agents.get('assistant');
 
 // Update metadata
 await sdk.agents.update('assistant', { name: 'My Assistant' });
+
+// Archive and restore (works without engine -- uses store directly)
+await sdk.agents.archive('assistant'); // sets role='archived', visibility='private'
+const restored = await sdk.agents.restore('assistant'); // sets role='neutral', visibility='visible'
+
+// Delete (works without engine)
+await sdk.agents.delete('assistant');
 
 // Agent CLAUDE.md (system prompt)
 const claudeMd = await sdk.agents.getClaudeMd('assistant');
@@ -178,6 +194,7 @@ await sdk.chat.stop('assistant');
 ```ts
 const convos = await sdk.chat.listConversations('assistant');
 const convo = await sdk.chat.getConversation('assistant', convos[0].id);
+await sdk.chat.saveConversation('assistant', convo.id, convo);
 await sdk.chat.deleteConversation('assistant', convos[0].id);
 ```
 
@@ -424,8 +441,11 @@ await sdk.hooks.create({
   triggerCount: 0,
 });
 
-// List hooks for an agent
-const hooks = await sdk.hooks.list('assistant');
+// List hooks with filters
+const hooks = await sdk.hooks.list({ agentId: 'assistant' });
+const enabledHooks = await sdk.hooks.list({ enabled: true });
+const bookmarkHooks = await sdk.hooks.list({ triggerType: 'bookmark-created' });
+const allHooks = await sdk.hooks.list(); // no filter -- returns all
 
 // Trigger a hook manually
 await sdk.hooks.trigger('bookmark-hook', { url: 'https://example.com' });
@@ -518,7 +538,7 @@ const task = await sdk.tasks.create({
   status: 'pending',
 });
 
-const tasks = await sdk.tasks.list('assistant');
+const tasks = await sdk.tasks.list({ agentId: 'assistant' });
 const detail = await sdk.tasks.get(task.id);
 await sdk.tasks.cancel(task.id);
 ```
@@ -547,7 +567,7 @@ await sdk.channels.remove('slack-general');
 Agent-produced file artifacts:
 
 ```ts
-const artifacts = await sdk.artifacts.list('assistant');
+const artifacts = await sdk.artifacts.list({ agentId: 'assistant' });
 const artifact = await sdk.artifacts.get('assistant', 'report.pdf');
 await sdk.artifacts.delete('assistant', 'report.pdf');
 ```

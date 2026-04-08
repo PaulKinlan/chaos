@@ -107,6 +107,55 @@ for await (const event of agent.stream('Tell me about Paris')) {
 | `done` | The agent completed its task |
 | `error` | Something went wrong or limits were exceeded |
 
+## SDK Integration
+
+`@chaos/agent-loop` integrates with `@chaos/sdk` -- each agent owns its own model, tools, hooks, and permissions. The SDK does not configure models; that is the agent's responsibility.
+
+```ts
+import { ChaosSDK } from '@chaos/sdk';
+import {
+  InMemorySettingsStore, InMemoryMemoryStore, InMemoryConversationStore,
+  InMemoryHookStore, InMemoryUsageStore, InMemoryAgentStore,
+} from '@chaos/sdk/stores/in-memory';
+import { createAgent } from '@chaos/agent-loop';
+import { anthropic } from '@ai-sdk/anthropic';
+
+// Each agent owns its own model and tools
+const assistant = createAgent({
+  id: 'assistant',
+  name: 'Assistant',
+  model: anthropic('claude-sonnet-4-5'),
+  systemPrompt: 'You are a helpful assistant.',
+});
+
+const researcher = createAgent({
+  id: 'researcher',
+  name: 'Researcher',
+  model: anthropic('claude-sonnet-4-5'),
+  systemPrompt: 'You are a research assistant.',
+});
+
+// Pass agents to the SDK at construction
+const sdk = new ChaosSDK({
+  settings: new InMemorySettingsStore(),
+  memory: new InMemoryMemoryStore(),
+  conversations: new InMemoryConversationStore(),
+  hooks: new InMemoryHookStore(),
+  usage: new InMemoryUsageStore(),
+  agentStore: new InMemoryAgentStore(),
+  agents: [assistant, researcher],
+});
+
+// Or register/unregister agents dynamically
+sdk.chat.registerAgent(assistant);
+sdk.chat.unregisterAgent('assistant');
+
+// Send messages through the SDK (routes to the registered agent loop)
+for await (const update of sdk.chat.sendMessage('assistant', 'Hello!')) {
+  if (update.type === 'text') console.log(update.content);
+}
+```
+
 ## Tools
 
 Define tools using the Vercel AI SDK's `tool()` function:

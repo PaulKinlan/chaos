@@ -58,19 +58,25 @@ sdk.chat.registerAgent(agent);
 
 ## Store Agent Metadata
 
-```typescript
-// Add agent metadata to the store
-await sdk.agents.update('assistant', {
-  id: 'assistant',
-  name: 'Assistant',
-  role: 'General-purpose helper',
-  visibility: 'visible',
-  createdAt: new Date().toISOString(),
-});
+`agents.create()` stores metadata and seeds initial memory files (`CLAUDE.md` and `memories/user.md`) -- no engine connection required:
 
-// List all agents
+```typescript
+// Create an agent (seeds CLAUDE.md and memories/user.md automatically)
+const agent = await sdk.agents.create('Assistant', 'General-purpose helper');
+
+// List agents (excludes archived by default)
 const agents = await sdk.agents.list();
-console.log(agents);
+
+// Filter agents
+const visible = await sdk.agents.list({ visibility: 'visible' });
+const anthropicAgents = await sdk.agents.list({ provider: 'anthropic' });
+
+// Archive and restore (no engine required)
+await sdk.agents.archive(agent.id);
+const restored = await sdk.agents.restore(agent.id);
+
+// List archived agents
+const archived = await sdk.agents.list({ includeArchived: true, role: 'archived' });
 ```
 
 ## Send Messages

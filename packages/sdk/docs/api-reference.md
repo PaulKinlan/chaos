@@ -23,7 +23,7 @@ new ChaosSDK(options: ChaosSDKOptions)
 | `usage` | `UsageStore` | yes | Usage record storage backend |
 | `agentStore` | `AgentStore` | yes | Agent metadata storage backend |
 | `browser` | `BrowserCapabilities` | no | Browser API access (tabs, bookmarks, etc.) |
-| `agents` | `Agent[]` | no | Pre-configured agent-loop instances |
+| `agents` | `Agent[]` | no | Pre-configured agent-loop instances (each owns its own model, tools, hooks, permissions) |
 
 ### Properties
 
@@ -50,25 +50,25 @@ All domain APIs extend `EventTarget` and emit events via `addEventListener`.
 
 ### AgentsAPI
 
-Manage agent lifecycle and configuration.
+Manage agent lifecycle and configuration. `create`, `delete`, `archive`, and `restore` work without an engine connection -- they operate on the store directly. `create` also seeds initial memory files (`CLAUDE.md` and `memories/user.md`).
 
 #### Methods
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `create` | `(name: string, role: string) => Promise<AgentMeta>` | Create a new agent |
-| `list` | `() => Promise<AgentMeta[]>` | List all agents |
+| `create` | `(name: string, role: string) => Promise<AgentMeta>` | Create a new agent (seeds CLAUDE.md and memories/user.md) |
+| `list` | `(filter?: { includeArchived?, role?, visibility?, provider? }) => Promise<AgentMeta[]>` | List agents (excludes archived by default) |
 | `get` | `(agentId: string) => Promise<AgentMeta \| undefined>` | Get an agent by ID |
 | `getDetail` | `(agentId: string) => Promise<AgentDetail>` | Get full agent detail (includes CLAUDE.md, journal, bookmarks) |
 | `update` | `(agentId: string, updates: Partial<AgentMeta>) => Promise<void>` | Update agent metadata |
-| `delete` | `(agentId: string) => Promise<void>` | Delete an agent |
-| `archive` | `(agentId: string) => Promise<void>` | Archive an agent |
-| `restore` | `(agentId: string) => Promise<AgentMeta>` | Restore an archived agent |
-| `listArchived` | `() => Promise<AgentMeta[]>` | List archived agents |
+| `delete` | `(agentId: string) => Promise<void>` | Delete an agent (no engine required) |
+| `archive` | `(agentId: string) => Promise<void>` | Archive an agent (sets role='archived', visibility='private') |
+| `restore` | `(agentId: string) => Promise<AgentMeta>` | Restore an archived agent (sets role='neutral', visibility='visible') |
+| `listArchived` | `() => Promise<AgentMeta[]>` | **Deprecated** -- use `list({ includeArchived: true, role: 'archived' })` |
 | `getClaudeMd` | `(agentId: string) => Promise<string>` | Get agent's CLAUDE.md content |
 | `setClaudeMd` | `(agentId: string, content: string) => Promise<void>` | Set agent's CLAUDE.md content |
-| `getModelConfig` | `(agentId: string) => Promise<AgentModelConfig>` | Get agent's model configuration |
-| `setModelConfig` | `(agentId: string, config: Partial<AgentModelConfig>) => Promise<void>` | Set agent's model configuration |
+| `getModelConfig` | `(agentId: string) => Promise<AgentModelConfig>` | Get agent's model configuration (requires engine) |
+| `setModelConfig` | `(agentId: string, config: Partial<AgentModelConfig>) => Promise<void>` | Set agent's model configuration (requires engine) |
 
 #### Events
 
@@ -100,6 +100,7 @@ Send messages and manage conversations.
 | `stop` | `(agentId: string, columnId?: string) => Promise<void>` | Stop/abort a running conversation |
 | `getConversation` | `(agentId: string, conversationId: string) => Promise<Conversation \| undefined>` | Get a conversation by ID |
 | `listConversations` | `(agentId: string) => Promise<Array<{ id, timestamp }>>` | List conversations for an agent |
+| `saveConversation` | `(agentId: string, conversationId: string, conversation: Conversation) => Promise<void>` | Save/persist a conversation |
 | `deleteConversation` | `(agentId: string, conversationId: string) => Promise<void>` | Delete a conversation |
 
 #### Events
@@ -125,7 +126,7 @@ Manage event hooks that trigger agent actions.
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `list` | `(agentId?: string) => Promise<Hook[]>` | List hooks (optionally filtered by agent) |
+| `list` | `(filter?: { agentId?, enabled?, triggerType? }) => Promise<Hook[]>` | List hooks with optional filters |
 | `get` | `(hookId: string) => Promise<Hook \| undefined>` | Get a hook by ID |
 | `create` | `(hook: Hook) => Promise<Hook>` | Create a new hook |
 | `update` | `(hookId: string, updates: Partial<Hook>) => Promise<void>` | Update a hook |
@@ -177,7 +178,7 @@ Manage artifacts produced by agents.
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `list` | `(agentId?: string) => Promise<ArtifactMeta[]>` | List artifacts |
+| `list` | `(filter?: { agentId? }) => Promise<ArtifactMeta[]>` | List artifacts (optionally filtered by agent) |
 | `get` | `(agentId: string, path: string) => Promise<ArtifactMeta>` | Get an artifact |
 | `delete` | `(agentId: string, path: string) => Promise<void>` | Delete an artifact |
 
@@ -245,7 +246,7 @@ Manage background tasks.
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `list` | `(agentId?: string) => Promise<Task[]>` | List tasks |
+| `list` | `(filter?: { agentId?, status? }) => Promise<Task[]>` | List tasks with optional filters |
 | `create` | `(task: Omit<Task, 'id' \| 'createdAt' \| 'updatedAt'>) => Promise<Task>` | Create a task |
 | `get` | `(taskId: string) => Promise<Task>` | Get a task |
 | `cancel` | `(taskId: string) => Promise<void>` | Cancel a task |
