@@ -88,13 +88,20 @@ class AgentsAPI extends EventTarget {
     return agent;
   }
 
-  async list(): Promise<AgentMeta[]> {
-    const all = await this.store.list();
-    return all.filter(a => a.role !== 'archived');
-  }
-
-  async listAll(): Promise<AgentMeta[]> {
-    return this.store.list();
+  async list(filter?: {
+    includeArchived?: boolean;
+    role?: string;
+    visibility?: string;
+    provider?: string;
+  }): Promise<AgentMeta[]> {
+    let agents = await this.store.list();
+    if (!filter?.includeArchived) {
+      agents = agents.filter(a => a.role !== 'archived');
+    }
+    if (filter?.role) agents = agents.filter(a => a.role === filter.role);
+    if (filter?.visibility) agents = agents.filter(a => a.visibility === filter.visibility);
+    if (filter?.provider) agents = agents.filter(a => a.provider === filter.provider);
+    return agents;
   }
 
   async get(agentId: string): Promise<AgentMeta | undefined> {
@@ -132,9 +139,9 @@ class AgentsAPI extends EventTarget {
     return agent;
   }
 
+  /** @deprecated Use list({ includeArchived: true, role: 'archived' }) */
   async listArchived(): Promise<AgentMeta[]> {
-    const all = await this.store.list();
-    return all.filter(a => a.role === 'archived');
+    return this.list({ includeArchived: true, role: 'archived' });
   }
 
   async getClaudeMd(agentId: string): Promise<string> {
@@ -343,8 +350,11 @@ class HooksAPI extends EventTarget {
     return this.engine;
   }
 
-  async list(agentId?: string): Promise<Hook[]> {
-    return this.store.list(agentId);
+  async list(filter?: { agentId?: string; enabled?: boolean; triggerType?: string }): Promise<Hook[]> {
+    let hooks = await this.store.list(filter?.agentId);
+    if (filter?.enabled !== undefined) hooks = hooks.filter(h => h.enabled === filter.enabled);
+    if (filter?.triggerType) hooks = hooks.filter(h => h.trigger.type === filter.triggerType);
+    return hooks;
   }
 
   async get(hookId: string): Promise<Hook | undefined> {
@@ -438,8 +448,8 @@ class ArtifactsAPI extends EventTarget {
     return this.engine;
   }
 
-  async list(agentId?: string): Promise<ArtifactMeta[]> {
-    const result = await this.requireEngine().send({ type: 'listArtifacts', agentId });
+  async list(filter?: { agentId?: string }): Promise<ArtifactMeta[]> {
+    const result = await this.requireEngine().send({ type: 'listArtifacts', agentId: filter?.agentId });
     return result as unknown as ArtifactMeta[];
   }
 
@@ -544,8 +554,8 @@ class TasksAPI extends EventTarget {
     return this.engine;
   }
 
-  async list(agentId?: string): Promise<Task[]> {
-    const result = await this.requireEngine().send({ type: 'listTasks', agentId });
+  async list(filter?: { agentId?: string; status?: string }): Promise<Task[]> {
+    const result = await this.requireEngine().send({ type: 'listTasks', agentId: filter?.agentId });
     return result as unknown as Task[];
   }
 
