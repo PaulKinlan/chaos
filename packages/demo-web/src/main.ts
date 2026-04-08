@@ -30,7 +30,7 @@ const sdk = new ChaosSDK({
   conversations: new InMemoryConversationStore(),
   hooks: new InMemoryHookStore(),
   usage: new InMemoryUsageStore(),
-  agents: agentStore,
+  agentStore: agentStore,
   // No agentLoops yet — agents are registered dynamically when created
 });
 
@@ -232,7 +232,7 @@ async function sendMessage(): Promise<void> {
   // Stream agentic chat via agent-loop
   let fullReply = '';
   try {
-    const stream = sdk.chat.sendAgentic(selectedAgentId, text, {
+    const stream = sdk.chat.sendMessage(selectedAgentId, text, {
       maxIterations: 3,
       source: 'chat',
     });

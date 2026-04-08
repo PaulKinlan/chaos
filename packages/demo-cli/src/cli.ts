@@ -35,7 +35,7 @@ function createSDK(): { sdk: ChaosSDK; agentStore: InMemoryAgentStore } {
     conversations,
     hooks,
     usage,
-    agents: agentStore,
+    agentStore: agentStore,
     // No agentLoops here — agents are registered when created
   });
 
@@ -94,7 +94,7 @@ async function agentsDelete(sdk: ChaosSDK, agentStore: InMemoryAgentStore, id: s
 
 async function chat(sdk: ChaosSDK, agentId: string, message: string): Promise<void> {
   let step = 0;
-  for await (const update of sdk.chat.sendAgentic(agentId, message)) {
+  for await (const update of sdk.chat.sendMessage(agentId, message)) {
     switch (update.type) {
       case 'thinking':
         step++;

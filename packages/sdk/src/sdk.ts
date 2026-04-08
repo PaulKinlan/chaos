@@ -44,10 +44,10 @@ export interface ChaosSDKOptions {
   conversations: ConversationStore;
   hooks: HookStore;
   usage: UsageStore;
-  agents: AgentStore;
+  agentStore: AgentStore;
   browser?: BrowserCapabilities;
-  /** Pre-configured agent loops — each agent has its own model, tools, hooks, permissions */
-  agentLoops?: AgentLoop[];
+  /** Pre-configured agents — each has its own model, tools, hooks, permissions */
+  agents?: AgentLoop[];
 }
 
 // ── Agents API ──
@@ -137,34 +137,34 @@ class AgentsAPI extends EventTarget {
 
 class ChatAPI extends EventTarget {
   /** Registered agent loops by ID */
-  private agentLoops = new Map<string, AgentLoop>();
+  private agents = new Map<string, AgentLoop>();
 
   constructor(
     private engine: EngineConnection | undefined,
     private conversationStore: ConversationStore,
-    agentLoops?: AgentLoop[],
+    agents?: AgentLoop[],
   ) {
     super();
-    if (agentLoops) {
-      for (const agent of agentLoops) {
-        this.agentLoops.set(agent.id, agent);
+    if (agents) {
+      for (const agent of agents) {
+        this.agents.set(agent.id, agent);
       }
     }
   }
 
   /** Register an agent loop (can be added after construction) */
   registerAgent(agent: AgentLoop): void {
-    this.agentLoops.set(agent.id, agent);
+    this.agents.set(agent.id, agent);
   }
 
   /** Unregister an agent loop */
   unregisterAgent(agentId: string): void {
-    this.agentLoops.delete(agentId);
+    this.agents.delete(agentId);
   }
 
   /** Get a registered agent loop */
   getAgent(agentId: string): AgentLoop | undefined {
-    return this.agentLoops.get(agentId);
+    return this.agents.get(agentId);
   }
 
   private requireEngine(): EngineConnection {
@@ -193,18 +193,18 @@ class ChatAPI extends EventTarget {
     }
   }
 
-  async *sendAgentic(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
-    const agent = this.agentLoops.get(agentId);
+  async *sendMessage(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
+    const agent = this.agents.get(agentId);
     if (agent) {
-      yield* this.sendAgenticViaAgent(agent, message, options);
+      yield* this.sendMessageViaAgent(agent, message, options);
     } else if (this.engine) {
-      yield* this.sendAgenticViaEngine(agentId, message, options);
+      yield* this.sendMessageViaEngine(agentId, message, options);
     } else {
-      throw new Error(`ChatAPI: no agent loop registered for "${agentId}" and no engine configured`);
+      throw new Error(`ChatAPI: no agent registered for "${agentId}" and no engine configured`);
     }
   }
 
-  private async *sendAgenticViaAgent(agent: AgentLoop, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
+  private async *sendMessageViaAgent(agent: AgentLoop, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
     const agentId = agent.id;
     this.dispatchEvent(new CustomEvent('start', { detail: { agentId, columnId: options?.columnId } }));
 
@@ -229,7 +229,7 @@ class ChatAPI extends EventTarget {
     }
   }
 
-  private async *sendAgenticViaEngine(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
+  private async *sendMessageViaEngine(agentId: string, message: string, options?: AgenticOptions): AsyncIterable<ProgressUpdate> {
     this.dispatchEvent(new CustomEvent('start', { detail: { agentId, columnId: options?.columnId } }));
     const stream = this.requireEngine().stream({
       type: 'agenticChat',
@@ -251,7 +251,7 @@ class ChatAPI extends EventTarget {
   }
 
   async stop(agentId: string, _columnId?: string): Promise<void> {
-    const agent = this.agentLoops.get(agentId);
+    const agent = this.agents.get(agentId);
     if (agent) {
       agent.abort();
       this.dispatchEvent(new CustomEvent('aborted', { detail: { agentId, columnId: _columnId } }));
@@ -676,8 +676,8 @@ export class ChaosSDK {
   readonly settings: SettingsAPI;
 
   constructor(options: ChaosSDKOptions) {
-    this.agents = new AgentsAPI(options.engine, options.agents, options.memory);
-    this.chat = new ChatAPI(options.engine, options.conversations, options.agentLoops);
+    this.agents = new AgentsAPI(options.engine, options.agentStore, options.memory);
+    this.chat = new ChatAPI(options.engine, options.conversations, options.agents);
     this.hooks = new HooksAPI(options.engine, options.hooks);
     this.channels = new ChannelsAPI(options.engine, options.relay);
     this.artifacts = new ArtifactsAPI(options.engine);

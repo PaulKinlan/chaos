@@ -44,14 +44,14 @@ describe('SDK + agent-loop integration', () => {
       conversations: new InMemoryConversationStore(),
       hooks: new InMemoryHookStore(),
       usage: new InMemoryUsageStore(),
-      agents: new InMemoryAgentStore(),
-      agentLoops: [assistant, researcher],
+      agentStore: new InMemoryAgentStore(),
+      agents: [assistant, researcher],
     });
   });
 
-  it('sendAgentic routes to the correct agent', async () => {
+  it('sendMessage routes to the correct agent', async () => {
     const events: ProgressUpdate[] = [];
-    for await (const update of sdk.chat.sendAgentic('assistant', 'Hello')) {
+    for await (const update of sdk.chat.sendMessage('assistant', 'Hello')) {
       events.push(update);
     }
     const doneEvent = events.find((e) => e.type === 'done');
@@ -60,12 +60,12 @@ describe('SDK + agent-loop integration', () => {
 
   it('different agents give different responses', async () => {
     const assistantEvents: ProgressUpdate[] = [];
-    for await (const update of sdk.chat.sendAgentic('assistant', 'Hi')) {
+    for await (const update of sdk.chat.sendMessage('assistant', 'Hi')) {
       assistantEvents.push(update);
     }
 
     const researcherEvents: ProgressUpdate[] = [];
-    for await (const update of sdk.chat.sendAgentic('researcher', 'Hi')) {
+    for await (const update of sdk.chat.sendMessage('researcher', 'Hi')) {
       researcherEvents.push(update);
     }
 
@@ -80,7 +80,7 @@ describe('SDK + agent-loop integration', () => {
     sdk.chat.addEventListener('start', startFn as EventListener);
     sdk.chat.addEventListener('done', doneFn as EventListener);
 
-    for await (const _update of sdk.chat.sendAgentic('assistant', 'Hello')) {
+    for await (const _update of sdk.chat.sendMessage('assistant', 'Hello')) {
       // consume stream
     }
 
@@ -89,10 +89,10 @@ describe('SDK + agent-loop integration', () => {
   });
 
   it('throws when agent not registered and no engine', async () => {
-    const stream = sdk.chat.sendAgentic('unknown-agent', 'Hello');
+    const stream = sdk.chat.sendMessage('unknown-agent', 'Hello');
     await expect(async () => {
       for await (const _update of stream) { /* consume */ }
-    }).rejects.toThrow('no agent loop registered');
+    }).rejects.toThrow('no agent registered');
   });
 
   it('registerAgent allows adding agents after construction', async () => {
@@ -105,7 +105,7 @@ describe('SDK + agent-loop integration', () => {
     sdk.chat.registerAgent(newAgent);
 
     const events: ProgressUpdate[] = [];
-    for await (const update of sdk.chat.sendAgentic('writer', 'Write something')) {
+    for await (const update of sdk.chat.sendMessage('writer', 'Write something')) {
       events.push(update);
     }
     expect(events.find((e) => e.type === 'done')?.content).toBe('Written content.');
