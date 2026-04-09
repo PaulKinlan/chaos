@@ -100,3 +100,4 @@ The extension requests minimal permissions by default (`activeTab`, `storage`, `
 ## License
 
 Apache 2.0
+
