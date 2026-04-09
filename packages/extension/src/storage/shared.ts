@@ -234,6 +234,32 @@ export async function listArtifacts(opts?: ListArtifactsOpts): Promise<ArtifactM
   return artifacts;
 }
 
+/**
+ * Update metadata fields on an existing artifact (e.g. pin/unpin, change title).
+ * Rewrites the JSONL file with the updated entry.
+ */
+export async function updateArtifactMeta(
+  artifactPath: string,
+  updates: Partial<Pick<ArtifactMeta, 'pinned' | 'title' | 'tags' | 'type'>>,
+): Promise<void> {
+  let lines: string[];
+  try {
+    lines = await opfs.readLines(ARTIFACTS_PATH);
+  } catch {
+    return;
+  }
+
+  const updated = lines.map((line) => {
+    const meta = JSON.parse(line) as ArtifactMeta;
+    if (meta.path === artifactPath) {
+      return JSON.stringify({ ...meta, ...updates });
+    }
+    return line;
+  });
+
+  await opfs.writeFile(ARTIFACTS_PATH, updated.map((l) => l + '\n').join(''));
+}
+
 // ── Deletions ──
 
 /**

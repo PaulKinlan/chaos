@@ -85,6 +85,10 @@ export interface ArtifactMeta {
   path: string;
   description: string;
   timestamp: string;  // ISO 8601
+  type?: 'text' | 'html' | 'markdown' | 'json' | 'csv' | 'webpage' | 'image';
+  title?: string;
+  pinned?: boolean;
+  tags?: string[];
 }
 
 // ── IndexedDB store types ──

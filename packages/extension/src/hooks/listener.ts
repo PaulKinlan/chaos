@@ -37,7 +37,7 @@ export function setHookUiPortGetter(getter: () => chrome.runtime.Port | null): v
 
 async function executeHook(hook: Hook, contextMessage: string): Promise<void> {
   try {
-    const fullPrompt = `[Hook triggered: ${hook.description}]\n\nEvent context: ${contextMessage}\n\nInstructions: ${hook.prompt}`;
+    const fullPrompt = `[Hook triggered: ${hook.description}]\n\nEvent context: ${contextMessage}\n\nInstructions: ${hook.prompt}\n\nIf your work produces a result the user would want to see, publish it as an artifact using artifact_publish.`;
     const port = uiPortGetter?.() ?? null;
 
     // Notify UI to open a column for this hook

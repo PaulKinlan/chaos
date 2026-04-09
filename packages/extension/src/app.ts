@@ -434,6 +434,16 @@ function updateViewVisibility(): void {
   const viewPanels = document.querySelectorAll<HTMLDivElement>('.view-panel:not(#view-no-agent):not(#view-global-settings)');
 
   if (!activeAgentId) {
+    if (activeView === 'dashboard') {
+      // Dashboard is viewable without an agent selected
+      noAgentPanel.classList.remove('active');
+      viewPanels.forEach((p) => {
+        const viewId = p.id.replace('view-', '');
+        p.classList.toggle('active', viewId === 'dashboard');
+      });
+      document.getElementById('view-global-settings')!.classList.remove('active');
+      return;
+    }
     // Show no-agent state, hide everything else
     noAgentPanel.classList.add('active');
     viewPanels.forEach((p) => p.classList.remove('active'));
@@ -479,7 +489,7 @@ sidebarItems.forEach((btn) => {
   btn.addEventListener('click', () => {
     const view = btn.dataset.view!;
 
-    if (!activeAgentId && view !== 'global-settings') {
+    if (!activeAgentId && view !== 'global-settings' && view !== 'dashboard') {
       return; // Don't switch views if no agent selected
     }
 
@@ -630,6 +640,9 @@ document.addEventListener('click', (e) => {
 
 function loadCurrentViewData(): void {
   switch (activeView) {
+    case 'dashboard':
+      loadDashboard();
+      break;
     case 'chat':
       // Chat is always connected via port
       break;
@@ -1433,6 +1446,19 @@ function onAgentListReceived(agentList: AgentMeta[]): void {
   // If no active agent but agents exist, select the first one
   if (!activeAgentId && agents.length > 0) {
     activeAgentId = agents[0].id;
+  }
+
+  // On first load with no explicit hash view, check if dashboard should be default
+  if (hasRestoredFromHash && activeView === 'chat' && !window.location.hash.includes('view=')) {
+    sendMsg<{ artifacts: ArtifactMeta[] }>({ type: 'getArtifacts' }).then((dashCheck) => {
+      const hasPinned = dashCheck.artifacts.some(a => a.pinned);
+      if (hasPinned) {
+        activeView = 'dashboard';
+        sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === 'dashboard'));
+        updateViewVisibility();
+        loadCurrentViewData();
+      }
+    }).catch(() => { /* stay on chat */ });
   }
 
   // Re-render sidebar agent list
@@ -3266,6 +3292,250 @@ document.getElementById('messages-search')!.addEventListener('input', renderMess
 document.getElementById('messages-filter-agent')!.addEventListener('change', renderMessages);
 
 // ══════════════════════════════════════════
+// ── Dashboard View
+// ══════════════════════════════════════════
+
+interface DashboardSuggestion {
+  id: string;
+  title: string;
+  description: string;
+  action: {
+    type: 'chat' | 'dismiss';
+    prompt?: string;
+  };
+  priority: 'high' | 'medium' | 'low';
+  createdAt: string;
+  dismissedAt?: string;
+}
+
+async function loadDashboard(): Promise<void> {
+  showPanelLoading('view-dashboard');
+  try {
+    // Load artifacts
+    const artifactsResult = await sendMsg<{ artifacts: ArtifactMeta[] }>({ type: 'getArtifacts' });
+    const allArtifacts = artifactsResult.artifacts;
+
+    // Pinned artifacts
+    const pinned = allArtifacts.filter(a => a.pinned);
+
+    // Recent artifacts (last 10, excluding pinned)
+    const recent = allArtifacts
+      .filter(a => !a.pinned)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 10);
+
+    // Load today's usage
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    let usage: { totalCost: number; totalInputTokens: number; totalOutputTokens: number; totalRequests: number } | null = null;
+    try {
+      const usageResult = await sendMsg<{ summary: { totalCost: number; totalInputTokens: number; totalOutputTokens: number; totalRequests: number } }>({
+        type: 'getUsageSummary',
+        since: todayStart.toISOString(),
+      });
+      usage = usageResult.summary;
+    } catch {
+      // Usage unavailable
+    }
+
+    // Load suggestions from master agent's suggestions artifact
+    let suggestions: DashboardSuggestion[] = [];
+    try {
+      const suggestionsArtifact = allArtifacts.find(a => a.path.includes('suggestions/latest.json'));
+      if (suggestionsArtifact) {
+        const result = await sendMsg<{ content: string }>({
+          type: 'readArtifactContent',
+          path: suggestionsArtifact.path,
+        });
+        const parsed = JSON.parse(result.content);
+        suggestions = (Array.isArray(parsed) ? parsed : []).filter((s: DashboardSuggestion) => !s.dismissedAt);
+      }
+    } catch {
+      // No suggestions available
+    }
+
+    // Load hooks info
+    let hooksCount = 0;
+    try {
+      const hooksResult = await sendMsg<{ hooks: { triggerCount: number }[] }>({ type: 'getHooks' });
+      hooksCount = hooksResult.hooks.reduce((sum, h) => sum + (h.triggerCount || 0), 0);
+    } catch {
+      // Hooks unavailable
+    }
+
+    renderDashboard(pinned, recent, suggestions, usage, hooksCount);
+
+    // Check if dashboard is empty
+    const dashboardEmpty = document.getElementById('dashboard-empty')!;
+    if (pinned.length === 0 && recent.length === 0 && suggestions.length === 0 && !usage?.totalRequests) {
+      dashboardEmpty.style.display = '';
+    } else {
+      dashboardEmpty.style.display = 'none';
+    }
+  } catch (err) {
+    showPanelError('view-dashboard', `Failed to load dashboard: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    hidePanelLoading('view-dashboard');
+  }
+}
+
+function renderDashboard(
+  pinned: ArtifactMeta[],
+  recent: ArtifactMeta[],
+  suggestions: DashboardSuggestion[],
+  usage: { totalCost: number; totalInputTokens: number; totalOutputTokens: number; totalRequests: number } | null,
+  hooksCount: number,
+): void {
+  const pinSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>';
+  const artifactSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>';
+
+  // Pinned artifacts section
+  const pinnedSection = document.getElementById('dashboard-pinned-section')!;
+  const pinnedCards = document.getElementById('dashboard-pinned-cards')!;
+  if (pinned.length > 0) {
+    pinnedSection.style.display = '';
+    pinnedCards.innerHTML = pinned.map((a, i) => {
+      const displayName = a.title || a.path.split('/').pop() || a.path;
+      const typeLabel = artifactTypeLabel(a);
+      return `
+        <div class="dashboard-card" data-pinned-index="${i}" style="cursor:pointer;">
+          <div style="display:flex;align-items:center;gap:var(--sp-1);margin-bottom:var(--sp-1);">
+            <span class="pin-indicator">${pinSvg}</span>
+            <span class="badge ${artifactTypeBadgeClass(typeLabel)}" style="font-size:10px;">${escapeHtml(typeLabel)}</span>
+          </div>
+          <div class="dashboard-card-title">${escapeHtml(displayName)}</div>
+          <div class="dashboard-card-desc">${escapeHtml(a.description)}</div>
+          <div class="dashboard-card-meta">${escapeHtml(agentName(a.agentId))} &middot; ${formatTime(a.timestamp)}</div>
+          <div class="dashboard-card-actions">
+            <button class="btn btn-ghost btn-xs dashboard-view-artifact-btn" data-pinned-index="${i}">View</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    pinnedCards.querySelectorAll<HTMLElement>('.dashboard-view-artifact-btn, .dashboard-card').forEach(el => {
+      el.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const idx = parseInt((e.currentTarget as HTMLElement).dataset.pinnedIndex || (e.currentTarget as HTMLElement).closest('.dashboard-card')?.getAttribute('data-pinned-index') || '0', 10);
+        await showArtifactDetail(pinned[idx]);
+      });
+    });
+  } else {
+    pinnedSection.style.display = 'none';
+  }
+
+  // Suggestions section
+  const suggestionsSection = document.getElementById('dashboard-suggestions-section')!;
+  const suggestionsCards = document.getElementById('dashboard-suggestions-cards')!;
+  if (suggestions.length > 0) {
+    suggestionsSection.style.display = '';
+    const lightbulbSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>';
+    suggestionsCards.innerHTML = suggestions.map((s, i) => `
+      <div class="dashboard-card">
+        <div style="display:flex;align-items:center;gap:var(--sp-1);margin-bottom:var(--sp-1);color:var(--text-muted);">
+          ${lightbulbSvg}
+          <span class="badge ${s.priority === 'high' ? 'badge-red' : s.priority === 'medium' ? 'badge-amber' : 'badge-gray'}" style="font-size:10px;">${escapeHtml(s.priority)}</span>
+        </div>
+        <div class="dashboard-card-title">${escapeHtml(s.title)}</div>
+        <div class="dashboard-card-desc">${escapeHtml(s.description)}</div>
+        <div class="dashboard-card-actions">
+          <button class="btn btn-primary btn-xs dashboard-do-suggestion-btn" data-suggestion-index="${i}">Do it</button>
+          <button class="btn btn-ghost btn-xs dashboard-dismiss-suggestion-btn" data-suggestion-index="${i}">Dismiss</button>
+        </div>
+      </div>
+    `).join('');
+
+    suggestionsCards.querySelectorAll<HTMLButtonElement>('.dashboard-do-suggestion-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.suggestionIndex!, 10);
+        const suggestion = suggestions[idx];
+        if (suggestion.action?.prompt) {
+          // Switch to chat and send the prompt
+          activeView = 'chat';
+          sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === 'chat'));
+          updateViewVisibility();
+          // Inject prompt into the chat input
+          const chatInput = document.querySelector('.chat-input textarea') as HTMLTextAreaElement | null;
+          if (chatInput) {
+            chatInput.value = suggestion.action.prompt;
+            chatInput.dispatchEvent(new Event('input'));
+            chatInput.focus();
+          }
+        }
+      });
+    });
+
+    suggestionsCards.querySelectorAll<HTMLButtonElement>('.dashboard-dismiss-suggestion-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.suggestionIndex!, 10);
+        suggestions[idx].dismissedAt = new Date().toISOString();
+        // Remove the card from DOM
+        btn.closest('.dashboard-card')?.remove();
+        if (suggestionsCards.children.length === 0) {
+          suggestionsSection.style.display = 'none';
+        }
+      });
+    });
+  } else {
+    suggestionsSection.style.display = 'none';
+  }
+
+  // Recent artifacts section
+  const recentSection = document.getElementById('dashboard-recent-section')!;
+  const recentList = document.getElementById('dashboard-recent-list')!;
+  if (recent.length > 0) {
+    recentSection.style.display = '';
+    recentList.innerHTML = recent.map((a, i) => {
+      const displayName = a.title || a.path.split('/').pop() || a.path;
+      const typeLabel = artifactTypeLabel(a);
+      return `
+        <div class="dashboard-recent-item" data-recent-index="${i}">
+          <span style="color:var(--text-muted);display:inline-flex;">${artifactSvg}</span>
+          <span class="badge ${artifactTypeBadgeClass(typeLabel)}" style="font-size:10px;">${escapeHtml(typeLabel)}</span>
+          <span class="dashboard-recent-item-name">${escapeHtml(displayName)}</span>
+          <span class="dashboard-recent-item-time">${formatTime(a.timestamp)}</span>
+        </div>`;
+    }).join('');
+
+    recentList.querySelectorAll<HTMLElement>('.dashboard-recent-item').forEach(item => {
+      item.addEventListener('click', async () => {
+        const idx = parseInt(item.dataset.recentIndex!, 10);
+        await showArtifactDetail(recent[idx]);
+      });
+    });
+  } else {
+    recentSection.style.display = 'none';
+  }
+
+  // Activity summary
+  const activitySection = document.getElementById('dashboard-activity-section')!;
+  const activityStats = document.getElementById('dashboard-activity-stats')!;
+  activitySection.style.display = '';
+
+  const totalTokens = usage ? usage.totalInputTokens + usage.totalOutputTokens : 0;
+  const costStr = usage ? `$${usage.totalCost.toFixed(4)}` : '$0.00';
+  const requestsStr = usage?.totalRequests?.toString() || '0';
+
+  activityStats.innerHTML = `
+    <div class="dashboard-activity-stat">
+      <div class="dashboard-activity-value">${requestsStr}</div>
+      <div class="dashboard-activity-label">Requests Today</div>
+    </div>
+    <div class="dashboard-activity-stat">
+      <div class="dashboard-activity-value">${totalTokens.toLocaleString()}</div>
+      <div class="dashboard-activity-label">Tokens Used</div>
+    </div>
+    <div class="dashboard-activity-stat">
+      <div class="dashboard-activity-value">${costStr}</div>
+      <div class="dashboard-activity-label">Cost Today</div>
+    </div>
+    <div class="dashboard-activity-stat">
+      <div class="dashboard-activity-value">${hooksCount}</div>
+      <div class="dashboard-activity-label">Hooks Fired</div>
+    </div>
+  `;
+}
+
+// ══════════════════════════════════════════
 // ── Artifacts View
 // ══════════════════════════════════════════
 
@@ -3282,6 +3552,31 @@ async function loadArtifacts(): Promise<void> {
   }
 }
 
+function artifactTypeBadgeClass(type?: string): string {
+  switch (type) {
+    case 'html': case 'webpage': return 'badge-blue';
+    case 'markdown': return 'badge-purple';
+    case 'json': return 'badge-amber';
+    case 'csv': return 'badge-green';
+    case 'image': return 'badge-red';
+    default: return 'badge-gray';
+  }
+}
+
+function artifactTypeLabel(a: ArtifactMeta): string {
+  if (a.type) return a.type;
+  // Infer from path extension
+  const ext = a.path.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'html': case 'htm': return 'html';
+    case 'md': case 'markdown': return 'markdown';
+    case 'json': return 'json';
+    case 'csv': return 'csv';
+    case 'png': case 'jpg': case 'jpeg': case 'gif': case 'svg': case 'webp': return 'image';
+    default: return 'text';
+  }
+}
+
 function renderArtifacts(): void {
   const grid = document.getElementById('artifact-grid')!;
   const empty = document.getElementById('artifacts-empty')!;
@@ -3289,25 +3584,58 @@ function renderArtifacts(): void {
   // Populate and read agent filter
   const filterAgentId = populateAgentFilter('artifacts-filter-agent');
 
+  // Read search query
+  const searchInput = document.getElementById('artifacts-search') as HTMLInputElement | null;
+  const searchQuery = searchInput?.value?.toLowerCase().trim() || '';
+
   // Filter by agent (show all by default)
-  const filtered = filterAgentId
+  let filtered = filterAgentId
     ? artifacts.filter((a) => a.agentId === filterAgentId)
-    : artifacts;
+    : [...artifacts];
+
+  // Filter by search query
+  if (searchQuery) {
+    filtered = filtered.filter((a) => {
+      const name = (a.title || a.path.split('/').pop() || a.path).toLowerCase();
+      const desc = a.description.toLowerCase();
+      const tags = (a.tags || []).join(' ').toLowerCase();
+      return name.includes(searchQuery) || desc.includes(searchQuery) || tags.includes(searchQuery);
+    });
+  }
+
+  // Sort: pinned first, then by timestamp descending
+  filtered.sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
 
   if (filtered.length === 0) {
     grid.innerHTML = '';
-    empty.textContent = 'No shared artifacts yet. Artifacts are files that an agent publishes to the shared space for other agents to read. Ask an agent to "publish" or "share" a file, and it will appear here.';
+    empty.textContent = searchQuery
+      ? 'No artifacts match your search.'
+      : 'No shared artifacts yet. Artifacts are files that an agent publishes to the shared space for other agents to read. Ask an agent to "publish" or "share" a file, and it will appear here.';
     empty.style.display = '';
     return;
   }
 
   empty.style.display = 'none';
 
+  const pinSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>';
+
   grid.innerHTML = filtered
     .map(
-      (a, i) => `
+      (a, i) => {
+        const typeLabel = artifactTypeLabel(a);
+        const badgeClass = artifactTypeBadgeClass(typeLabel);
+        const displayName = a.title || a.path.split('/').pop() || a.path;
+        return `
     <div class="artifact-card" data-artifact-index="${i}">
-      <div class="artifact-card-name">${escapeHtml(a.path.split('/').pop() || a.path)}</div>
+      <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-1);">
+        ${a.pinned ? `<span class="pin-indicator" title="Pinned">${pinSvg}</span>` : ''}
+        <span class="badge ${badgeClass}" style="font-size:10px;">${escapeHtml(typeLabel)}</span>
+      </div>
+      <div class="artifact-card-name">${escapeHtml(displayName)}</div>
       <div class="artifact-card-desc">${escapeHtml(a.description)}</div>
       <div class="artifact-card-meta">
         <span class="artifact-agent-label">${escapeHtml(agentName(a.agentId))}</span>
@@ -3315,7 +3643,8 @@ function renderArtifacts(): void {
       </div>
       <button class="btn btn-ghost btn-xs delete-artifact-btn" data-artifact-path="${escapeHtml(a.path)}" title="Delete artifact" style="position:absolute;top:6px;right:6px;color:var(--text-muted);">&#x2715;</button>
     </div>
-  `,
+  `;
+      },
     )
     .join('');
 
@@ -3352,6 +3681,7 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
   }
 
   const filename = artifact.path.split('/').pop() || artifact.path;
+  const displayTitle = artifact.title || filename;
 
   let fileContent = '(Unable to read file content)';
   try {
@@ -3364,11 +3694,28 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
     // Leave default message
   }
 
-  // Detect content type from file extension
-  const contentType = detectContentType(artifact.path);
+  // Detect content type from file extension or artifact type
+  const contentType = artifact.type && artifact.type !== 'webpage' && artifact.type !== 'image'
+    ? artifact.type as 'html' | 'markdown' | 'text' | 'json' | 'csv'
+    : artifact.type === 'webpage' ? 'html' : detectContentType(artifact.path);
+
+  const pinSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>';
+  const pinnedFillSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>';
+  const downloadSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
+  const typeLabel = artifactTypeLabel(artifact);
 
   content.innerHTML = `
-    <h2>${escapeHtml(filename)}</h2>
+    <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3);">
+      <h2 style="flex:1;margin:0;">${escapeHtml(displayTitle)}</h2>
+      <span class="badge ${artifactTypeBadgeClass(typeLabel)}" style="font-size:10px;">${escapeHtml(typeLabel)}</span>
+      <button class="btn btn-ghost btn-xs" id="artifact-pin-toggle" title="${artifact.pinned ? 'Unpin' : 'Pin'}" style="color:${artifact.pinned ? 'var(--accent)' : 'var(--text-muted)'};">
+        ${artifact.pinned ? pinnedFillSvg : pinSvg}
+      </button>
+      <button class="btn btn-ghost btn-xs" id="artifact-download-btn" title="Download">
+        ${downloadSvg}
+      </button>
+    </div>
     <div class="task-detail-field">
       <div class="task-detail-label">Description</div>
       <div class="task-detail-value">${escapeHtml(artifact.description)}</div>
@@ -3385,17 +3732,50 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
       <div class="task-detail-label">Created</div>
       <div class="task-detail-value">${formatTimeFull(artifact.timestamp)}</div>
     </div>
+    ${artifact.tags && artifact.tags.length > 0 ? `
+    <div class="task-detail-field">
+      <div class="task-detail-label">Tags</div>
+      <div class="task-detail-value">${artifact.tags.map(t => `<span class="badge badge-gray" style="margin-right:4px;">${escapeHtml(t)}</span>`).join('')}</div>
+    </div>
+    ` : ''}
     <div class="task-detail-field">
       <div class="task-detail-label">Content</div>
       <div class="secure-viewer-container" id="artifact-viewer-container"></div>
     </div>
   `;
 
+  // Pin/unpin toggle
+  document.getElementById('artifact-pin-toggle')!.addEventListener('click', async () => {
+    const newPinned = !artifact.pinned;
+    await sendMsg({ type: 'updateArtifactMeta', artifactPath: artifact.path, updates: { pinned: newPinned } });
+    artifact.pinned = newPinned;
+    // Update button appearance
+    const btn = document.getElementById('artifact-pin-toggle')!;
+    btn.innerHTML = newPinned ? pinnedFillSvg : pinSvg;
+    btn.style.color = newPinned ? 'var(--accent)' : 'var(--text-muted)';
+    btn.title = newPinned ? 'Unpin' : 'Pin';
+    // Refresh the artifacts list behind the modal
+    renderArtifacts();
+  });
+
+  // Download button
+  document.getElementById('artifact-download-btn')!.addEventListener('click', () => {
+    const blob = new Blob([fileContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
   // Create secure viewer in the container
   const viewerContainer = document.getElementById('artifact-viewer-container')!;
   activeSecureViewer = createSecureViewer(viewerContainer, fileContent, {
     type: contentType,
-    title: filename,
+    title: displayTitle,
     downloadFilename: filename,
   });
 
@@ -3403,6 +3783,7 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
 }
 
 document.getElementById('artifacts-filter-agent')!.addEventListener('change', renderArtifacts);
+document.getElementById('artifacts-search')!.addEventListener('input', renderArtifacts);
 
 document.getElementById('artifact-detail-close')!.addEventListener('click', () => {
   if (activeSecureViewer) { activeSecureViewer.destroy(); activeSecureViewer = null; }

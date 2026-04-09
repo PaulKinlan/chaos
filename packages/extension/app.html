@@ -1994,6 +1994,26 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .pin-indicator { color: var(--accent); display: inline-flex; align-items: center; }
+
+    /* ── Dashboard View ── */
+    .dashboard-section { margin-bottom: var(--sp-6); }
+    .dashboard-section-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); margin-bottom: var(--sp-3); text-transform: uppercase; letter-spacing: 0.5px; }
+    .dashboard-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--sp-3); }
+    .dashboard-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; padding: var(--sp-4); }
+    .dashboard-card-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); margin-bottom: var(--sp-1); }
+    .dashboard-card-desc { font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--sp-3); line-height: 1.5; }
+    .dashboard-card-actions { display: flex; gap: var(--sp-2); }
+    .dashboard-card-meta { font-size: 10px; color: var(--text-muted); margin-top: var(--sp-2); }
+    .dashboard-activity { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--sp-2); }
+    .dashboard-activity-stat { text-align: center; padding: var(--sp-3); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; }
+    .dashboard-activity-value { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+    .dashboard-activity-label { font-size: var(--text-xs); color: var(--text-muted); }
+    .dashboard-recent-item { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 6px; cursor: pointer; transition: background var(--duration-fast) var(--ease-out); }
+    .dashboard-recent-item:hover { background: var(--bg-surface); }
+    .dashboard-recent-item-name { font-size: var(--text-sm); color: var(--text-primary); flex: 1; }
+    .dashboard-recent-item-time { font-size: var(--text-xs); color: var(--text-muted); }
+
     /* ── Files View ── */
     .files-container {
       display: flex;
@@ -3743,6 +3763,10 @@
     <!-- ══════ Sidebar (view navigation) ══════ -->
     <nav class="sidebar" id="sidebar">
       <div class="sidebar-nav" id="sidebar-nav">
+        <button class="sidebar-item" data-view="dashboard" title="Dashboard">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span class="label">Dashboard</span>
+        </button>
         <button class="sidebar-item active" data-view="chat" title="Chat">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span class="label">Chat</span>
@@ -3801,6 +3825,43 @@
             </div>
             <h3>No agents yet</h3>
             <p>Click the + button above to create your first agent.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════ Dashboard View ════════ -->
+      <div class="view-panel" id="view-dashboard">
+        <div class="view-padded">
+          <div class="section-header">
+            <h2>Dashboard</h2>
+          </div>
+
+          <div class="dashboard-section" id="dashboard-pinned-section" style="display:none;">
+            <div class="dashboard-section-title">Pinned Artifacts</div>
+            <div class="dashboard-cards" id="dashboard-pinned-cards"></div>
+          </div>
+
+          <div class="dashboard-section" id="dashboard-suggestions-section" style="display:none;">
+            <div class="dashboard-section-title">Suggestions</div>
+            <div class="dashboard-cards" id="dashboard-suggestions-cards"></div>
+          </div>
+
+          <div class="dashboard-section" id="dashboard-recent-section" style="display:none;">
+            <div class="dashboard-section-title">Recent Artifacts</div>
+            <div id="dashboard-recent-list"></div>
+          </div>
+
+          <div class="dashboard-section" id="dashboard-activity-section">
+            <div class="dashboard-section-title">Activity Summary</div>
+            <div class="dashboard-activity" id="dashboard-activity-stats"></div>
+          </div>
+
+          <div class="empty-state" id="dashboard-empty" style="display:none;">
+            <div class="empty-state-icon">
+              <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </div>
+            <h3>Your dashboard is empty</h3>
+            <p>Pin artifacts and let agents run scheduled tasks to populate your dashboard with summaries, suggestions, and activity stats.</p>
           </div>
         </div>
       </div>
@@ -3892,6 +3953,7 @@
             <select id="artifacts-filter-agent">
               <option value="">All agents</option>
             </select>
+            <input type="text" id="artifacts-search" placeholder="Search artifacts...">
           </div>
           <div class="artifact-grid" id="artifact-grid"></div>
           <div class="empty-state" id="artifacts-empty" style="display:none;">
