@@ -3390,7 +3390,9 @@ async function loadDashboard(): Promise<void> {
         suggestions = (Array.isArray(parsed) ? parsed : []).filter((s: DashboardSuggestion) => !s.dismissedAt);
         console.log(`[dashboard] Loaded ${suggestions.length} suggestions`);
       } else {
-        console.log('[dashboard] No suggestions file found');
+        console.log('[dashboard] No suggestions file found — triggering generation');
+        // Auto-trigger suggestion generation on first load
+        triggerSuggestionGeneration();
       }
     } catch (err) {
       console.warn('[dashboard] Failed to load suggestions:', err);
@@ -3545,7 +3547,13 @@ function renderDashboard(
     });
   } else {
     suggestionsSection.style.display = '';
-    suggestionsCards.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-xs);padding:var(--sp-3);border:1px dashed var(--border-subtle);border-radius:6px;text-align:center;">No suggestions yet. Your agent will generate suggestions during its daily review.</div>`;
+    if (!suggestionsGenerating) {
+      suggestionsCards.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-xs);padding:var(--sp-3);border:1px dashed var(--border-subtle);border-radius:6px;text-align:center;">
+        No suggestions yet.
+        <button class="btn btn-sm btn-primary" id="dashboard-generate-suggestions" style="margin-top:var(--sp-2);display:block;margin-left:auto;margin-right:auto;">Generate now</button>
+      </div>`;
+      document.getElementById('dashboard-generate-suggestions')?.addEventListener('click', () => triggerSuggestionGeneration());
+    }
   }
 
   // Recent artifacts section
@@ -3617,6 +3625,42 @@ function renderDashboard(
 }
 
 // ══════════════════════════════════════════
+let suggestionsGenerating = false;
+
+async function triggerSuggestionGeneration(): Promise<void> {
+  if (suggestionsGenerating) return;
+  const masterAgent = agents.find(a => a.master);
+  if (!masterAgent) return;
+
+  suggestionsGenerating = true;
+  console.log('[dashboard] Triggering suggestion generation...');
+
+  // Update the suggestions section to show generating state
+  const suggestionsCards = document.getElementById('dashboard-suggestions-cards');
+  if (suggestionsCards) {
+    suggestionsCards.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-xs);padding:var(--sp-3);border:1px dashed var(--border-subtle);border-radius:6px;text-align:center;">
+      <div class="spinner" style="width:16px;height:16px;margin:0 auto var(--sp-2);"></div>
+      Generating suggestions based on your activity...
+    </div>`;
+  }
+
+  try {
+    sendPortMessage({
+      type: 'agenticChat',
+      agentId: masterAgent.id,
+      message: 'Quick review: look at my recent activity (activity-log.jsonl, memories/, TODO.md) and publish a JSON artifact at suggestions/latest.json containing 2-4 actionable suggestions. Each suggestion should have: id (unique string), title (short), description (1-2 sentences), action (object with type: "chat" and prompt: string the user can click to start), priority ("high"/"medium"/"low"), createdAt (ISO date). Focus on things I could do RIGHT NOW based on what you see. Do NOT write a summary — just the suggestions JSON file via artifact_publish.',
+    });
+
+    // Wait a bit then refresh to pick up the new suggestions
+    setTimeout(() => {
+      suggestionsGenerating = false;
+      loadDashboard();
+    }, 15000);
+  } catch {
+    suggestionsGenerating = false;
+  }
+}
+
 // Dashboard refresh button
 document.getElementById('dashboard-refresh-btn')?.addEventListener('click', () => {
   const btn = document.getElementById('dashboard-refresh-btn') as HTMLButtonElement;
