@@ -3354,16 +3354,16 @@ async function loadDashboard(): Promise<void> {
       // No suggestions available
     }
 
-    // Load hooks info
-    let hooksCount = 0;
+    // Load hooks info with names
+    let hookDetails: Array<{ description: string; triggerCount: number }> = [];
     try {
-      const hooksResult = await sendMsg<{ hooks: { triggerCount: number }[] }>({ type: 'getHooks' });
-      hooksCount = hooksResult.hooks.reduce((sum, h) => sum + (h.triggerCount || 0), 0);
+      const hooksResult = await sendMsg<{ hooks: Array<{ description: string; triggerCount: number }> }>({ type: 'getHooks' });
+      hookDetails = (hooksResult.hooks || []).filter(h => h.triggerCount > 0).sort((a, b) => b.triggerCount - a.triggerCount);
     } catch {
       // Hooks unavailable
     }
 
-    renderDashboard(pinned, recent, suggestions, usage, hooksCount);
+    renderDashboard(pinned, recent, suggestions, usage, hookDetails);
 
     // Check if dashboard is empty
     const dashboardEmpty = document.getElementById('dashboard-empty')!;
@@ -3384,16 +3384,21 @@ function renderDashboard(
   recent: ArtifactMeta[],
   suggestions: DashboardSuggestion[],
   usage: { totalCost: number; totalInputTokens: number; totalOutputTokens: number; totalRequests: number } | null,
-  hooksCount: number,
+  hookDetails: Array<{ description: string; triggerCount: number }>,
 ): void {
+  const hooksCount = hookDetails.reduce((sum, h) => sum + h.triggerCount, 0);
   const pinSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>';
   const artifactSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>';
 
-  // Pinned artifacts section
+  // Pinned artifacts section — label as "Today" if any are from today
   const pinnedSection = document.getElementById('dashboard-pinned-section')!;
   const pinnedCards = document.getElementById('dashboard-pinned-cards')!;
+  const pinnedTitle = pinnedSection.querySelector('.dashboard-section-title');
   if (pinned.length > 0) {
     pinnedSection.style.display = '';
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const hasToday = pinned.some(a => a.timestamp.startsWith(todayStr));
+    if (pinnedTitle) pinnedTitle.textContent = hasToday ? 'Today' : 'Pinned';
     pinnedCards.innerHTML = pinned.map((a, i) => {
       const displayName = a.title || a.path.split('/').pop() || a.path;
       const typeLabel = artifactTypeLabel(a);
@@ -3408,15 +3413,38 @@ function renderDashboard(
           <div class="dashboard-card-meta">${escapeHtml(agentName(a.agentId))} &middot; ${formatTime(a.timestamp)}</div>
           <div class="dashboard-card-actions">
             <button class="btn btn-ghost btn-xs dashboard-view-artifact-btn" data-pinned-index="${i}">View</button>
+            <button class="btn btn-ghost btn-xs dashboard-chat-artifact-btn" data-pinned-index="${i}">Chat about this</button>
           </div>
         </div>`;
     }).join('');
 
-    pinnedCards.querySelectorAll<HTMLElement>('.dashboard-view-artifact-btn, .dashboard-card').forEach(el => {
+    pinnedCards.querySelectorAll<HTMLElement>('.dashboard-view-artifact-btn').forEach(el => {
       el.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const idx = parseInt((e.currentTarget as HTMLElement).dataset.pinnedIndex || (e.currentTarget as HTMLElement).closest('.dashboard-card')?.getAttribute('data-pinned-index') || '0', 10);
+        const idx = parseInt((e.currentTarget as HTMLElement).dataset.pinnedIndex || '0', 10);
         await showArtifactDetail(pinned[idx]);
+      });
+    });
+
+    pinnedCards.querySelectorAll<HTMLElement>('.dashboard-chat-artifact-btn').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt((e.currentTarget as HTMLElement).dataset.pinnedIndex || '0', 10);
+        const artifact = pinned[idx];
+        const displayName = artifact.title || artifact.path.split('/').pop() || artifact.path;
+        // Switch to chat and inject prompt about this artifact
+        activeView = 'chat';
+        sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === 'chat'));
+        updateViewVisibility();
+        const col = getFocusedColumn();
+        if (col) {
+          const input = col.columnEl.querySelector('.chat-input textarea') as HTMLTextAreaElement | null;
+          if (input) {
+            input.value = `Read the artifact "${displayName}" at ${artifact.path} and discuss it with me. What are the key points?`;
+            input.dispatchEvent(new Event('input'));
+            input.focus();
+          }
+        }
       });
     });
   } else {
@@ -3533,6 +3561,17 @@ function renderDashboard(
       <div class="dashboard-activity-label">Hooks Fired</div>
     </div>
   `;
+
+  // Per-hook breakdown below the stats
+  if (hookDetails.length > 0) {
+    activityStats.innerHTML += `
+      <div style="grid-column:1/-1;margin-top:var(--sp-2);font-size:var(--text-xs);color:var(--text-muted);">
+        ${hookDetails.slice(0, 5).map(h =>
+          `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>${escapeHtml(h.description)}</span><span>${h.triggerCount}x</span></div>`
+        ).join('')}
+      </div>
+    `;
+  }
 }
 
 // ══════════════════════════════════════════
