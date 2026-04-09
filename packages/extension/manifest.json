@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CHAOS - Chrome Agent OS",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Multiple personal AI agents that live in your browser, learn about you, and act on your behalf.",
   "permissions": [
     "activeTab",
@@ -51,7 +51,9 @@
   },
   "web_accessible_resources": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "<all_urls>"
+      ],
       "resources": [
         "src/voice/recognition-frame.html",
         "src/voice/recognition-frame.js",
@@ -60,7 +62,9 @@
       ]
     }
   ],
-  "omnibox": { "keyword": "chaos" },
+  "omnibox": {
+    "keyword": "chaos"
+  },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
