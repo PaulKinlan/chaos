@@ -3649,12 +3649,23 @@ async function triggerSuggestionGeneration(): Promise<void> {
       type: 'agenticChat',
       agentId: masterAgent.id,
       columnId: `suggestions-${Date.now()}`,
-      message: `Write a file at suggestions/latest.json containing a JSON array of 2-4 suggestions for things I could do right now. Base them on what you find in my activity-log.jsonl, TODO.md, and memories/.
+      message: `Generate personalized suggestions. Gather context from these sources:
+
+1. Use tab_list to see what tabs I have open right now
+2. Use history_search with an empty query to see my recent browsing (last few hours)
+3. Use bookmark_search or bookmark_list to see recent bookmarks
+4. Read my activity-log.jsonl, TODO.md, and memories/ for ongoing tasks
+
+Then write a file at suggestions/latest.json containing a JSON array of 3-5 suggestions. Mix these types:
+- Productivity: help me finish something I started (based on open tabs, TODOs, history patterns)
+- Research: dive deeper into topics I've been browsing
+- Organization: summarize, compare, or group things I've been looking at
+- Fun/Discovery: something interesting related to my browsing that I might enjoy
 
 Each suggestion object must have these fields:
 - "id": unique string like "sug-1"
 - "title": short title (5-8 words)
-- "description": 1-2 sentence description
+- "description": 1-2 sentence description explaining why this is relevant to ME right now
 - "action": { "type": "chat", "prompt": "the exact prompt to send" }
 - "priority": "high", "medium", or "low"
 - "createdAt": "${new Date().toISOString()}"
