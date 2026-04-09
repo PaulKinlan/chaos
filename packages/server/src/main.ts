@@ -167,13 +167,16 @@ const serveOptions = Deno.env.get("DENO_DEPLOYMENT_ID") ? {} : { port: PORT };
 
 // Start KV initialization eagerly at module load — just KV, nothing else
 // Server keypair is lazy (loaded on first /register call)
-const kvInitPromise = initKv().then(() => {
+const kvInitPromise = initKv().then(async () => {
   startMessageCleanup();
+  // Warm caches from KV so admin dashboard has data immediately
+  const { warmSessionCache } = await import("./auth.ts");
+  await warmSessionCache();
   initialized = true;
-  logger.info("server", "KV init complete", { kv: isKvAvailable() });
+  logger.info("server", "Init complete", { kv: isKvAvailable() });
 }).catch((err) => {
-  initialized = true; // Mark as initialized even on failure so requests don't hang
-  logger.error("server", "KV init failed, continuing without KV", {
+  initialized = true;
+  logger.error("server", "Init failed, continuing without KV", {
     error: String(err),
   });
 });

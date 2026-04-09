@@ -366,3 +366,30 @@ export async function getChannels(userId: string): Promise<ChannelConfig[]> {
 export function getCachedSessions(): UserSession[] {
   return Array.from(sessionCache.values());
 }
+
+/**
+ * Warm the session cache from KV. Call once after KV init.
+ * Loads all sessions into memory so admin dashboard works on cold start.
+ */
+export async function warmSessionCache(): Promise<void> {
+  if (!isKvAvailable()) return;
+  const { getKv } = await import("./kv.ts");
+  const kv = getKv();
+  if (!kv) return;
+  const t = performance.now();
+  let count = 0;
+  const iter = kv.list<UserSession>({ prefix: ["sessions"] }, { limit: 200 });
+  for await (const entry of iter) {
+    const session = entry.value;
+    sessionCache.set(session.apiKey, session);
+    userIndexCache.set(session.userId, session.apiKey);
+    for (const ch of session.channels) {
+      channelIndexCache.set(ch.id, session.userId);
+    }
+    count++;
+  }
+  logger.info("auth", "Session cache warmed from KV", {
+    sessions: count,
+    ms: Math.round(performance.now() - t),
+  });
+}
