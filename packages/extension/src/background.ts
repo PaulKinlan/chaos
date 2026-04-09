@@ -2187,8 +2187,19 @@ Generate 3-5 actions and 2-3 hook suggestions. Make them specific to what the us
       }
     }
 
+    // Messages handled by other listeners (ws-client, poller, etc.)
+    case 'wsChannelMessage':
+    case 'wsLog':
+    case 'wsConnect':
+    case 'wsDisconnect':
+    case 'wsStatus':
+    case 'channelLog':
+    case 'filesystemChanged':
+      return; // Handled by other chrome.runtime.onMessage listeners
+
     default:
-      throw new Error(`Unknown one-shot message type: ${msg.type}`);
+      console.warn(`[background] Unknown one-shot message type: ${msg.type}`);
+      return;
   }
 }
 
