@@ -2320,35 +2320,49 @@ setMessageHandler(async (message) => {
   console.log(`[channel] Starting agent loop for ${master.name} (${master.id}), channel: ${channelName}, columnId: ${channelColumnId}`);
 
   // Run the agentic loop — stream progress to UI if available
-  const { agent: channelAgent } = await createExtensionAgent(master.id, {
-    task,
-    source: 'channel',
-  });
+  let channelAgent;
+  try {
+    const agentResult = await createExtensionAgent(master.id, {
+      task,
+      source: 'channel',
+    });
+    channelAgent = agentResult.agent;
+    console.log(`[channel] Agent created successfully for ${master.id}`);
+  } catch (err) {
+    console.error(`[channel] Failed to create agent for channel message:`, err);
+    return `Error: Failed to process message — ${err instanceof Error ? err.message : String(err)}`;
+  }
 
   let result = '';
-  for await (const event of channelAgent.stream(task)) {
-    const update = mapProgressEvent(event, DEFAULT_MAX_ITERATIONS_BG);
-    if (event.type === 'done' || event.type === 'text') {
-      result = event.content;
+  try {
+    for await (const event of channelAgent.stream(task)) {
+      const update = mapProgressEvent(event, DEFAULT_MAX_ITERATIONS_BG);
+      if (event.type === 'done' || event.type === 'text') {
+        result = event.content;
+      }
+      console.log(`[channel] Event: ${event.type}${event.toolName ? ` tool=${event.toolName}` : ''}${event.type === 'done' ? ` result=${result.slice(0, 100)}` : ''}`);
+      // Use activeUiPort directly — survives reconnects
+      if (!activeUiPort) continue;
+      try {
+        activeUiPort.postMessage({
+          type: 'agenticProgress',
+          agentId: master.id,
+          columnId: channelColumnId,
+          progressType: update.type,
+          content: update.content,
+          toolName: update.toolName,
+          toolArgs: update.toolArgs,
+          toolResult: update.toolResult,
+          iteration: update.iteration,
+          totalIterations: update.totalIterations,
+        });
+      } catch {
+        // Port disconnected — don't abort, agent keeps working
+      }
     }
-    // Use activeUiPort directly — survives reconnects
-    if (!activeUiPort) continue;
-    try {
-      activeUiPort.postMessage({
-        type: 'agenticProgress',
-        agentId: master.id,
-        columnId: channelColumnId,
-        progressType: update.type,
-        content: update.content,
-        toolName: update.toolName,
-        toolArgs: update.toolArgs,
-        toolResult: update.toolResult,
-        iteration: update.iteration,
-        totalIterations: update.totalIterations,
-      });
-    } catch {
-      // Port disconnected — don't abort, agent keeps working
-    }
+  } catch (err) {
+    console.error(`[channel] Agent loop error:`, err);
+    result = `Error during processing: ${err instanceof Error ? err.message : String(err)}`;
   }
 
   console.log(`[channel] Agent loop completed for channel ${channelName}, result length: ${result.length}`);
