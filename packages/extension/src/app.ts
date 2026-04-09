@@ -43,6 +43,7 @@ import DOMPurify from 'dompurify';
 import type { AgentMeta, AgentMessage, Task, TaskEvent, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
+import { createSecureViewer, detectContentType, type SecureViewer } from './ui/secure-viewer.js';
 import { showOnboarding, resetOnboarding } from './ui/onboarding.js';
 import { hasPermission, hasHostPermissions } from './permissions.js';
 import { toolRegistry } from './tools/lookup/registry.js';
@@ -76,6 +77,7 @@ let taskEvents: TaskEvent[] = [];
 let scheduledTasks: ScheduledTask[] = [];
 let messages: AgentMessage[] = [];
 let artifacts: ArtifactMeta[] = [];
+let activeSecureViewer: SecureViewer | null = null;
 
 // Active agent & view
 let activeAgentId: string | null = null;
@@ -3343,6 +3345,12 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
   const modal = document.getElementById('artifact-detail-modal')!;
   const content = document.getElementById('artifact-detail-content')!;
 
+  // Destroy any previous secure viewer
+  if (activeSecureViewer) {
+    activeSecureViewer.destroy();
+    activeSecureViewer = null;
+  }
+
   const filename = artifact.path.split('/').pop() || artifact.path;
 
   let fileContent = '(Unable to read file content)';
@@ -3355,6 +3363,9 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
   } catch {
     // Leave default message
   }
+
+  // Detect content type from file extension
+  const contentType = detectContentType(artifact.path);
 
   content.innerHTML = `
     <h2>${escapeHtml(filename)}</h2>
@@ -3376,23 +3387,16 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
     </div>
     <div class="task-detail-field">
       <div class="task-detail-label">Content</div>
-      <div style="position:relative;">
-        <button id="artifact-copy-btn" title="Copy to clipboard" style="position:absolute;top:6px;right:6px;background:var(--bg-surface);border:1px solid var(--border-default);border-radius:4px;padding:4px;cursor:pointer;color:var(--text-muted);z-index:1;line-height:1;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        </button>
-        <div class="modal-content-preview">${escapeHtml(fileContent)}</div>
-      </div>
+      <div class="secure-viewer-container" id="artifact-viewer-container"></div>
     </div>
   `;
 
-  document.getElementById('artifact-copy-btn')?.addEventListener('click', () => {
-    navigator.clipboard.writeText(fileContent).then(() => {
-      const btn = document.getElementById('artifact-copy-btn')!;
-      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-      setTimeout(() => {
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-      }, 2000);
-    });
+  // Create secure viewer in the container
+  const viewerContainer = document.getElementById('artifact-viewer-container')!;
+  activeSecureViewer = createSecureViewer(viewerContainer, fileContent, {
+    type: contentType,
+    title: filename,
+    downloadFilename: filename,
   });
 
   modal.classList.add('visible');
@@ -3401,11 +3405,13 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
 document.getElementById('artifacts-filter-agent')!.addEventListener('change', renderArtifacts);
 
 document.getElementById('artifact-detail-close')!.addEventListener('click', () => {
+  if (activeSecureViewer) { activeSecureViewer.destroy(); activeSecureViewer = null; }
   document.getElementById('artifact-detail-modal')!.classList.remove('visible');
 });
 
 document.getElementById('artifact-detail-modal')!.addEventListener('click', (e) => {
   if (e.target === document.getElementById('artifact-detail-modal')) {
+    if (activeSecureViewer) { activeSecureViewer.destroy(); activeSecureViewer = null; }
     document.getElementById('artifact-detail-modal')!.classList.remove('visible');
   }
 });
