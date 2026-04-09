@@ -34,13 +34,121 @@ turndown.addRule('remove-images', {
   replacement: () => '',
 });
 
+// ── WebSocket management (persistent in offscreen document) ──
+
+let ws: WebSocket | null = null;
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let wsBackoff = 5000;
+const WS_MAX_BACKOFF = 60000;
+const WS_PING_INTERVAL = 25000;
+let wsPingTimer: ReturnType<typeof setInterval> | null = null;
+let wsUrl: string | null = null;
+
+function wsLog(msg: string): void {
+  console.log(`[offscreen-ws] ${msg}`);
+  // Forward log to service worker
+  chrome.runtime.sendMessage({ type: 'wsLog', message: msg }).catch(() => {});
+}
+
+function wsConnect(url: string): void {
+  wsUrl = url;
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
+
+  wsLog(`Connecting to ${url.replace(/token=[^&]+/, 'token=***')}`);
+  try { ws = new WebSocket(url); } catch (err) {
+    wsLog(`Failed: ${err}`);
+    wsScheduleReconnect();
+    return;
+  }
+
+  ws.addEventListener('open', () => {
+    wsLog('Connected');
+    wsBackoff = 5000;
+    wsPingTimer = setInterval(() => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify({ type: 'ping' })); } catch {}
+      }
+    }, WS_PING_INTERVAL);
+  });
+
+  ws.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(String(event.data));
+      if (data.type === 'message' && (data.payload || data.message)) {
+        const msg = data.payload || data.message;
+        wsLog(`Message received: ${msg.id?.slice(0, 8) ?? '???'} from ${msg.channelType ?? 'unknown'}`);
+        // Forward to service worker for processing
+        chrome.runtime.sendMessage({ type: 'wsChannelMessage', message: msg }).catch(() => {});
+      } else if (data.type === 'pong' || data.type === 'ping') {
+        // keepalive
+      } else if (data.type === 'reply_ack') {
+        wsLog(`Reply ack: ${data.responseId?.slice(0, 8) ?? '???'}`);
+      }
+    } catch (err) {
+      wsLog(`Parse error: ${err}`);
+    }
+  });
+
+  ws.addEventListener('close', (event) => {
+    wsLog(`Closed (code=${event.code}, reason=${event.reason || 'none'})`);
+    ws = null;
+    if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
+    if (event.code === 1008 || event.reason?.includes('401')) {
+      wsLog('Auth failure — not reconnecting');
+      return;
+    }
+    if (wsUrl) wsScheduleReconnect();
+  });
+
+  ws.addEventListener('error', () => {
+    wsLog('Error — will reconnect on close');
+  });
+}
+
+function wsScheduleReconnect(): void {
+  if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+  wsLog(`Reconnecting in ${wsBackoff / 1000}s...`);
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null;
+    if (wsUrl) wsConnect(wsUrl);
+  }, wsBackoff);
+  wsBackoff = Math.min(wsBackoff * 2, WS_MAX_BACKOFF);
+}
+
+function wsDisconnect(): void {
+  wsUrl = null;
+  if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+  if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  wsLog('Disconnected');
+}
+
+// ── Message handler (HTML parsing + WS control) ──
+
 chrome.runtime.onMessage.addListener(
   (
-    message: { type: string; html: string; url?: string },
+    message: { type: string; html?: string; url?: string; wsUrl?: string },
     _sender: chrome.runtime.MessageSender,
-    sendResponse: (response: { title: string; content: string }) => void,
+    sendResponse: (response: unknown) => void,
   ) => {
-    if (message.type !== 'parseHtml') return;
+    // WebSocket control messages
+    if (message.type === 'wsConnect' && message.wsUrl) {
+      wsConnect(message.wsUrl);
+      sendResponse({ ok: true });
+      return true;
+    }
+    if (message.type === 'wsDisconnect') {
+      wsDisconnect();
+      sendResponse({ ok: true });
+      return true;
+    }
+    if (message.type === 'wsStatus') {
+      sendResponse({ connected: ws !== null && ws.readyState === WebSocket.OPEN });
+      return true;
+    }
+
+    if (message.type !== 'parseHtml' || !message.html) return;
 
     try {
       const parser = new DOMParser();

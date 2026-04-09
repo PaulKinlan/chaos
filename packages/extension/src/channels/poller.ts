@@ -189,7 +189,7 @@ export async function startWebSocket(): Promise<void> {
   const settings = await getRelaySettings();
   if (!settings) return;
 
-  connectWebSocket(settings);
+  connectWebSocket(settings).catch((err) => console.warn('[poller] WS connect failed:', err));
 
   // Use a 1-minute alarm to check WS health and reconnect if needed
   // This survives SW suspension (unlike setTimeout/setInterval)
@@ -214,16 +214,17 @@ export async function handlePollAlarm(): Promise<void> {
     return;
   }
 
-  // If WebSocket is connected, skip polling — WS handles delivery
-  if (isWebSocketConnected()) {
-    broadcastChannelLog('Poll alarm fired — WebSocket is connected, skipping HTTP poll');
-    // Attempt to reconnect WS if it's somehow marked connected but stale
+  // Check actual WS status from offscreen document
+  const { checkWebSocketStatus } = await import('./ws-client.js');
+  const wsActive = await checkWebSocketStatus();
+  if (wsActive) {
+    broadcastChannelLog('Poll alarm fired — WebSocket is connected (offscreen), skipping HTTP poll');
     return;
   }
 
   // WebSocket is not connected — try to reconnect it
   broadcastChannelLog('WebSocket not connected — attempting reconnect and falling back to HTTP poll');
-  connectWebSocket(settings);
+  connectWebSocket(settings).catch((err) => console.warn('[poller] WS connect failed:', err));
 
   try {
     const config = {
