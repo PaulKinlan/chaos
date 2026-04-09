@@ -3,11 +3,7 @@ name: Release Extension
 on:
   push:
     branches: [main]
-    paths:
-      - 'packages/extension/**'
-      - 'packages/sdk/**'
-      - 'packages/agent-loop/**'
-      - 'packages/shared/**'
+  workflow_dispatch:
 
 permissions:
   contents: write
