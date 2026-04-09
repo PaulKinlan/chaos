@@ -20,17 +20,40 @@ jobs:
 
       - run: npm ci
 
-      - name: TypeScript check
-        run: npx tsc --noEmit
-        working-directory: packages/extension
+      - name: TypeScript check (all packages)
+        run: npm run typecheck
 
-      - name: Unit tests
+      - name: Unit tests (all packages)
         run: npm test
-        working-directory: packages/extension
 
-      - name: Build
+      - name: Build extension
         run: npm run build
         working-directory: packages/extension
+
+  sdk-tests:
+    name: SDK & Agent Loop Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: SDK conformance tests
+        run: npm test
+        working-directory: packages/sdk
+
+      - name: Agent loop tests
+        run: npm test
+        working-directory: packages/agent-loop
+
+      - name: Demo CLI tests
+        run: npm test
+        working-directory: packages/demo-cli
 
   server-tests:
     name: Relay Server Tests

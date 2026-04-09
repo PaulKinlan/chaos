@@ -1,0 +1,107 @@
+name: Release Extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/extension/**'
+      - 'packages/sdk/**'
+      - 'packages/agent-loop/**'
+      - 'packages/shared/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for version calculation
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+        working-directory: packages/extension
+
+      - name: Unit tests
+        run: npm test
+        working-directory: packages/extension
+
+      - name: Calculate version
+        id: version
+        run: |
+          # Count commits since last tag or all commits
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git rev-list ${LAST_TAG}..HEAD --count)
+          else
+            COMMITS=$(git rev-list HEAD --count)
+          fi
+
+          # Date-based version: YYYY.MM.DD.commits
+          DATE=$(date +%Y.%-m.%-d)
+          VERSION="${DATE}.${COMMITS}"
+          SHORT_SHA=$(git rev-parse --short HEAD)
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION} (${SHORT_SHA})"
+
+      - name: Update manifest version
+        run: |
+          # Update manifest.json with the calculated version
+          # Chrome requires x.y.z or x.y.z.w format
+          node -e "
+            const fs = require('fs');
+            const manifest = JSON.parse(fs.readFileSync('packages/extension/manifest.json', 'utf8'));
+            manifest.version = '${{ steps.version.outputs.version }}';
+            manifest.version_name = '${{ steps.version.outputs.version }} (${{ steps.version.outputs.short_sha }})';
+            fs.writeFileSync('packages/extension/manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+            console.log('Updated manifest to version ' + manifest.version);
+          "
+
+      - name: Build extension
+        run: npm run build
+        working-directory: packages/extension
+
+      - name: Package extension zip
+        run: |
+          cd packages/extension/dist
+          zip -r ../../../chaos-extension-${{ steps.version.outputs.version }}.zip .
+          cd ../../..
+          ls -la chaos-extension-*.zip
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            CHANGES=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges | head -30)
+          else
+            CHANGES=$(git log --pretty=format:"- %s" --no-merges -20)
+          fi
+          # Write to file to handle multiline
+          echo "$CHANGES" > /tmp/changelog.txt
+          echo "Generated changelog with $(echo "$CHANGES" | wc -l) entries"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "CHAOS Extension ${{ steps.version.outputs.version }}"
+          body_path: /tmp/changelog.txt
+          files: chaos-extension-${{ steps.version.outputs.version }}.zip
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
