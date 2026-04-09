@@ -237,18 +237,18 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         await updateAgentMeta(agent.id, { master: true, visibility: 'visible' });
         console.log('Created default master agent:', agent.id);
         // Set up the daily review for the default agent
-        const alarmName = `${agent.id}:daily-review`;
+        const alarmName = `${agent.id}:periodic-review`;
         chrome.alarms.create(alarmName, {
-          delayInMinutes: 60,
-          periodInMinutes: 1440,
+          delayInMinutes: 30,
+          periodInMinutes: 240, // Every 4 hours
         });
         await addScheduledTask({
           alarmId: alarmName,
           agentId: agent.id,
-          prompt: 'Daily review: Read through your memories/, activity-log.jsonl, TODO.md, and any pending messages. Look for patterns: stale TODOs (older than a week), repeated topics without action, and ignored suggestions. Write a brief daily review to memories/daily-reviews/ with today\'s date. Include: what happened recently, what\'s pending, and 1-3 proactive suggestions for things you could help with. After your review, publish a \'Daily Summary\' artifact using artifact_publish with a brief markdown summary of: what happened today, what\'s pending, and 2-3 proactive suggestions for things you could help with. Title it \'Daily Summary - [date]\'. Also publish a JSON artifact at suggestions/latest.json containing an array of suggestion objects with fields: id, title, description, action (object with type: \'chat\' and prompt: string), priority (high/medium/low), createdAt.',
-          description: 'Daily review, proactive insights, and summary artifacts',
+          prompt: 'Periodic review: Read through your memories/, activity-log.jsonl, TODO.md, and any pending messages. Look for patterns: stale TODOs (older than a week), repeated topics without action, and ignored suggestions. Write a brief review to memories/reviews/ with today\'s date and time. Include: what happened recently, what\'s pending, and 1-3 proactive suggestions for things you could help with. After your review, publish a summary artifact using artifact_publish with a brief markdown summary. Title it \'Summary - [date] [time]\'. Also publish a JSON artifact at suggestions/latest.json containing an array of suggestion objects with fields: id, title, description, action (object with type: \'chat\' and prompt: string), priority (high/medium/low), createdAt. Include 2-4 actionable suggestions based on recent activity.',
+          description: 'Periodic review and suggestions (every 4 hours)',
           createdAt: new Date().toISOString(),
-          schedule: { type: 'recurring', periodInMinutes: 1440 },
+          schedule: { type: 'recurring', periodInMinutes: 240 },
         });
         await setupContextMenus(); // Refresh to include the new agent
       }
@@ -1161,20 +1161,20 @@ async function handleCreateAgent(
     await updateAgentMeta(agent.id, { visibility: msg.visibility as 'private' | 'visible' | 'open' });
     agent.visibility = msg.visibility as 'private' | 'visible' | 'open';
   }
-  // Set up daily review scheduled task
+  // Set up periodic review scheduled task
   try {
-    const alarmName = `${agent.id}:daily-review`;
+    const alarmName = `${agent.id}:periodic-review`;
     chrome.alarms.create(alarmName, {
-      delayInMinutes: 60, // First run in 1 hour
-      periodInMinutes: 1440, // Then every 24 hours
+      delayInMinutes: 30,
+      periodInMinutes: 240, // Every 4 hours
     });
     await addScheduledTask({
       alarmId: alarmName,
       agentId: agent.id,
-      prompt: `Daily review: Read through your memories/, activity-log.jsonl, TODO.md, and any pending messages. Look for patterns: stale TODOs (older than a week), repeated topics without action, and ignored suggestions. Write a brief daily review to memories/daily-reviews/ with today's date. Include: what happened recently, what's pending, and 1-3 proactive suggestions for things you could help with. If you have suggestions, note them so you can mention them in the next conversation. After your review, publish a 'Daily Summary' artifact using artifact_publish with a brief markdown summary of: what happened today, what's pending, and 2-3 proactive suggestions for things you could help with. Title it 'Daily Summary - [date]'. Also publish a JSON artifact at suggestions/latest.json containing an array of suggestion objects with fields: id, title, description, action (object with type: 'chat' and prompt: string), priority (high/medium/low), createdAt.`,
-      description: 'Daily review, proactive insights, and summary artifacts',
+      prompt: `Periodic review: Read through your memories/, activity-log.jsonl, TODO.md, and any pending messages. Look for patterns: stale TODOs (older than a week), repeated topics without action, and ignored suggestions. Write a brief review to memories/reviews/ with today's date and time. Include: what happened recently, what's pending, and 1-3 proactive suggestions. Publish a summary artifact using artifact_publish with a brief markdown summary. Title it 'Summary - [date] [time]'. Also publish a JSON artifact at suggestions/latest.json containing an array of suggestion objects with fields: id, title, description, action (object with type: 'chat' and prompt: string), priority (high/medium/low), createdAt. Include 2-4 actionable suggestions based on recent activity.`,
+      description: 'Periodic review and suggestions (every 4 hours)',
       createdAt: new Date().toISOString(),
-      schedule: { type: 'recurring', periodInMinutes: 1440 },
+      schedule: { type: 'recurring', periodInMinutes: 240 },
     });
   } catch (err) {
     console.warn('Failed to set up daily review:', err);

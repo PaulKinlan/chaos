@@ -82,6 +82,7 @@ let activeSecureViewer: SecureViewer | null = null;
 // Active agent & view
 let activeAgentId: string | null = null;
 let activeView: string = 'chat';
+let dashboardRefreshTimer: number | null = null;
 
 // ── Hash-based routing ──
 // Format: #agent={id}&view={name} or #settings
@@ -642,6 +643,12 @@ function loadCurrentViewData(): void {
   switch (activeView) {
     case 'dashboard':
       loadDashboard();
+      // Auto-refresh dashboard every 30s while visible
+      if (dashboardRefreshTimer) clearInterval(dashboardRefreshTimer);
+      dashboardRefreshTimer = window.setInterval(() => {
+        if (activeView === 'dashboard') loadDashboard();
+        else { clearInterval(dashboardRefreshTimer!); dashboardRefreshTimer = null; }
+      }, 30000);
       break;
     case 'chat':
       // Chat is always connected via port
@@ -3807,8 +3814,11 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
     btn.innerHTML = newPinned ? pinnedFillSvg : pinSvg;
     btn.style.color = newPinned ? 'var(--accent)' : 'var(--text-muted)';
     btn.title = newPinned ? 'Unpin' : 'Pin';
-    // Refresh the artifacts list behind the modal
+    // Refresh the artifacts list and dashboard
     renderArtifacts();
+    if (activeView === 'dashboard' || document.getElementById('view-dashboard')?.classList.contains('active')) {
+      loadDashboard();
+    }
   });
 
   // Download button
