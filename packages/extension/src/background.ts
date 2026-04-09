@@ -239,16 +239,16 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         // Set up the daily review for the default agent
         const alarmName = `${agent.id}:periodic-review`;
         chrome.alarms.create(alarmName, {
-          delayInMinutes: 30,
-          periodInMinutes: 240, // Every 4 hours
+          delayInMinutes: 15,
+          periodInMinutes: 60, // Every hour
         });
         await addScheduledTask({
           alarmId: alarmName,
           agentId: agent.id,
           prompt: 'Periodic review: Read through your memories/, activity-log.jsonl, TODO.md, and any pending messages. Look for patterns: stale TODOs (older than a week), repeated topics without action, and ignored suggestions. Write a brief review to memories/reviews/ with today\'s date and time. Include: what happened recently, what\'s pending, and 1-3 proactive suggestions for things you could help with. After your review, publish a summary artifact using artifact_publish with a brief markdown summary. Title it \'Summary - [date] [time]\'. Also publish a JSON artifact at suggestions/latest.json containing an array of suggestion objects with fields: id, title, description, action (object with type: \'chat\' and prompt: string), priority (high/medium/low), createdAt. Include 2-4 actionable suggestions based on recent activity.',
-          description: 'Periodic review and suggestions (every 4 hours)',
+          description: 'Periodic review and suggestions (every hour)',
           createdAt: new Date().toISOString(),
-          schedule: { type: 'recurring', periodInMinutes: 240 },
+          schedule: { type: 'recurring', periodInMinutes: 60 },
         });
         await setupContextMenus(); // Refresh to include the new agent
       }
@@ -1165,16 +1165,16 @@ async function handleCreateAgent(
   try {
     const alarmName = `${agent.id}:periodic-review`;
     chrome.alarms.create(alarmName, {
-      delayInMinutes: 30,
-      periodInMinutes: 240, // Every 4 hours
+      delayInMinutes: 15,
+      periodInMinutes: 60, // Every hour
     });
     await addScheduledTask({
       alarmId: alarmName,
       agentId: agent.id,
       prompt: `Periodic review: Read through your memories/, activity-log.jsonl, TODO.md, and any pending messages. Look for patterns: stale TODOs (older than a week), repeated topics without action, and ignored suggestions. Write a brief review to memories/reviews/ with today's date and time. Include: what happened recently, what's pending, and 1-3 proactive suggestions. Publish a summary artifact using artifact_publish with a brief markdown summary. Title it 'Summary - [date] [time]'. Also publish a JSON artifact at suggestions/latest.json containing an array of suggestion objects with fields: id, title, description, action (object with type: 'chat' and prompt: string), priority (high/medium/low), createdAt. Include 2-4 actionable suggestions based on recent activity.`,
-      description: 'Periodic review and suggestions (every 4 hours)',
+      description: 'Periodic review and suggestions (every hour)',
       createdAt: new Date().toISOString(),
-      schedule: { type: 'recurring', periodInMinutes: 240 },
+      schedule: { type: 'recurring', periodInMinutes: 60 },
     });
   } catch (err) {
     console.warn('Failed to set up daily review:', err);

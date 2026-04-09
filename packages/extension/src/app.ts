@@ -653,6 +653,7 @@ function loadCurrentViewData(): void {
     case 'chat':
       // Chat is always connected via port
       break;
+    /* dashboard refresh button wired below */
     case 'tasks': {
       // When navigated from top-level sidebar, show all tasks (clear agent filter)
       const tasksFilter = document.getElementById('tasks-filter-agent') as HTMLSelectElement;
@@ -3582,6 +3583,17 @@ function renderDashboard(
 }
 
 // ══════════════════════════════════════════
+// Dashboard refresh button
+document.getElementById('dashboard-refresh-btn')?.addEventListener('click', () => {
+  const btn = document.getElementById('dashboard-refresh-btn') as HTMLButtonElement;
+  btn.textContent = 'Refreshing...';
+  btn.disabled = true;
+  loadDashboard().finally(() => {
+    btn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh';
+    btn.disabled = false;
+  });
+});
+
 // ── Artifacts View
 // ══════════════════════════════════════════
 
