@@ -498,6 +498,61 @@ Deno.serve(serveOptions, async (req: Request) => {
     return error("Session not found", 404);
   }
 
+  // Admin: KV browser — browse raw KV contents
+  if (url.pathname === "/admin/kv" && method === "GET") {
+    if (!(await verifyAdminSession(req))) return error("Unauthorized", 401);
+    const { getKv, isKvAvailable: kvOk2 } = await import("./kv.ts");
+    if (!kvOk2() || !getKv()) {
+      return json({ error: "KV not available", entries: [] });
+    }
+
+    const prefix = url.searchParams.get("prefix") || "";
+    const limit = Math.min(
+      parseInt(url.searchParams.get("limit") || "50"),
+      200,
+    );
+    const prefixKey = prefix ? prefix.split(",") : [];
+
+    const entries: Array<
+      { key: string[]; value: unknown; versionstamp: string }
+    > = [];
+    const t = performance.now();
+    const iter = getKv()!.list({ prefix: prefixKey as Deno.KvKey }, { limit });
+    for await (const entry of iter) {
+      entries.push({
+        key: entry.key.map(String),
+        value: entry.value,
+        versionstamp: entry.versionstamp,
+      });
+    }
+    const ms = Math.round(performance.now() - t);
+    logger.info("admin", "KV browse", { prefix, entries: entries.length, ms });
+    return json({ prefix: prefixKey, entries, count: entries.length, ms });
+  }
+
+  // Admin: list KV prefixes (top-level keys overview)
+  if (url.pathname === "/admin/kv/prefixes" && method === "GET") {
+    if (!(await verifyAdminSession(req))) return error("Unauthorized", 401);
+    const { getKv, isKvAvailable: kvOk3 } = await import("./kv.ts");
+    if (!kvOk3() || !getKv()) {
+      return json({ error: "KV not available", prefixes: [] });
+    }
+
+    const prefixes = new Map<string, number>();
+    const t = performance.now();
+    const iter = getKv()!.list({ prefix: [] }, { limit: 1000 });
+    for await (const entry of iter) {
+      const topKey = String(entry.key[0]);
+      prefixes.set(topKey, (prefixes.get(topKey) || 0) + 1);
+    }
+    const ms = Math.round(performance.now() - t);
+    const result = Array.from(prefixes.entries()).map(([prefix, count]) => ({
+      prefix,
+      count,
+    }));
+    return json({ prefixes: result, ms });
+  }
+
   // Admin logout
   if (url.pathname === "/admin/logout" && method === "POST") {
     const cookie = req.headers.get("cookie") || "";
@@ -1399,6 +1454,19 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
 <table><thead><tr><th>Time</th><th>Dir</th><th>From</th><th>Channel</th><th>User</th><th>Content</th></tr></thead><tbody id="messages"></tbody></table>
 <div class="pager" id="msg-pager"></div>
 
+<h2>KV Browser</h2>
+<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+  <select id="kv-prefix" class="search-box" style="width:180px;">
+    <option value="">Loading prefixes...</option>
+  </select>
+  <input type="number" id="kv-limit" value="50" min="1" max="200" style="width:70px;padding:6px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;font-size:13px;">
+  <button class="btn btn-primary" onclick="browseKv()">Browse</button>
+  <span id="kv-status" style="font-size:11px;color:#8b949e;"></span>
+</div>
+<div id="kv-results" style="max-height:400px;overflow-y:auto;">
+  <table><thead><tr><th>Key</th><th>Value</th></tr></thead><tbody id="kv-entries"></tbody></table>
+</div>
+
 <dialog id="session-dialog">
   <div class="dialog-header">
     <h3 id="dialog-title">Session Messages</h3>
@@ -1635,4 +1703,35 @@ async function delSession(userId){
 
 load();
 setInterval(load,10000);
+
+// KV Browser
+async function loadKvPrefixes(){
+  try{
+    const r=await fetch('/admin/kv/prefixes');
+    if(!r.ok)return;
+    const d=await r.json();
+    const sel=document.getElementById('kv-prefix');
+    sel.innerHTML='<option value="">(all keys)</option>'+
+      (d.prefixes||[]).map(p=>'<option value="'+esc(p.prefix)+'">'+esc(p.prefix)+' ('+p.count+')</option>').join('');
+  }catch{}
+}
+async function browseKv(){
+  const prefix=document.getElementById('kv-prefix').value;
+  const limit=document.getElementById('kv-limit').value||'50';
+  const status=document.getElementById('kv-status');
+  status.textContent='Loading...';
+  try{
+    const r=await fetch('/admin/kv?prefix='+encodeURIComponent(prefix)+'&limit='+limit);
+    const d=await r.json();
+    status.textContent=d.count+' entries ('+d.ms+'ms)';
+    const tbody=document.getElementById('kv-entries');
+    tbody.innerHTML=(d.entries||[]).map(e=>
+      '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap;">'+esc(e.key.join(' / '))+'</td>'+
+      '<td style="font-family:monospace;font-size:11px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(JSON.stringify(e.value))+'">'+esc(JSON.stringify(e.value).slice(0,200))+'</td></tr>'
+    ).join('')||'<tr><td colspan="2" style="color:#8b949e;text-align:center;">No entries</td></tr>';
+  }catch(e){
+    status.textContent='Error: '+e.message;
+  }
+}
+loadKvPrefixes();
 </script></body></html>`;
