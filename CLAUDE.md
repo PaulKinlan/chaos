@@ -30,6 +30,7 @@ You MUST perform a security review and code review of your own changes before co
 
 ### Code Review
 - **UI**: No `alert()`/`confirm()`/`prompt()` — use `<dialog>` elements. Inline SVG icons, never emoji.
+- **Content rendering**: Always use `createSecureViewer()` from `src/ui/secure-viewer.ts` to render any agent-generated or untrusted content (HTML, markdown, artifacts, previews). Never inject raw HTML into the DOM. The secure viewer uses a double iframe (sandbox) pattern for safety.
 - **Types**: No untyped `any` unless justified. New AgentMeta fields must be optional.
 - **Backwards compat**: Old data without new fields still loads correctly
 - **Logging**: New features have console logging for debugging
