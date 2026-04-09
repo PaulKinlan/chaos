@@ -358,3 +358,11 @@ export async function getChannels(userId: string): Promise<ChannelConfig[]> {
   if (!session) return [];
   return session.channels;
 }
+
+/**
+ * Get all cached sessions (in-memory only, no KV scan).
+ * Fast path for admin dashboard — returns what's in memory.
+ */
+export function getCachedSessions(): UserSession[] {
+  return Array.from(sessionCache.values());
+}

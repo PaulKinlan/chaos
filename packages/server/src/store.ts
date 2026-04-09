@@ -322,6 +322,17 @@ export async function getMessagesForUser(
   return { messages: page, cursor: nextCursor };
 }
 
+/** Get recent messages from in-memory cache only (instant, no KV). */
+export function getCachedRecentMessages(limit = 30): StoredMessage[] {
+  const all: StoredMessage[] = [];
+  for (const msgs of messageCache.values()) all.push(...msgs);
+  for (const msgs of responseCache.values()) all.push(...msgs);
+  all.sort((a, b) =>
+    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+  return all.slice(0, limit);
+}
+
 /** Get all recent messages from KV (durable across isolate restarts). */
 export async function getAllRecentMessages(
   limit = 50,
