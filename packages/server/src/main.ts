@@ -33,7 +33,7 @@ import {
   handleEmailVerification,
   registerEmailChannel,
 } from "./channels/email.ts";
-import { getServerPublicKey, initServerKeyPair } from "./crypto.ts";
+import { getServerPublicKey } from "./crypto.ts";
 import { getKv, initKv, isKvAvailable } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
 import { sanitizeMessage } from "./sanitize.ts";
@@ -128,24 +128,7 @@ async function startKvWatch(
 
 // Lazy initialization — runs once on first request, not during module warmup
 let initialized = false;
-async function ensureInitialized(): Promise<void> {
-  if (initialized) return;
-  initialized = true;
-  const t0 = performance.now();
-  await initKv();
-  const t1 = performance.now();
-  await initServerKeyPair();
-  const t2 = performance.now();
-  startMessageCleanup();
-  logger.info("server", "Initialized", {
-    kv: isKvAvailable(),
-    kvInitMs: Math.round(t1 - t0),
-    keypairMs: Math.round(t2 - t1),
-    totalMs: Math.round(t2 - t0),
-    wsConnections: getConnectionCount(),
-    deploy: !!Deno.env.get("DENO_DEPLOYMENT_ID"),
-  });
-}
+// ensureInitialized removed — KV inits eagerly at module load, keypair is lazy
 
 // Rate limiter instance
 const rateLimiter = new RateLimiter();
@@ -182,16 +165,17 @@ function getClientIP(req: Request): string {
 // On Deno Deploy, port is managed by the platform; locally use PORT env
 const serveOptions = Deno.env.get("DENO_DEPLOYMENT_ID") ? {} : { port: PORT };
 
-// Start KV initialization eagerly at module load (not lazily on first request)
-// This runs as soon as the isolate boots — before any request arrives
-const kvInitPromise = initKv().then(() => initServerKeyPair()).then(() => {
+// Start KV initialization eagerly at module load — just KV, nothing else
+// Server keypair is lazy (loaded on first /register call)
+const kvInitPromise = initKv().then(() => {
   startMessageCleanup();
   initialized = true;
-  logger.info("server", "Background init complete", {
-    kv: isKvAvailable(),
-  });
+  logger.info("server", "KV init complete", { kv: isKvAvailable() });
 }).catch((err) => {
-  logger.error("server", "Background init failed", { error: String(err) });
+  initialized = true; // Mark as initialized even on failure so requests don't hang
+  logger.error("server", "KV init failed, continuing without KV", {
+    error: String(err),
+  });
 });
 
 Deno.serve(serveOptions, async (req: Request) => {
@@ -639,7 +623,7 @@ Deno.serve(serveOptions, async (req: Request) => {
     }
 
     const session = await createSession(publicKey);
-    const serverPublicKey = getServerPublicKey();
+    const serverPublicKey = await getServerPublicKey();
 
     logger.info("server", "New session registered", {
       userId: session.userId,

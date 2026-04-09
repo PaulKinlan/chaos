@@ -15,11 +15,22 @@ let serverKeyPair: { privateKey: CryptoKey; publicKey: CryptoKey } | null =
   null;
 let serverPublicKeyJwk: JsonWebKey | null = null;
 
+let initPromise: Promise<void> | null = null;
+
 /**
- * Initialize the server keypair on startup. Call once at boot (after initKv).
- * Loads from KV if available, otherwise generates a new one.
+ * Ensure server keypair is loaded. Lazy — only runs on first call.
+ * Safe to call multiple times (deduplicates).
  */
-export async function initServerKeyPair(): Promise<void> {
+export async function ensureServerKeyPair(): Promise<void> {
+  if (serverKeyPair) return; // Already loaded
+  if (!initPromise) initPromise = doInitServerKeyPair();
+  return initPromise;
+}
+
+/**
+ * Initialize the server keypair. Loads from KV if available, otherwise generates a new one.
+ */
+async function doInitServerKeyPair(): Promise<void> {
   // Try to load from KV first
   if (isKvAvailable()) {
     const stored = await kvGetServerKeyPair();
@@ -74,9 +85,11 @@ export async function initServerKeyPair(): Promise<void> {
 }
 
 /**
- * Get the server's public key as JWK (for registration responses)
+ * Get the server's public key as JWK (for registration responses).
+ * Lazy — triggers keypair init if not yet loaded.
  */
-export function getServerPublicKey(): JsonWebKey | null {
+export async function getServerPublicKey(): Promise<JsonWebKey | null> {
+  await ensureServerKeyPair();
   return serverPublicKeyJwk;
 }
 
