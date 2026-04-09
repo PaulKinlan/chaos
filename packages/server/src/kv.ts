@@ -24,9 +24,12 @@ export async function initKv(): Promise<void> {
       }
       kv = null;
     }
+    const t = performance.now();
     kv = await Deno.openKv();
     kvAvailable = true;
-    logger.info("kv", "Deno KV store opened");
+    logger.info("kv", "Deno KV store opened", {
+      ms: Math.round(performance.now() - t),
+    });
   } catch (err) {
     kvAvailable = false;
     logger.warn("kv", "Deno KV not available, using in-memory fallback", {

@@ -183,15 +183,22 @@ function getClientIP(req: Request): string {
 const serveOptions = Deno.env.get("DENO_DEPLOYMENT_ID") ? {} : { port: PORT };
 
 Deno.serve(serveOptions, async (req: Request) => {
+  const reqStart = performance.now();
+
   // Lazy init on first request (avoids blocking Deno Deploy warmup)
+  const initStart = performance.now();
   await ensureInitialized();
+  const initMs = Math.round(performance.now() - initStart);
 
   const url = new URL(req.url);
   const method = req.method;
   const reqData = requestLog(req, "server", "request");
 
-  // Log every incoming request
-  logger.info("server", "Incoming request", reqData);
+  // Log every incoming request with init time if it was slow
+  logger.info("server", "Incoming request", {
+    ...reqData,
+    ...(initMs > 10 ? { initMs } : {}),
+  });
 
   // Handle CORS preflight
   if (method === "OPTIONS") {
@@ -230,24 +237,39 @@ Deno.serve(serveOptions, async (req: Request) => {
   const ADMIN_SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
   async function verifyAdminSession(req: Request): Promise<boolean> {
+    const t = performance.now();
     const cookie = req.headers.get("cookie") || "";
     const match = cookie.match(/chaos_admin=([^;]+)/);
-    if (!match) return false;
+    if (!match) {
+      logger.debug("admin", "No admin cookie found");
+      return false;
+    }
     const token = match[1];
 
     // Check in-memory cache first
     const cached = adminSessionCache.get(token);
-    if (cached && Date.now() - cached < ADMIN_SESSION_TTL) return true;
+    if (cached && Date.now() - cached < ADMIN_SESSION_TTL) {
+      logger.debug("admin", "Session verified from cache", {
+        ms: Math.round(performance.now() - t),
+      });
+      return true;
+    }
 
     // Check KV
     if (isKvAvailable() && getKv()) {
       const result = await getKv()!.get<number>(["admin_sessions", token]);
       if (result.value && Date.now() - result.value < ADMIN_SESSION_TTL) {
         adminSessionCache.set(token, result.value);
+        logger.info("admin", "Session verified from KV", {
+          ms: Math.round(performance.now() - t),
+        });
         return true;
       }
     }
 
+    logger.warn("admin", "Session verification failed", {
+      ms: Math.round(performance.now() - t),
+    });
     adminSessionCache.delete(token);
     return false;
   }
@@ -337,6 +359,9 @@ Deno.serve(serveOptions, async (req: Request) => {
 
     const t0 = performance.now();
     let kvError: string | undefined;
+    const timing: Record<string, number> = {};
+
+    logger.info("admin", "Status request started", { kv: isKvAvailable() });
 
     // Helper to map a session entry to admin format
     function mapSession(s: UserSession) {
@@ -364,11 +389,21 @@ Deno.serve(serveOptions, async (req: Request) => {
     }
 
     async function listSessions(): Promise<void> {
-      if (!(isKvAvailable() && getKv())) return;
-      const iter = getKv()!.list<UserSession>({ prefix: ["sessions"] });
+      if (!(isKvAvailable() && getKv())) {
+        logger.warn("admin", "KV not available for session listing");
+        return;
+      }
+      const t = performance.now();
+      const iter = getKv()!.list<UserSession>({ prefix: ["sessions"] }, {
+        limit: 100,
+      });
       for await (const entry of iter) {
         sessions.push(mapSession(entry.value));
       }
+      timing.sessionsMs = Math.round(performance.now() - t);
+      logger.info("admin", `Listed ${sessions.length} sessions`, {
+        ms: timing.sessionsMs,
+      });
     }
 
     // Run session list and message fetch in parallel
@@ -376,21 +411,31 @@ Deno.serve(serveOptions, async (req: Request) => {
 
     const [sessErr, msgErr] = await Promise.all([
       listSessions().then(() => null).catch((err) => err),
-      getAllRecentMessages(30).then((msgs) => {
+      (async () => {
+        const t = performance.now();
+        const msgs = await getAllRecentMessages(30);
+        timing.messagesMs = Math.round(performance.now() - t);
+        logger.info("admin", `Fetched ${msgs.length} recent messages`, {
+          ms: timing.messagesMs,
+        });
         allMsgs = msgs;
         return null;
-      }).catch((err) => err),
+      })().catch((err) => err),
     ]);
 
     if (sessErr) {
       kvError = String(sessErr);
       logger.error("admin", "KV list sessions failed, retrying", {
         error: kvError,
+        ms: timing.sessionsMs,
       });
       // KV handle may be stale — try to reinitialize
       try {
+        const reinitT = performance.now();
         const { initKv: reinit } = await import("./kv.ts");
         await reinit();
+        timing.reinitMs = Math.round(performance.now() - reinitT);
+        logger.info("admin", "KV reinitialized", { ms: timing.reinitMs });
         await listSessions();
         kvError = undefined;
       } catch (retryErr) {
@@ -407,6 +452,12 @@ Deno.serve(serveOptions, async (req: Request) => {
     }
 
     const adminMs = Math.round(performance.now() - t0);
+    logger.info("admin", "Status request complete", {
+      totalMs: adminMs,
+      ...timing,
+      sessions: sessions.length,
+      messages: allMsgs.length,
+    });
     const recentMessages = allMsgs.map((m) => ({
       id: m.id,
       userId: m.userId.slice(0, 8),
@@ -1258,7 +1309,8 @@ Deno.serve(serveOptions, async (req: Request) => {
     return json({ ok: true });
   }
 
-  logger.warn("server", "Route not found", reqData);
+  const totalMs = Math.round(performance.now() - reqStart);
+  logger.warn("server", "Route not found", { ...reqData, totalMs });
   return error("Not found", 404);
 });
 
@@ -1513,9 +1565,12 @@ function filterMessages(){
 }
 
 async function load(){
+  const loadStart=Date.now();
   document.getElementById('status').textContent='Loading...';
   try{
+    const fetchStart=Date.now();
     const r=await fetch('/admin/status');
+    const fetchMs=Date.now()-fetchStart;
     if(r.status===401){location.href='/admin/login';return}
     const d=await r.json();
 
@@ -1531,7 +1586,7 @@ async function load(){
     renderSessions();
     renderMessages();
 
-    document.getElementById('status').textContent='Updated '+new Date().toLocaleTimeString();
+    document.getElementById('status').textContent='Updated '+new Date().toLocaleTimeString()+' (fetch: '+fetchMs+'ms, server: '+(d.queryMs||'?')+'ms)';
   }catch(e){
     document.getElementById('status').textContent='Error: '+e.message;
   }
