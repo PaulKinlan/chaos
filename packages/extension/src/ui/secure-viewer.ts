@@ -475,69 +475,68 @@ export function createSecureViewer(
   let rawContent = content;
   let currentType = type;
 
-  // Create the outer iframe
-  const outerFrame = document.createElement('iframe');
-  outerFrame.className = 'secure-viewer-frame';
-  outerFrame.sandbox.add('allow-scripts');
-  outerFrame.style.cssText = 'width:100%;height:100%;border:none;';
-  outerFrame.srcdoc = buildOuterSrcdoc(viewerId, title, showClose);
+  // Simple approach: single sandboxed iframe with content directly in srcdoc
+  // No postMessage needed — content is baked into the srcdoc at creation time
+  const frame = document.createElement('iframe');
+  frame.className = 'secure-viewer-frame';
+  frame.sandbox.value = ''; // NO permissions at all
+  frame.style.cssText = 'width:100%;height:100%;border:none;';
 
-  // Handle messages from the outer iframe
-  const messageHandler = (event: MessageEvent) => {
-    if (!event.data || event.data.viewerId !== viewerId) return;
+  const initialHtml = contentToHtml(rawContent, currentType);
+  frame.srcdoc = initialHtml;
+  console.log(`[secure-viewer] Created viewer ${viewerId}, type=${currentType}, content length=${content.length}, html length=${initialHtml.length}`);
 
-    switch (event.data.type) {
-      case 'sv-download': {
-        const blob = new Blob([rawContent], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = options?.downloadFilename || 'content.txt';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        break;
-      }
-      case 'sv-copy': {
-        navigator.clipboard.writeText(rawContent).catch((err) => {
-          console.error('[secure-viewer] Copy failed:', err);
-        });
-        break;
-      }
-      case 'sv-close': {
-        options?.onClose?.();
-        break;
-      }
-      case 'sv-ready': {
-        // Outer iframe is ready — send content now
-        const html = contentToHtml(rawContent, currentType);
-        outerFrame.contentWindow?.postMessage(
-          { type: 'sv-set-content', viewerId, html },
-          '*',
-        );
-        break;
-      }
-    }
-  };
+  // Toolbar rendered in the parent DOM (not in an iframe)
+  const toolbar = document.createElement('div');
+  toolbar.style.cssText = 'height:36px;background:var(--bg-raised);border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;padding:0 8px;gap:4px;flex-shrink:0;';
+  toolbar.innerHTML = `
+    <span style="flex:1;color:var(--text-primary);font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(title)}</span>
+    <button class="btn btn-ghost" style="padding:4px 6px;" title="Download">${ICONS.download}</button>
+    <button class="btn btn-ghost" style="padding:4px 6px;" title="Copy">${ICONS.copy}</button>
+    ${showClose ? `<button class="btn btn-ghost" style="padding:4px 6px;" title="Close">${ICONS.close}</button>` : ''}
+  `;
 
-  window.addEventListener('message', messageHandler);
+  const buttons = toolbar.querySelectorAll('button');
+  // Download
+  buttons[0].addEventListener('click', () => {
+    const blob = new Blob([rawContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = options?.downloadFilename || 'content.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+  // Copy
+  buttons[1].addEventListener('click', () => {
+    navigator.clipboard.writeText(rawContent).then(() => {
+      buttons[1].innerHTML = ICONS.check;
+      setTimeout(() => { buttons[1].innerHTML = ICONS.copy; }, 2000);
+    }).catch(console.error);
+  });
+  // Close
+  if (showClose && buttons[2]) {
+    buttons[2].addEventListener('click', () => options?.onClose?.());
+  }
 
-  container.appendChild(outerFrame);
+  // Wrap in a flex container
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;';
+  wrapper.appendChild(toolbar);
+  wrapper.appendChild(frame);
+  container.appendChild(wrapper);
 
   const viewer: SecureViewer = {
     setContent(newContent: string, newType?: SecureViewerOptions['type']) {
       rawContent = newContent;
       if (newType) currentType = newType;
-      const html = contentToHtml(rawContent, currentType);
-      outerFrame.contentWindow?.postMessage(
-        { type: 'sv-set-content', viewerId, html },
-        '*',
-      );
+      frame.srcdoc = contentToHtml(rawContent, currentType);
+      console.log(`[secure-viewer] Updated viewer ${viewerId}, type=${currentType}, content length=${newContent.length}`);
     },
     destroy() {
-      window.removeEventListener('message', messageHandler);
-      outerFrame.remove();
+      wrapper.remove();
     },
   };
 
