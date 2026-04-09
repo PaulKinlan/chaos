@@ -2,7 +2,11 @@
 
 ## Status
 
-All phases: TODO.
+- Phase 1 (Secure Content Renderer): DONE
+- Phase 2 (Rich Artifact Viewer): DONE
+- Phase 3 (Proactive Artifact Creation): DONE
+- Phase 4 (Proactive Dashboard): DONE
+- Phase 5 (Advanced Artifact Types): TODO
 
 ---
 
