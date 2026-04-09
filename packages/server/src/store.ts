@@ -322,6 +322,60 @@ export async function getMessagesForUser(
   return { messages: page, cursor: nextCursor };
 }
 
+/**
+ * Warm the message caches from KV. Call once after KV init.
+ */
+export async function warmMessageCache(): Promise<void> {
+  if (!isKvAvailable() || !getKv()) return;
+  const kv = getKv()!;
+  const t = performance.now();
+  let msgCount = 0;
+  let respCount = 0;
+
+  // Load recent messages
+  const msgIter = kv.list<StoredMessage>({ prefix: ["messages"] }, {
+    limit: 200,
+    reverse: true,
+  });
+  for await (const entry of msgIter) {
+    const m = entry.value;
+    let msgs = messageCache.get(m.userId);
+    if (!msgs) {
+      msgs = [];
+      messageCache.set(m.userId, msgs);
+    }
+    // Avoid duplicates
+    if (!msgs.some((x) => x.id === m.id)) {
+      msgs.push(m);
+      msgCount++;
+    }
+  }
+
+  // Load recent responses
+  const respIter = kv.list<StoredMessage>({ prefix: ["responses"] }, {
+    limit: 200,
+    reverse: true,
+  });
+  for await (const entry of respIter) {
+    const m = entry.value;
+    let resps = responseCache.get(m.channelId);
+    if (!resps) {
+      resps = [];
+      responseCache.set(m.channelId, resps);
+    }
+    if (!resps.some((x) => x.id === m.id)) {
+      resps.push(m);
+      respCount++;
+    }
+  }
+
+  logger.info("store", "Message cache warmed from KV", {
+    messages: msgCount,
+    responses: respCount,
+    ms: Math.round(performance.now() - t),
+  });
+}
+
 /** Get recent messages from in-memory cache only (instant, no KV). */
 export function getCachedRecentMessages(limit = 30): StoredMessage[] {
   const all: StoredMessage[] = [];

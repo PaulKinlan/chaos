@@ -169,9 +169,10 @@ const serveOptions = Deno.env.get("DENO_DEPLOYMENT_ID") ? {} : { port: PORT };
 // Server keypair is lazy (loaded on first /register call)
 const kvInitPromise = initKv().then(async () => {
   startMessageCleanup();
-  // Warm caches from KV so admin dashboard has data immediately
+  // Warm all caches from KV so admin dashboard has data immediately
   const { warmSessionCache } = await import("./auth.ts");
-  await warmSessionCache();
+  const { warmMessageCache } = await import("./store.ts");
+  await Promise.all([warmSessionCache(), warmMessageCache()]);
   initialized = true;
   logger.info("server", "Init complete", { kv: isKvAvailable() });
 }).catch((err) => {
