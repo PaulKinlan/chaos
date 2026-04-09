@@ -1648,6 +1648,12 @@ async function handleOneShotMessage(
       return { artifacts };
     }
 
+    case 'getHooks': {
+      const hooksAgentId = msg.agentId as string | undefined;
+      const allHooks = await getHooks();
+      return { hooks: hooksAgentId ? allHooks.filter((h) => h.agentId === hooksAgentId) : allHooks };
+    }
+
     case 'deleteArtifact': {
       const { deleteArtifact } = await import('./storage/shared.js');
       await deleteArtifact(msg.artifactPath as string);
