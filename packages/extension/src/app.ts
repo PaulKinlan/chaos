@@ -3648,6 +3648,7 @@ async function triggerSuggestionGeneration(): Promise<void> {
     sendPortMessage({
       type: 'agenticChat',
       agentId: masterAgent.id,
+      columnId: `suggestions-${Date.now()}`,
       message: `Write a file at suggestions/latest.json containing a JSON array of 2-4 suggestions for things I could do right now. Base them on what you find in my activity-log.jsonl, TODO.md, and memories/.
 
 Each suggestion object must have these fields:
