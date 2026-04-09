@@ -36,9 +36,11 @@ jobs:
         run: npm test
         working-directory: packages/extension
 
-      - name: Get version
+      - name: Bump patch version and compute release version
         id: version
         run: |
+          # Auto-bump patch version
+          node scripts/bump-version.mjs patch
           VERSION=$(node -p "require('./package.json').version")
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
@@ -46,14 +48,21 @@ jobs:
           echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
           echo "Version: ${VERSION} (${SHORT_SHA})"
 
-      - name: Update manifest version_name with SHA
-        run: |
+          # Update manifest version_name with SHA
           node -e "
             const fs = require('fs');
             const manifest = JSON.parse(fs.readFileSync('packages/extension/manifest.json', 'utf8'));
-            manifest.version_name = manifest.version + ' (${{ steps.version.outputs.short_sha }})';
+            manifest.version_name = manifest.version + ' (${SHORT_SHA})';
             fs.writeFileSync('packages/extension/manifest.json', JSON.stringify(manifest, null, 2) + '\n');
           "
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: bump version to ${{ steps.version.outputs.version }} [skip ci]" || true
+          git push || true
 
       - name: Build extension
         run: npm run build
