@@ -3728,9 +3728,21 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
       type: 'readArtifactContent',
       path: artifact.path,
     });
-    fileContent = result.content;
-  } catch {
-    // Leave default message
+    if (result?.content) {
+      fileContent = result.content;
+    } else {
+      console.warn('[artifacts] readArtifactContent returned empty for', artifact.path, result);
+      // Try reading from agent-scoped path as fallback
+      try {
+        const agentResult = await sendMsg<{ content: string }>({
+          type: 'readArtifactContent',
+          path: `agents/${artifact.agentId}/${artifact.path}`,
+        });
+        if (agentResult?.content) fileContent = agentResult.content;
+      } catch { /* fallback failed too */ }
+    }
+  } catch (err) {
+    console.error('[artifacts] Failed to read artifact content:', artifact.path, err);
   }
 
   // Detect content type from file extension or artifact type
@@ -3765,7 +3777,9 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
     </div>
     <div class="task-detail-field">
       <div class="task-detail-label">Path</div>
-      <div class="task-detail-value" style="font-family:var(--font-mono);font-size:var(--text-xs);">${escapeHtml(artifact.path)}</div>
+      <div class="task-detail-value" style="font-family:var(--font-mono);font-size:var(--text-xs);">
+        <a href="#" class="artifact-path-link" style="color:var(--accent-text);text-decoration:none;" title="View in agent memory">${escapeHtml(artifact.path)}</a>
+      </div>
     </div>
     <div class="task-detail-field">
       <div class="task-detail-label">Created</div>

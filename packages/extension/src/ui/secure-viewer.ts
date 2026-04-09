@@ -424,6 +424,9 @@ function buildOuterSrcdoc(viewerId: string, title: string, showClose: boolean): 
       }
     });
 
+    // Signal parent that we're ready to receive content
+    window.parent.postMessage({ type: 'sv-ready', viewerId: viewerId }, '*');
+
     document.getElementById('btn-download').addEventListener('click', function() {
       window.parent.postMessage({ type: 'sv-download', viewerId: viewerId }, '*');
     });
@@ -506,19 +509,19 @@ export function createSecureViewer(
         options?.onClose?.();
         break;
       }
+      case 'sv-ready': {
+        // Outer iframe is ready — send content now
+        const html = contentToHtml(rawContent, currentType);
+        outerFrame.contentWindow?.postMessage(
+          { type: 'sv-set-content', viewerId, html },
+          '*',
+        );
+        break;
+      }
     }
   };
 
   window.addEventListener('message', messageHandler);
-
-  // Send content to the inner iframe once the outer iframe loads
-  outerFrame.addEventListener('load', () => {
-    const html = contentToHtml(rawContent, currentType);
-    outerFrame.contentWindow?.postMessage(
-      { type: 'sv-set-content', viewerId, html },
-      '*',
-    );
-  });
 
   container.appendChild(outerFrame);
 
