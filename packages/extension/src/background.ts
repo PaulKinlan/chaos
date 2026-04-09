@@ -1514,11 +1514,23 @@ chrome.runtime.onMessage.addListener(
       } catch { /* */ }
       return false;
     }
+    // Messages handled by other listeners — don't intercept
+    const passthroughTypes = new Set([
+      'wsChannelMessage', 'wsLog', 'wsConnect', 'wsDisconnect', 'wsStatus',
+      'channelLog', 'filesystemChanged', 'parseHtml',
+      'extractContent',
+    ]);
+    if (passthroughTypes.has(msgType)) {
+      return false; // Let other listeners handle it
+    }
+
     console.log(`[background] one-shot message: ${msgType}`);
     handleOneShotMessage(msg)
       .then((result) => {
-        console.log(`[background] one-shot response: ${msgType}`, result ? 'ok' : 'empty');
-        sendResponse(result);
+        if (result !== undefined) {
+          console.log(`[background] one-shot response: ${msgType}`, 'ok');
+          sendResponse(result);
+        }
       })
       .catch((err) => {
         console.error(`[background] one-shot error: ${msgType}`, err);
