@@ -6,9 +6,9 @@ import {
   assertNotEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  ensureServerKeyPair,
   getServerPublicKey,
   hashBody,
-  initServerKeyPair,
   isTimestampFresh,
   NonceTracker,
   verifyRequestSignature,
@@ -84,8 +84,8 @@ async function computeBodyHash(body: string): Promise<string> {
 // ── Tests ──
 
 Deno.test("Server keypair generation", async () => {
-  await initServerKeyPair();
-  const publicKey = getServerPublicKey();
+  await ensureServerKeyPair();
+  const publicKey = await getServerPublicKey();
   assertNotEquals(publicKey, null);
   assertEquals(publicKey!.kty, "EC");
   assertEquals(publicKey!.crv, "P-256");
