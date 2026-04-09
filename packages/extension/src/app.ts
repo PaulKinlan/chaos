@@ -3648,7 +3648,17 @@ async function triggerSuggestionGeneration(): Promise<void> {
     sendPortMessage({
       type: 'agenticChat',
       agentId: masterAgent.id,
-      message: 'Quick review: look at my recent activity (activity-log.jsonl, memories/, TODO.md) and publish a JSON artifact at suggestions/latest.json containing 2-4 actionable suggestions. Each suggestion should have: id (unique string), title (short), description (1-2 sentences), action (object with type: "chat" and prompt: string the user can click to start), priority ("high"/"medium"/"low"), createdAt (ISO date). Focus on things I could do RIGHT NOW based on what you see. Do NOT write a summary — just the suggestions JSON file via artifact_publish.',
+      message: `Write a file at suggestions/latest.json containing a JSON array of 2-4 suggestions for things I could do right now. Base them on what you find in my activity-log.jsonl, TODO.md, and memories/.
+
+Each suggestion object must have these fields:
+- "id": unique string like "sug-1"
+- "title": short title (5-8 words)
+- "description": 1-2 sentence description
+- "action": { "type": "chat", "prompt": "the exact prompt to send" }
+- "priority": "high", "medium", or "low"
+- "createdAt": "${new Date().toISOString()}"
+
+Write the JSON array directly to suggestions/latest.json using write_file. Do not use artifact_publish. Just write the file and stop.`,
     });
 
     // Wait a bit then refresh to pick up the new suggestions
