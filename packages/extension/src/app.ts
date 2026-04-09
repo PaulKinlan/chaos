@@ -3346,20 +3346,54 @@ async function loadDashboard(): Promise<void> {
       // Usage unavailable
     }
 
-    // Load suggestions from master agent's suggestions artifact
+    // Load suggestions — check artifacts first, then agent memory files
     let suggestions: DashboardSuggestion[] = [];
     try {
+      // Try artifact path first
       const suggestionsArtifact = allArtifacts.find(a => a.path.includes('suggestions/latest.json'));
+      let suggestionsContent: string | null = null;
+
       if (suggestionsArtifact) {
-        const result = await sendMsg<{ content: string }>({
-          type: 'readArtifactContent',
-          path: suggestionsArtifact.path,
-        });
-        const parsed = JSON.parse(result.content);
-        suggestions = (Array.isArray(parsed) ? parsed : []).filter((s: DashboardSuggestion) => !s.dismissedAt);
+        try {
+          const result = await sendMsg<{ content: string }>({
+            type: 'readArtifactContent',
+            path: suggestionsArtifact.path,
+          });
+          if (result?.content) suggestionsContent = result.content;
+        } catch { /* artifact read failed */ }
       }
-    } catch {
-      // No suggestions available
+
+      // Fallback: read directly from master agent's memory
+      if (!suggestionsContent) {
+        const masterAgent = agents.find(a => a.master);
+        if (masterAgent) {
+          for (const path of [
+            `agents/${masterAgent.id}/suggestions/latest.json`,
+            `shared/artifacts/${masterAgent.id}/suggestions/latest.json`,
+          ]) {
+            try {
+              const result = await sendMsg<{ content: string }>({
+                type: 'readArtifactContent',
+                path,
+              });
+              if (result?.content && result.content.startsWith('[')) {
+                suggestionsContent = result.content;
+                break;
+              }
+            } catch { /* try next path */ }
+          }
+        }
+      }
+
+      if (suggestionsContent) {
+        const parsed = JSON.parse(suggestionsContent);
+        suggestions = (Array.isArray(parsed) ? parsed : []).filter((s: DashboardSuggestion) => !s.dismissedAt);
+        console.log(`[dashboard] Loaded ${suggestions.length} suggestions`);
+      } else {
+        console.log('[dashboard] No suggestions file found');
+      }
+    } catch (err) {
+      console.warn('[dashboard] Failed to load suggestions:', err);
     }
 
     // Load hooks info with names
