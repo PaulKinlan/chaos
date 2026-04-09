@@ -3365,13 +3365,9 @@ async function loadDashboard(): Promise<void> {
 
     renderDashboard(pinned, recent, suggestions, usage, hookDetails);
 
-    // Check if dashboard is empty
-    const dashboardEmpty = document.getElementById('dashboard-empty')!;
-    if (pinned.length === 0 && recent.length === 0 && suggestions.length === 0 && !usage?.totalRequests) {
-      dashboardEmpty.style.display = '';
-    } else {
-      dashboardEmpty.style.display = 'none';
-    }
+    // Hide the global empty state — sections have their own placeholders
+    const dashboardEmpty = document.getElementById('dashboard-empty');
+    if (dashboardEmpty) dashboardEmpty.style.display = 'none';
   } catch (err) {
     showPanelError('view-dashboard', `Failed to load dashboard: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
@@ -3398,7 +3394,7 @@ function renderDashboard(
     pinnedSection.style.display = '';
     const todayStr = new Date().toISOString().slice(0, 10);
     const hasToday = pinned.some(a => a.timestamp.startsWith(todayStr));
-    if (pinnedTitle) pinnedTitle.textContent = hasToday ? 'Today' : 'Pinned';
+    if (pinnedTitle) pinnedTitle.textContent = hasToday ? 'Today' : 'Pinned Artifacts';
     pinnedCards.innerHTML = pinned.map((a, i) => {
       const displayName = a.title || a.path.split('/').pop() || a.path;
       const typeLabel = artifactTypeLabel(a);
@@ -3448,7 +3444,9 @@ function renderDashboard(
       });
     });
   } else {
-    pinnedSection.style.display = 'none';
+    pinnedSection.style.display = '';
+    if (pinnedTitle) pinnedTitle.textContent = 'Today';
+    pinnedCards.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-xs);padding:var(--sp-3);border:1px dashed var(--border-subtle);border-radius:6px;text-align:center;">No pinned artifacts yet. Pin an artifact from the Artifacts view, or ask your agent to create a daily summary.</div>`;
   }
 
   // Suggestions section
@@ -3504,7 +3502,8 @@ function renderDashboard(
       });
     });
   } else {
-    suggestionsSection.style.display = 'none';
+    suggestionsSection.style.display = '';
+    suggestionsCards.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-xs);padding:var(--sp-3);border:1px dashed var(--border-subtle);border-radius:6px;text-align:center;">No suggestions yet. Your agent will generate suggestions during its daily review.</div>`;
   }
 
   // Recent artifacts section
@@ -3531,7 +3530,8 @@ function renderDashboard(
       });
     });
   } else {
-    recentSection.style.display = 'none';
+    recentSection.style.display = '';
+    recentList.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-xs);padding:var(--sp-3);border:1px dashed var(--border-subtle);border-radius:6px;text-align:center;">No artifacts yet. Ask your agent to research something or summarise a page — results will appear here.</div>`;
   }
 
   // Activity summary
