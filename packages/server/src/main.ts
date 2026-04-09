@@ -182,32 +182,30 @@ function getClientIP(req: Request): string {
 // On Deno Deploy, port is managed by the platform; locally use PORT env
 const serveOptions = Deno.env.get("DENO_DEPLOYMENT_ID") ? {} : { port: PORT };
 
+// Start KV initialization eagerly at module load (not lazily on first request)
+// This runs as soon as the isolate boots — before any request arrives
+const kvInitPromise = initKv().then(() => initServerKeyPair()).then(() => {
+  startMessageCleanup();
+  initialized = true;
+  logger.info("server", "Background init complete", {
+    kv: isKvAvailable(),
+  });
+}).catch((err) => {
+  logger.error("server", "Background init failed", { error: String(err) });
+});
+
 Deno.serve(serveOptions, async (req: Request) => {
   const reqStart = performance.now();
-
-  // Lazy init on first request (avoids blocking Deno Deploy warmup)
-  const initStart = performance.now();
-  await ensureInitialized();
-  const initMs = Math.round(performance.now() - initStart);
-
   const url = new URL(req.url);
   const method = req.method;
-  const reqData = requestLog(req, "server", "request");
 
-  // Log every incoming request with init time if it was slow
-  logger.info("server", "Incoming request", {
-    ...reqData,
-    ...(initMs > 10 ? { initMs } : {}),
-  });
+  // ── Fast path: serve static pages WITHOUT waiting for KV ──
+  // These don't need KV — serve them instantly on cold start
 
-  // Handle CORS preflight
   if (method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
-  // ── Public endpoints (no auth) ──
-
-  // Favicon
   if (url.pathname === "/favicon.ico") {
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#238636"/><text x="16" y="22" text-anchor="middle" font-size="18" font-family="sans-serif" fill="white">C</text></svg>';
@@ -219,17 +217,57 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
-  // Health check / status page
+  // Health check — instant, no KV needed
   if (url.pathname === "/health" && method === "GET") {
-    const { isKvAvailable } = await import("./kv.ts");
-    const { getConnectionCount } = await import("./ws.ts");
     return json({
       status: "ok",
       version: VERSION,
       kv: isKvAvailable(),
+      initialized,
       websockets: getConnectionCount(),
       uptime: Math.floor(performance.now() / 1000),
     });
+  }
+
+  // Admin login page — static HTML, no KV needed
+  if (url.pathname === "/admin/login" && method === "GET") {
+    const adminKey = Deno.env.get("CHAOS_ADMIN_KEY");
+    if (!adminKey) {
+      return error("Admin not configured (set CHAOS_ADMIN_KEY env var)", 503);
+    }
+    return new Response(ADMIN_LOGIN_HTML, {
+      headers: { "Content-Type": "text/html", ...corsHeaders },
+    });
+  }
+
+  // Admin dashboard HTML — serve immediately (JS fetches data after)
+  if (url.pathname === "/admin" && method === "GET") {
+    // Quick session check from in-memory cache (no KV hit)
+    const cookie = req.headers.get("cookie") || "";
+    const match = cookie.match(/chaos_admin=([^;]+)/);
+    const token = match?.[1];
+    const cached = token ? adminSessionCache.get(token) : undefined;
+    const ADMIN_SESSION_TTL_CHECK = 24 * 60 * 60 * 1000;
+    if (cached && Date.now() - cached < ADMIN_SESSION_TTL_CHECK) {
+      // Valid cached session — serve dashboard HTML instantly
+      return new Response(ADMIN_DASHBOARD_HTML, {
+        headers: { "Content-Type": "text/html", ...corsHeaders },
+      });
+    }
+    // No cached session — redirect to login (KV check happens on /admin/status)
+    return new Response(null, {
+      status: 302,
+      headers: { Location: "/admin/login" },
+    });
+  }
+
+  // ── All endpoints below need KV — wait for background init ──
+  const reqData = requestLog(req, "server", "request");
+  if (!initialized) {
+    const initStart = performance.now();
+    await kvInitPromise;
+    const initMs = Math.round(performance.now() - initStart);
+    logger.info("server", "Waited for init", { ...reqData, initMs });
   }
 
   // ── Admin dashboard (session cookie auth) ──
@@ -274,18 +312,7 @@ Deno.serve(serveOptions, async (req: Request) => {
     return false;
   }
 
-  // Login page
-  if (url.pathname === "/admin/login" && method === "GET") {
-    const adminKey = Deno.env.get("CHAOS_ADMIN_KEY");
-    if (!adminKey) {
-      return error("Admin not configured (set CHAOS_ADMIN_KEY env var)", 503);
-    }
-    return new Response(ADMIN_LOGIN_HTML, {
-      headers: { "Content-Type": "text/html", ...corsHeaders },
-    });
-  }
-
-  // Login POST
+  // Login POST (login page GET is handled above init gate)
   if (url.pathname === "/admin/login" && method === "POST") {
     const adminKey = Deno.env.get("CHAOS_ADMIN_KEY");
     if (!adminKey) return error("Admin not configured", 503);
@@ -319,7 +346,7 @@ Deno.serve(serveOptions, async (req: Request) => {
     }
   }
 
-  // Admin dashboard page
+  // Admin dashboard page (HTML served above init gate, this is fallback for KV-based session check)
   if (url.pathname === "/admin" && method === "GET") {
     if (!(await verifyAdminSession(req))) {
       return new Response(null, {
