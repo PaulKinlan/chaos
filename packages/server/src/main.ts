@@ -261,13 +261,18 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
-  // ── All endpoints below need KV — wait for background init ──
+  // ── Endpoints below may need KV ──
   const reqData = requestLog(req, "server", "request");
+  logger.info("server", "Incoming request", reqData);
+
+  // Wait for KV init if not ready (non-admin endpoints need it for auth)
   if (!initialized) {
     const initStart = performance.now();
     await kvInitPromise;
-    const initMs = Math.round(performance.now() - initStart);
-    logger.info("server", "Waited for init", { ...reqData, initMs });
+    logger.info("server", "Waited for init", {
+      ...reqData,
+      initMs: Math.round(performance.now() - initStart),
+    });
   }
 
   // ── Admin dashboard (session cookie auth) ──
@@ -361,7 +366,38 @@ Deno.serve(serveOptions, async (req: Request) => {
 
   // Admin status API (used by dashboard JS)
   if (url.pathname === "/admin/status" && method === "GET") {
-    if (!(await verifyAdminSession(req))) return error("Unauthorized", 401);
+    // Quick session check from cache first (no KV)
+    const statusCookie = req.headers.get("cookie") || "";
+    const statusMatch = statusCookie.match(/chaos_admin=([^;]+)/);
+    const statusToken = statusMatch?.[1];
+    const statusCached = statusToken
+      ? adminSessionCache.get(statusToken)
+      : undefined;
+    if (!(statusCached && Date.now() - statusCached < 24 * 60 * 60 * 1000)) {
+      // Not in cache — need KV for verification
+      if (!initialized) {
+        // KV not ready — wait briefly, but don't block forever
+        const raceResult = await Promise.race([
+          kvInitPromise.then(() => "ready" as const),
+          new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 3000)),
+        ]);
+        if (raceResult === "timeout") {
+          // Return partial status instead of blocking
+          return json({
+            status: "initializing",
+            version: VERSION,
+            kv: false,
+            kvInitializing: true,
+            websockets: 0,
+            uptime: Math.floor(performance.now() / 1000),
+            sessions: [],
+            recentMessages: [],
+            queryMs: 0,
+          });
+        }
+      }
+      if (!(await verifyAdminSession(req))) return error("Unauthorized", 401);
+    }
 
     const { isKvAvailable, getKv } = await import("./kv.ts");
     const { getConnectionCount } = await import("./ws.ts");
@@ -1600,6 +1636,14 @@ async function load(){
     const fetchMs=Date.now()-fetchStart;
     if(r.status===401){location.href='/admin/login';return}
     const d=await r.json();
+
+    // If server is still initializing, show status and retry quickly
+    if(d.status==='initializing'||d.kvInitializing){
+      document.getElementById('status').textContent='Server initializing... (retrying in 2s)';
+      document.getElementById('stats').innerHTML='<div class="stat"><div class="stat-value stat-warn">Initializing</div><div class="stat-label">Deno KV</div></div>';
+      setTimeout(load,2000);
+      return;
+    }
 
     document.getElementById('stats').innerHTML=
       '<div class="stat"><div class="stat-value '+(d.kv?'stat-ok':'stat-err')+'">'+(d.kv?'Connected':'Offline')+(d.kvError?' *':'')+'</div><div class="stat-label">Deno KV</div></div>'+
