@@ -242,9 +242,11 @@ Write the JSON array directly to suggestions/latest.json using write_file. Do no
     });
   }
 
-  private _onDoSuggestion(idx: number): void {
+  private async _onDoSuggestion(idx: number): Promise<void> {
     const suggestion = this._suggestions[idx];
     if (suggestion.action?.prompt) {
+      // Dismiss after acting on it
+      await this._onDismissSuggestion(idx);
       this.dispatchEvent(new CustomEvent('view-change', {
         detail: { view: 'chat', prompt: suggestion.action.prompt },
         bubbles: true,
