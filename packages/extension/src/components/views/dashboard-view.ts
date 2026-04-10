@@ -11,7 +11,7 @@ import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sendMsg, sendPortMessage } from '../../services/messaging.js';
 import type { AgentMeta, ArtifactMeta } from '../../storage/types.js';
-import { artifacts as artifactsSignal, pinnedArtifacts, recentArtifacts, agents as agentsSignal, refreshArtifacts } from '../../state/app-state.js';
+import { artifacts as artifactsSignal, pinnedArtifacts, recentArtifacts, agents as agentsSignal, refreshArtifacts, usageSummary as usageSummarySignal, refreshUsage, type UsageSummaryData } from '../../state/app-state.js';
 import { SignalWatcher } from '../../state/signal-watcher.js';
 
 // ── Helpers ──
@@ -52,13 +52,6 @@ interface HookDetail {
   triggerCount: number;
 }
 
-interface UsageSummary {
-  totalCost: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalRequests: number;
-}
-
 function artifactTypeLabel(a: ArtifactMeta): string {
   if (a.type) return a.type;
   const ext = a.path.split('.').pop()?.toLowerCase();
@@ -87,11 +80,11 @@ function artifactTypeBadgeClass(type?: string): string {
 export class ChaosDashboardView extends SignalWatcher(LitElement) {
   createRenderRoot() { return this; }
 
-  protected watchSignals() { return [pinnedArtifacts, recentArtifacts, agentsSignal]; }
+  protected watchSignals() { return [pinnedArtifacts, recentArtifacts, agentsSignal, usageSummarySignal]; }
 
   @property({ type: Array }) agents: AgentMeta[] = [];
   @state() private _suggestions: DashboardSuggestion[] = [];
-  @state() private _usage: UsageSummary | null = null;
+  @state() private _todayUsage: UsageSummaryData | null = null;
   @state() private _hookDetails: HookDetail[] = [];
   @state() private _loading = false;
   @state() private _suggestionsGenerating = false;
@@ -126,15 +119,19 @@ export class ChaosDashboardView extends SignalWatcher(LitElement) {
       await refreshArtifacts();
       const allArtifacts = artifactsSignal.value;
 
-      // Load today's usage
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
+      // Load today's usage via signal
       try {
-        const usageResult = await sendMsg<{ summary: UsageSummary }>({
+        // Dashboard always shows today's usage; fetch directly for today
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const usageResult = await sendMsg<{ summary: UsageSummaryData }>({
           type: 'getUsageSummary',
           since: todayStart.toISOString(),
         });
-        this._usage = usageResult.summary;
+        // Store in a local for dashboard's today-only view
+        this._todayUsage = usageResult.summary || null;
+        // Also refresh the global usage signal
+        refreshUsage();
       } catch {
         // Usage unavailable
       }
@@ -451,7 +448,7 @@ Write the JSON array directly to suggestions/latest.json using write_file. Do no
   }
 
   private _renderActivity() {
-    const usage = this._usage;
+    const usage = this._todayUsage;
     const hookDetails = this._hookDetails;
     const hooksCount = hookDetails.reduce((sum, h) => sum + h.triggerCount, 0);
     const totalTokens = usage ? usage.totalInputTokens + usage.totalOutputTokens : 0;

@@ -11,6 +11,8 @@ import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sendMsg } from '../../services/messaging.js';
 import type { AgentMeta, AgentMessage } from '../../storage/types.js';
+import { SignalWatcher } from '../../state/signal-watcher.js';
+import { messages as messagesSignal, agents as agentsSignal, refreshMessages } from '../../state/app-state.js';
 
 // ── Helpers ──
 
@@ -31,8 +33,10 @@ function formatTime(iso: string): string {
 }
 
 @customElement('chaos-messages-view')
-export class ChaosMessagesView extends LitElement {
+export class ChaosMessagesView extends SignalWatcher(LitElement) {
   createRenderRoot() { return this; }
+
+  protected watchSignals() { return [messagesSignal, agentsSignal]; }
 
   /** Currently selected agent ID — set by the parent. */
   @property({ type: String, attribute: 'active-agent-id' }) activeAgentId: string | null = null;
@@ -40,7 +44,6 @@ export class ChaosMessagesView extends LitElement {
   /** List of all agents (for resolving names). */
   @property({ type: Array }) agents: AgentMeta[] = [];
 
-  @state() private _messages: AgentMessage[] = [];
   @state() private _dirFilter = '';
   @state() private _searchText = '';
   @state() private _loading = false;
@@ -54,8 +57,7 @@ export class ChaosMessagesView extends LitElement {
     console.log('[chaos-messages-view] refresh, activeAgentId=', this.activeAgentId);
     this._loading = true;
     try {
-      const result = await sendMsg<{ messages: AgentMessage[] }>({ type: 'getMessages' });
-      this._messages = result.messages;
+      await refreshMessages();
     } catch (err) {
       console.error('[chaos-messages-view] Error loading messages:', err);
     } finally {
@@ -64,15 +66,16 @@ export class ChaosMessagesView extends LitElement {
   }
 
   private _agentName(agentId: string): string {
-    const agent = this.agents.find((a) => a.id === agentId);
+    const allAgents = this.agents.length > 0 ? this.agents : agentsSignal.value;
+    const agent = allAgents.find((a) => a.id === agentId);
     return agent ? agent.name : agentId;
   }
 
   private get _filtered(): AgentMessage[] {
     const myAgentId = this.activeAgentId || '';
     let filtered = myAgentId
-      ? this._messages.filter((m) => m.from === myAgentId || m.to === myAgentId || m.to === 'broadcast')
-      : this._messages;
+      ? messagesSignal.value.filter((m) => m.from === myAgentId || m.to === myAgentId || m.to === 'broadcast')
+      : messagesSignal.value;
 
     if (this._dirFilter === 'sent') {
       filtered = filtered.filter((m) => m.from === myAgentId);
@@ -121,7 +124,7 @@ export class ChaosMessagesView extends LitElement {
               <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             </div>
             <h3>No messages</h3>
-            <p>${this._messages.length === 0
+            <p>${messagesSignal.value.length === 0
               ? 'No messages yet. Messages appear when agents communicate with each other.'
               : 'No messages match the current filters.'}</p>
           </div>

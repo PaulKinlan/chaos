@@ -49,7 +49,7 @@ import './components/shared/index.js';
 import './components/views/index.js';
 // ── Global state signals ──
 import './state/index.js';
-import { agents as agentsSignal, artifacts as artifactsSignal, hooks as hooksSignal, refreshArtifacts, refreshHooks } from './state/app-state.js';
+import { agents as agentsSignal, artifacts as artifactsSignal, hooks as hooksSignal, refreshArtifacts, refreshHooks, refreshUsage, refreshTasks, refreshMessages } from './state/app-state.js';
 // ── Messaging singleton (lets Lit components call sendMsg) ──
 import { setSendMsg, setSendPortMessage } from './services/messaging.js';
 import type { AgentMeta, ArtifactMeta, ApiKeys, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
@@ -661,7 +661,7 @@ function loadCurrentViewData(): void {
       break;
     }
     case 'messages': {
-      const messagesEl = document.querySelector('chaos-messages-view');
+      const messagesEl = document.querySelector('chaos-messages-view') as any;
       if (messagesEl) {
         messagesEl.activeAgentId = activeAgentId;
         messagesEl.agents = agents;
@@ -3329,6 +3329,9 @@ async function init(): Promise<void> {
   // Load initial data into signals
   refreshArtifacts();
   refreshHooks();
+  refreshUsage();
+  refreshTasks();
+  refreshMessages();
 }
 
 // Handle browser back/forward

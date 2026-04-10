@@ -10,6 +10,12 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { sendMsg } from '../../services/messaging.js';
+import { SignalWatcher } from '../../state/signal-watcher.js';
+import {
+  usageSummary, usageRecords, usageTimeRange,
+  refreshUsage,
+  type UsageSummaryData, type UsageRecordData,
+} from '../../state/app-state.js';
 
 // ── Helpers ──
 
@@ -76,12 +82,11 @@ interface SpendingLimitResult {
 }
 
 @customElement('chaos-usage-view')
-export class ChaosUsageView extends LitElement {
+export class ChaosUsageView extends SignalWatcher(LitElement) {
   createRenderRoot() { return this; }
 
-  @state() private _range = '7d';
-  @state() private _summary: UsageSummary | null = null;
-  @state() private _records: UsageRecord[] = [];
+  protected watchSignals() { return [usageSummary, usageRecords, usageTimeRange]; }
+
   @state() private _loading = false;
   @state() private _alertLimit: number | null = null;
   @state() private _alertStatus = '';
@@ -94,20 +99,11 @@ export class ChaosUsageView extends LitElement {
   }
 
   async refresh(): Promise<void> {
-    console.log('[chaos-usage-view] refresh, range=', this._range);
+    console.log('[chaos-usage-view] refresh, range=', usageTimeRange.value);
     this._loading = true;
 
     try {
-      const since = getUsageSince(this._range);
-
-      const [summaryResult, recordsResult] = await Promise.all([
-        sendMsg<{ summary: UsageSummary }>({ type: 'getUsageSummary', since }),
-        sendMsg<{ records: UsageRecord[] }>({ type: 'getUsageRecords', since, limit: 50 }),
-      ]);
-
-      if (!summaryResult || !recordsResult) return;
-      this._summary = summaryResult.summary;
-      this._records = recordsResult.records;
+      await refreshUsage();
 
       // Load global alert
       await this._loadGlobalAlert();
@@ -202,12 +198,12 @@ export class ChaosUsageView extends LitElement {
   }
 
   private _onRangeChange(e: Event): void {
-    this._range = (e.target as HTMLSelectElement).value;
+    usageTimeRange.value = (e.target as HTMLSelectElement).value;
     this.refresh();
   }
 
   render() {
-    const summary = this._summary;
+    const summary = usageSummary.value;
 
     return html`
       <div class="view-padded">
@@ -215,7 +211,7 @@ export class ChaosUsageView extends LitElement {
           <h2>Usage &amp; Costs</h2>
           <div style="display:flex;gap:var(--sp-2);align-items:center;">
             <select class="settings-select" style="padding:4px 8px;font-size:var(--text-xs);"
-              .value=${this._range}
+              .value=${usageTimeRange.value}
               @change=${this._onRangeChange}>
               <option value="24h">Last 24 hours</option>
               <option value="7d">Last 7 days</option>
@@ -323,7 +319,7 @@ export class ChaosUsageView extends LitElement {
   }
 
   private _renderRecent() {
-    const records = this._records;
+    const records = usageRecords.value;
 
     return html`
       <div>

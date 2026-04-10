@@ -12,6 +12,16 @@ import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sendMsg, sendPortMessage } from '../../services/messaging.js';
 import type { AgentMeta, AgentMessage, Task, TaskEvent, ScheduledTask } from '../../storage/types.js';
+import { SignalWatcher } from '../../state/signal-watcher.js';
+import {
+  tasks as tasksSignal,
+  scheduledTasks as scheduledTasksSignal,
+  taskEvents as taskEventsSignal,
+  messages as messagesSignal,
+  agents as agentsSignal,
+  refreshTasks,
+  refreshMessages,
+} from '../../state/app-state.js';
 
 // ── Helpers ──
 
@@ -66,16 +76,14 @@ function statusBadgeClass(status: string): string {
 }
 
 @customElement('chaos-tasks-view')
-export class ChaosTasksView extends LitElement {
+export class ChaosTasksView extends SignalWatcher(LitElement) {
   createRenderRoot() { return this; }
+
+  protected watchSignals() { return [tasksSignal, scheduledTasksSignal, taskEventsSignal, messagesSignal, agentsSignal]; }
 
   @property({ type: Array }) agents: AgentMeta[] = [];
   @property({ type: String }) activeAgentId: string | null = null;
 
-  @state() private _tasks: Task[] = [];
-  @state() private _scheduledTasks: ScheduledTask[] = [];
-  @state() private _taskEvents: TaskEvent[] = [];
-  @state() private _messages: AgentMessage[] = [];
   @state() private _filterAgentId = '';
   @state() private _filterStatus = '';
   @state() private _loading = false;
@@ -88,12 +96,13 @@ export class ChaosTasksView extends LitElement {
   }
 
   private _agentName(agentId: string): string {
-    const agent = this.agents.find(a => a.id === agentId);
+    const allAgents = this.agents.length > 0 ? this.agents : agentsSignal.value;
+    const agent = allAgents.find(a => a.id === agentId);
     return agent ? agent.name : agentId;
   }
 
   private _taskSubject(taskId: string): string {
-    const t = this._tasks.find(task => task.id === taskId);
+    const t = tasksSignal.value.find(task => task.id === taskId);
     return t ? t.subject : taskId;
   }
 
@@ -104,16 +113,7 @@ export class ChaosTasksView extends LitElement {
     }
     this._loading = true;
     try {
-      const [collabResult, schedResult, eventsResult, msgsResult] = await Promise.all([
-        sendMsg<{ tasks: Task[] }>({ type: 'getTaskState' }),
-        sendMsg<{ tasks: ScheduledTask[] }>({ type: 'getScheduledTasks' }),
-        sendMsg<{ events: TaskEvent[] }>({ type: 'getTaskEvents' }),
-        sendMsg<{ messages: AgentMessage[] }>({ type: 'getMessages' }),
-      ]);
-      this._tasks = collabResult.tasks;
-      this._scheduledTasks = schedResult.tasks || [];
-      this._taskEvents = eventsResult.events || [];
-      this._messages = msgsResult.messages || [];
+      await Promise.all([refreshTasks(), refreshMessages()]);
     } catch (err) {
       console.error('[chaos-tasks-view] Error loading tasks:', err);
     } finally {
@@ -123,8 +123,8 @@ export class ChaosTasksView extends LitElement {
 
   private get _filteredTasks(): Task[] {
     let filtered = this._filterAgentId
-      ? this._tasks.filter(t => t.owner === this._filterAgentId)
-      : this._tasks;
+      ? tasksSignal.value.filter(t => t.owner === this._filterAgentId)
+      : tasksSignal.value;
     if (this._filterStatus) {
       filtered = filtered.filter(t => t.status === this._filterStatus);
     }
@@ -133,7 +133,7 @@ export class ChaosTasksView extends LitElement {
 
   private get _agentScheduled(): ScheduledTask[] {
     return this._filterAgentId
-      ? this._scheduledTasks.filter(t => t.agentId === this._filterAgentId)
+      ? scheduledTasksSignal.value.filter(t => t.agentId === this._filterAgentId)
       : [];
   }
 
@@ -159,7 +159,7 @@ export class ChaosTasksView extends LitElement {
   }
 
   private _showTaskDetail(taskId: string): void {
-    const task = this._tasks.find(t => t.id === taskId);
+    const task = tasksSignal.value.find(t => t.id === taskId);
     if (!task) return;
     this._detailTask = task;
     this._detailOpen = true;
@@ -263,7 +263,7 @@ export class ChaosTasksView extends LitElement {
         <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:6px;">Jump to agent tasks:</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">
           ${this.agents.map(agent => {
-            const count = this._tasks.filter(t => t.owner === agent.id).length + this._scheduledTasks.filter(t => t.agentId === agent.id).length;
+            const count = tasksSignal.value.filter(t => t.owner === agent.id).length + scheduledTasksSignal.value.filter(t => t.agentId === agent.id).length;
             return html`
               <button class="btn btn-ghost btn-xs" style="font-size:var(--text-xs);" @click=${() => this._onAgentJump(agent.id)}>
                 ${escapeHtml(agent.name)}${count > 0 ? ` (${count})` : ''}
@@ -285,7 +285,7 @@ export class ChaosTasksView extends LitElement {
 
         ${agentCollab.length === 0 ? html`
           <p class="tasks-section-empty">
-            ${this._tasks.filter(t => t.owner === this.activeAgentId).length === 0
+            ${tasksSignal.value.filter(t => t.owner === this.activeAgentId).length === 0
               ? 'No collaborative tasks yet. These appear when agents create work items for each other.'
               : 'No tasks match the current filters.'}
           </p>
@@ -374,7 +374,7 @@ export class ChaosTasksView extends LitElement {
 
     const entries: TimelineEntry[] = [];
 
-    for (const evt of this._taskEvents) {
+    for (const evt of taskEventsSignal.value) {
       const ownerName = evt.data.owner ? this._agentName(evt.data.owner) : 'System';
       const subject = evt.data.subject || this._taskSubject(evt.taskId);
 
@@ -395,7 +395,7 @@ export class ChaosTasksView extends LitElement {
       }
     }
 
-    for (const m of this._messages) {
+    for (const m of messagesSignal.value) {
       if (m.to !== 'broadcast') {
         const preview = m.body.length > 100 ? m.body.slice(0, 100) + '...' : m.body;
         entries.push({
