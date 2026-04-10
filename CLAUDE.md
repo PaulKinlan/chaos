@@ -109,6 +109,42 @@ When in doubt:
 - All Chrome API tools should check permissions before use
 - Use inline SVG icons, never emoji, for UI elements
 
+## Lit Component Architecture
+
+The extension UI is built with [Lit](https://lit.dev/) Web Components. See the full documentation in `packages/extension/src/components/README.md`.
+
+### Directory Structure
+
+```
+packages/extension/src/
+  components/
+    design-system/     Primitives: badge, button, card, field, empty-state, icon, modal, search
+    shared/            Reusable components: sidebar, filter-bar, chat-message, step-details, chat-input
+    views/             Screen-level components: one per application view (11 views total)
+  state/               Global state via Preact Signals (app-state.ts, signal-watcher.ts)
+  services/            Messaging singleton for background communication (messaging.ts)
+```
+
+### Key Conventions
+
+- **Light DOM only** — every component uses `createRenderRoot() { return this; }` so existing CSS applies
+- **`chaos-` prefix** — all custom elements: `chaos-badge`, `chaos-dashboard-view`, etc.
+- **Design system primitives** — use `<chaos-card>`, `<chaos-badge>`, `<chaos-button>`, `<chaos-field>`, `<chaos-empty-state>`, `<chaos-modal>`, `<chaos-search>`, `<chaos-icon>` instead of raw HTML
+- **Signals for state** — global state in `state/app-state.ts` (activeView, agents, activeAgentId, etc.)
+- **`sendMsg` / `sendPortMessage`** — singletons from `services/messaging.ts` for background communication
+- **Events for communication** — components fire `CustomEvent` with kebab-case names, `bubbles: true`
+- **No innerHTML** — all rendering via Lit `html` templates; use `createSecureViewer()` for untrusted content
+
+### Documentation
+
+- `components/README.md` — architecture overview, conventions, how to add views
+- `components/design-system/README.md` — design system component catalog
+- `components/shared/README.md` — shared component API reference
+- `components/views/README.md` — view component documentation
+- `components/MIGRATION.md` — guide for converting imperative code to Lit components
+- `state/README.md` — signals, computed state, SignalWatcher mixin
+- `services/README.md` — messaging singleton API
+
 ## Contributor setup
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup steps, how to run tests, build, and submit PRs. Point new contributors there rather than duplicating instructions.
