@@ -383,7 +383,10 @@ function renderAgentTabs(): void {
       activeView = 'tasks';
       updateHash();
       updateViewVisibility();
-      loadTasks(agent.id); // Filter to this agent's tasks
+      // Delegate to Lit component if present, else fallback to old loadTasks
+      const tasksViewEl = document.querySelector('chaos-tasks-view') as any;
+      if (tasksViewEl) { tasksViewEl.agents = agents; tasksViewEl.activeAgentId = activeAgentId; tasksViewEl.refresh(agent.id); }
+      else loadTasks(agent.id);
       renderAgentTabs();
     });
 
@@ -652,26 +655,27 @@ document.addEventListener('click', (e) => {
 
 function loadCurrentViewData(): void {
   switch (activeView) {
-    case 'dashboard':
-      loadDashboard();
-      // Auto-refresh dashboard every 30s while visible
-      if (dashboardRefreshTimer) clearInterval(dashboardRefreshTimer);
-      dashboardRefreshTimer = window.setInterval(() => {
-        if (activeView === 'dashboard') loadDashboard();
-        else { clearInterval(dashboardRefreshTimer!); dashboardRefreshTimer = null; }
-      }, 30000);
+    case 'dashboard': {
+      const dashEl = document.querySelector('chaos-dashboard-view') as any;
+      if (dashEl) {
+        dashEl.agents = agents;
+        dashEl.refresh();
+      }
       break;
+    }
     case 'chat':
       // Chat is always connected via port
       break;
     /* dashboard refresh button wired below */
     case 'tasks': {
-      // When navigated from top-level sidebar, show all tasks (clear agent filter)
-      const tasksFilter = document.getElementById('tasks-filter-agent') as HTMLSelectElement;
-      if (tasksFilter) tasksFilter.value = '';
-      loadTasks();
-    }
+      const tasksEl = document.querySelector('chaos-tasks-view') as any;
+      if (tasksEl) {
+        tasksEl.agents = agents;
+        tasksEl.activeAgentId = activeAgentId;
+        tasksEl.refresh();
+      }
       break;
+    }
     case 'messages': {
       const messagesEl = document.querySelector('chaos-messages-view');
       if (messagesEl) {
@@ -681,9 +685,14 @@ function loadCurrentViewData(): void {
       }
       break;
     }
-    case 'artifacts':
-      loadArtifacts();
+    case 'artifacts': {
+      const artifactsEl = document.querySelector('chaos-artifacts-view') as any;
+      if (artifactsEl) {
+        artifactsEl.agents = agents;
+        artifactsEl.refresh();
+      }
       break;
+    }
     case 'channels':
       renderChannelsUI();
       break;
@@ -695,9 +704,15 @@ function loadCurrentViewData(): void {
       }
       break;
     }
-    case 'hooks':
-      loadHooksView();
+    case 'hooks': {
+      const hooksEl = document.querySelector('chaos-hooks-view') as any;
+      if (hooksEl) {
+        hooksEl.agents = agents;
+        hooksEl.activeAgentId = activeAgentId;
+        hooksEl.refresh();
+      }
       break;
+    }
     case 'usage': {
       const usageEl = document.querySelector('chaos-usage-view');
       if (usageEl) {
@@ -1377,7 +1392,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         const alarmId = pendingRunNowAlarmId;
         pendingRunNowAlarmId = null;
         sendMsg({ type: 'updateScheduledTaskRun', alarmId, result: ((msg.result as string) || '(no output)').slice(0, 200) })
-          .then(() => { if (activeView === 'tasks') loadTasks(); })
+          .then(() => { if (activeView === 'tasks') { const tv = document.querySelector('chaos-tasks-view') as any; if (tv) { tv.agents = agents; tv.activeAgentId = activeAgentId; tv.refresh(); } else loadTasks(); } })
           .catch(() => {});
       }
       break;
@@ -1438,9 +1453,13 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
     }
 
-    case 'hooksList':
+    case 'hooksList': {
       renderHooksList(msg.hooks as Hook[]);
+      // Also delegate to the Lit component if present
+      const hooksViewEl = document.querySelector('chaos-hooks-view') as any;
+      if (hooksViewEl) hooksViewEl.setHooks(msg.hooks as Hook[]);
       break;
+    }
 
     case 'hookAdded':
     case 'hookUpdated':
@@ -2861,8 +2880,9 @@ async function loadTasks(filterByAgentId?: string): Promise<void> {
 }
 
 function renderTasks(): void {
-  const container = document.getElementById('tasks-unified-content')!;
-  const empty = document.getElementById('tasks-empty')!;
+  const container = document.getElementById('tasks-unified-content');
+  const empty = document.getElementById('tasks-empty');
+  if (!container || !empty) return; // Lit component handles rendering
 
   // Populate and read agent filter
   const filterAgentId = populateAgentFilter('tasks-filter-agent');
@@ -3232,16 +3252,16 @@ function showTaskDetail(taskId: string): void {
   modal.classList.add('visible');
 }
 
-document.getElementById('tasks-filter-status')!.addEventListener('change', renderTasks);
-document.getElementById('tasks-filter-agent')!.addEventListener('change', renderTasks);
+document.getElementById('tasks-filter-status')?.addEventListener('change', renderTasks);
+document.getElementById('tasks-filter-agent')?.addEventListener('change', renderTasks);
 
-document.getElementById('task-detail-close')!.addEventListener('click', () => {
-  document.getElementById('task-detail-modal')!.classList.remove('visible');
+document.getElementById('task-detail-close')?.addEventListener('click', () => {
+  document.getElementById('task-detail-modal')?.classList.remove('visible');
 });
 
-document.getElementById('task-detail-modal')!.addEventListener('click', (e) => {
+document.getElementById('task-detail-modal')?.addEventListener('click', (e) => {
   if (e.target === document.getElementById('task-detail-modal')) {
-    document.getElementById('task-detail-modal')!.classList.remove('visible');
+    document.getElementById('task-detail-modal')?.classList.remove('visible');
   }
 });
 
@@ -3462,8 +3482,9 @@ function renderDashboard(
   const artifactSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>';
 
   // Pinned artifacts section — label as "Today" if any are from today
-  const pinnedSection = document.getElementById('dashboard-pinned-section')!;
-  const pinnedCards = document.getElementById('dashboard-pinned-cards')!;
+  const pinnedSection = document.getElementById('dashboard-pinned-section');
+  const pinnedCards = document.getElementById('dashboard-pinned-cards');
+  if (!pinnedSection || !pinnedCards) return; // Lit component handles rendering
   const pinnedTitle = pinnedSection.querySelector('.dashboard-section-title');
   if (pinned.length > 0) {
     pinnedSection.style.display = '';
@@ -3767,7 +3788,8 @@ function artifactTypeLabel(a: ArtifactMeta): string {
 }
 
 function renderArtifacts(): void {
-  const grid = document.getElementById('artifact-grid')!;
+  const grid = document.getElementById('artifact-grid');
+  if (!grid) return; // Lit component handles rendering
   const empty = document.getElementById('artifacts-empty')!;
 
   // Populate and read agent filter
@@ -3988,18 +4010,18 @@ async function showArtifactDetail(artifact: ArtifactMeta): Promise<void> {
   modal.classList.add('visible');
 }
 
-document.getElementById('artifacts-filter-agent')!.addEventListener('change', renderArtifacts);
-document.getElementById('artifacts-search')!.addEventListener('input', renderArtifacts);
+document.getElementById('artifacts-filter-agent')?.addEventListener('change', renderArtifacts);
+document.getElementById('artifacts-search')?.addEventListener('input', renderArtifacts);
 
-document.getElementById('artifact-detail-close')!.addEventListener('click', () => {
+document.getElementById('artifact-detail-close')?.addEventListener('click', () => {
   if (activeSecureViewer) { activeSecureViewer.destroy(); activeSecureViewer = null; }
-  document.getElementById('artifact-detail-modal')!.classList.remove('visible');
+  document.getElementById('artifact-detail-modal')?.classList.remove('visible');
 });
 
-document.getElementById('artifact-detail-modal')!.addEventListener('click', (e) => {
+document.getElementById('artifact-detail-modal')?.addEventListener('click', (e) => {
   if (e.target === document.getElementById('artifact-detail-modal')) {
     if (activeSecureViewer) { activeSecureViewer.destroy(); activeSecureViewer = null; }
-    document.getElementById('artifact-detail-modal')!.classList.remove('visible');
+    document.getElementById('artifact-detail-modal')?.classList.remove('visible');
   }
 });
 
@@ -6780,7 +6802,8 @@ document.getElementById('confirm-overlay')!.addEventListener('click', (e) => {
 function loadHooksView(): void {
   if (!port) return;
 
-  const listEl = document.getElementById('hooks-list')!;
+  const listEl = document.getElementById('hooks-list');
+  if (!listEl) return; // Lit component handles rendering
   listEl.innerHTML = '<p style="color:var(--text-muted);padding:12px;">Loading...</p>';
 
   // Load ALL hooks (not filtered by agent)
@@ -6807,7 +6830,8 @@ function populateHookAgentSelect(): void {
 }
 
 function renderHooksList(hooks: Hook[]): void {
-  const listEl = document.getElementById('hooks-list')!;
+  const listEl = document.getElementById('hooks-list');
+  if (!listEl) return; // Lit component handles rendering
 
   if (hooks.length === 0) {
     listEl.innerHTML = `
@@ -6889,7 +6913,7 @@ function renderHooksList(hooks: Hook[]): void {
 
       // Populate the form
       (document.getElementById('hook-description') as HTMLInputElement).value = hook.description;
-      hooksTriggerType.value = hook.trigger.type;
+      if (hooksTriggerType) hooksTriggerType.value = hook.trigger.type;
       updateTriggerFilters();
 
       // Fill trigger-specific filters
@@ -6976,11 +7000,12 @@ function formatTrigger(trigger: HookTrigger): string {
 
 // ── Hooks create form ──
 
-const hooksTriggerType = document.getElementById('hook-trigger-type') as HTMLSelectElement;
+const hooksTriggerType = document.getElementById('hook-trigger-type') as HTMLSelectElement | null;
 let editingHookId: string | null = null; // Set when editing an existing hook
-const hooksTriggerFilters = document.getElementById('hook-trigger-filters')!;
+const hooksTriggerFilters = document.getElementById('hook-trigger-filters');
 
 function updateTriggerFilters(): void {
+  if (!hooksTriggerType || !hooksTriggerFilters) return; // Lit component handles this
   const type = hooksTriggerType.value;
   let html = '';
 
@@ -7118,7 +7143,7 @@ function updateTriggerFilters(): void {
   hooksTriggerFilters.innerHTML = html;
 }
 
-hooksTriggerType.addEventListener('change', updateTriggerFilters);
+hooksTriggerType?.addEventListener('change', updateTriggerFilters);
 
 // ── Hook Presets ──
 
@@ -7148,7 +7173,7 @@ function renderHookPresets(): void {
       const preset = HOOK_PRESETS[parseInt(btn.dataset.preset!, 10)];
       // Fill the form with preset values
       (document.getElementById('hook-description') as HTMLInputElement).value = preset.description;
-      hooksTriggerType.value = preset.trigger;
+      if (hooksTriggerType) hooksTriggerType.value = preset.trigger;
       updateTriggerFilters();
       (document.getElementById('hook-prompt') as HTMLTextAreaElement).value = preset.prompt;
       // Fill filter if applicable
@@ -7169,23 +7194,25 @@ function renderHookPresets(): void {
 // Render presets when hooks view loads
 renderHookPresets();
 
-document.getElementById('hooks-btn-create')!.addEventListener('click', () => {
-  const form = document.getElementById('hooks-create-form')!;
+document.getElementById('hooks-btn-create')?.addEventListener('click', () => {
+  const form = document.getElementById('hooks-create-form');
+  if (!form) return;
   form.style.display = form.style.display === 'none' ? 'block' : 'none';
   updateTriggerFilters();
 });
 
-document.getElementById('hooks-btn-cancel')!.addEventListener('click', () => {
-  document.getElementById('hooks-create-form')!.style.display = 'none';
+document.getElementById('hooks-btn-cancel')?.addEventListener('click', () => {
+  const form = document.getElementById('hooks-create-form');
+  if (form) form.style.display = 'none';
   editingHookId = null; // Cancel editing without deleting
 });
 
-document.getElementById('hooks-btn-save')!.addEventListener('click', () => {
+document.getElementById('hooks-btn-save')?.addEventListener('click', () => {
   if (!activeAgentId || !port) return;
 
   const description = (document.getElementById('hook-description') as HTMLInputElement).value.trim();
   const prompt = (document.getElementById('hook-prompt') as HTMLTextAreaElement).value.trim();
-  const triggerType = hooksTriggerType.value;
+  const triggerType = hooksTriggerType?.value || 'bookmark-created';
 
   if (!description || !prompt) {
     return; // Basic validation
@@ -7680,9 +7707,9 @@ refineModal.addEventListener('click', (e) => {
 });
 
 // Hook prompt refine button
-document.getElementById('hook-refine-btn')!.addEventListener('click', () => {
+document.getElementById('hook-refine-btn')?.addEventListener('click', () => {
   const textarea = document.getElementById('hook-prompt') as HTMLTextAreaElement;
-  const triggerType = (document.getElementById('hook-trigger-type') as HTMLSelectElement).value;
+  const triggerType = (document.getElementById('hook-trigger-type') as HTMLSelectElement)?.value || 'bookmark-created';
   openRefineModal(textarea, `Hook prompt for a "${triggerType}" trigger`);
 });
 

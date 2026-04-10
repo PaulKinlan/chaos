@@ -3831,43 +3831,7 @@
 
       <!-- ════════ Dashboard View ════════ -->
       <div class="view-panel" id="view-dashboard">
-        <div class="view-padded">
-          <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;">
-            <h2>Dashboard</h2>
-            <button class="btn btn-sm" id="dashboard-refresh-btn" title="Refresh dashboard">
-              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              Refresh
-            </button>
-          </div>
-
-          <div class="dashboard-section" id="dashboard-pinned-section" style="display:none;">
-            <div class="dashboard-section-title">Pinned Artifacts</div>
-            <div class="dashboard-cards" id="dashboard-pinned-cards"></div>
-          </div>
-
-          <div class="dashboard-section" id="dashboard-suggestions-section" style="display:none;">
-            <div class="dashboard-section-title">Suggestions</div>
-            <div class="dashboard-cards" id="dashboard-suggestions-cards"></div>
-          </div>
-
-          <div class="dashboard-section" id="dashboard-recent-section" style="display:none;">
-            <div class="dashboard-section-title">Recent Artifacts</div>
-            <div id="dashboard-recent-list"></div>
-          </div>
-
-          <div class="dashboard-section" id="dashboard-activity-section">
-            <div class="dashboard-section-title">Activity Summary</div>
-            <div class="dashboard-activity" id="dashboard-activity-stats"></div>
-          </div>
-
-          <div class="empty-state" id="dashboard-empty" style="display:none;">
-            <div class="empty-state-icon">
-              <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            </div>
-            <h3>Your dashboard is empty</h3>
-            <p>Pin artifacts and let agents run scheduled tasks to populate your dashboard with summaries, suggestions, and activity stats.</p>
-          </div>
-        </div>
+        <chaos-dashboard-view></chaos-dashboard-view>
       </div>
 
       <!-- ════════ Chat View ════════ -->
@@ -3885,34 +3849,7 @@
 
       <!-- ════════ Tasks View ════════ -->
       <div class="view-panel" id="view-tasks">
-        <div class="view-padded">
-          <div class="section-header">
-            <h2>Jobs</h2>
-            <button class="help-btn" data-help="tasks" title="Help: Jobs">
-              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            </button>
-          </div>
-          <div class="filter-bar" id="tasks-filter-bar">
-            <select id="tasks-filter-agent">
-              <option value="">All agents</option>
-            </select>
-            <select id="tasks-filter-status">
-              <option value="">All statuses</option>
-              <option value="pending">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
-          <div id="tasks-unified-content"></div>
-          <div class="empty-state" id="tasks-empty" style="display:none;">
-            <div class="empty-state-icon">
-              <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg>
-            </div>
-            <h3>No jobs yet</h3>
-            <p>Jobs are work items posted to a shared board. You or any agent can post a job, and specialised agents will pick them up. Think of it like a Kanban board.</p>
-          </div>
-        </div>
+        <chaos-tasks-view></chaos-tasks-view>
       </div>
 
       <!-- ════════ Messages View ════════ -->
@@ -3922,28 +3859,7 @@
 
       <!-- ════════ Artifacts View ════════ -->
       <div class="view-panel" id="view-artifacts">
-        <div class="view-padded">
-          <div class="section-header">
-            <h2>Artifacts</h2>
-            <button class="help-btn" data-help="artifacts" title="Help: Artifacts">
-              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            </button>
-          </div>
-          <div class="filter-bar" id="artifacts-filter-bar">
-            <select id="artifacts-filter-agent">
-              <option value="">All agents</option>
-            </select>
-            <input type="text" id="artifacts-search" placeholder="Search artifacts...">
-          </div>
-          <div class="artifact-grid" id="artifact-grid"></div>
-          <div class="empty-state" id="artifacts-empty" style="display:none;">
-            <div class="empty-state-icon">
-              <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-            </div>
-            <h3>No artifacts</h3>
-            <p>Shared artifacts will appear here when this agent publishes them.</p>
-          </div>
-        </div>
+        <chaos-artifacts-view></chaos-artifacts-view>
       </div>
 
       <!-- ════════ Channels View ════════ -->
@@ -4057,86 +3973,7 @@
 
       <!-- ════════ Hooks View ════════ -->
       <div class="view-panel" id="view-hooks">
-        <div class="view-padded">
-          <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;">
-            <h2>Hooks</h2>
-            <div style="display:flex;gap:var(--sp-2);align-items:center;">
-              <button class="help-btn" data-help="hooks" title="Help: Hooks">
-                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              </button>
-              <button class="btn btn-primary btn-sm" id="hooks-btn-create">+ Create Hook</button>
-            </div>
-          </div>
-
-          <!-- Hook Presets Palette -->
-          <div id="hooks-presets" style="margin-bottom:16px;">
-            <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-2);">Quick start with a preset, or create your own below.</p>
-            <div style="display:flex;flex-wrap:wrap;gap:var(--sp-2);" id="hooks-presets-grid"></div>
-          </div>
-
-          <!-- Create Hook Form (hidden by default) -->
-          <div id="hooks-create-form" style="display:none;margin-bottom:16px;">
-            <div class="settings-card">
-              <h3>New Hook</h3>
-              <div class="settings-field">
-                <label for="hook-description">Description</label>
-                <input type="text" id="hook-description" placeholder="e.g. Summarize bookmarked articles">
-              </div>
-              <div class="settings-field">
-                <label for="hook-trigger-type">Trigger</label>
-                <select id="hook-trigger-type">
-                  <option value="bookmark-created">Bookmark Created</option>
-                  <option value="tab-navigated">Tab Navigated to URL</option>
-                  <option value="tab-created">Tab Created</option>
-                  <option value="tab-closed">Tab Closed</option>
-                  <option value="download-completed">Download Completed</option>
-                  <option value="history-visited">Page Visited (History)</option>
-                  <option value="idle-changed">Idle State Changed</option>
-                  <option value="browser-startup">Browser Startup</option>
-                  <option value="omnibox">Omnibox Command</option>
-                  <option value="reading-list-changed">Reading List Changed</option>
-                  <option value="window-created">Window Created</option>
-                  <option value="window-focused">Window Focused</option>
-                  <option value="window-closed">Window Closed</option>
-                  <option value="context-menu">Context Menu</option>
-                  <option value="clipboard-changed">Clipboard Changed</option>
-                  <option value="filesystem-changed">File System Changed</option>
-                </select>
-              </div>
-              <div id="hook-trigger-filters"></div>
-              <div class="settings-field">
-                <label for="hook-agent">Assign to Agent</label>
-                <select id="hook-agent"></select>
-              </div>
-              <div class="settings-field">
-                <label for="hook-prompt">Prompt</label>
-                <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-2);">Tell the agent what to do when this event fires. Be specific, the agent will execute this as a full task with access to all its tools.</p>
-                <div class="prompt-textarea-wrapper">
-                  <textarea id="hook-prompt" rows="6" placeholder="e.g. Read the bookmarked page content, write a summary to memories/bookmarks/, and update TODO.md if there are any action items." style="width:100%;background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default);border-radius:8px;padding:var(--sp-3);font-family:var(--font-sans);font-size:var(--text-sm);resize:vertical;min-height:100px;max-height:300px;line-height:1.5;outline:none;transition:border-color var(--duration-fast) var(--ease-out);"></textarea>
-                  <button type="button" class="refine-prompt-btn" id="hook-refine-btn" title="Refine prompt with AI">
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M19 15l.75 2.25L22 18l-2.25.75L19 21l-.75-2.25L16 18l2.25-.75L19 15z"/></svg>
-                    Refine
-                  </button>
-                </div>
-              </div>
-              <div style="display:flex;gap:8px;margin-top:8px;">
-                <button class="btn btn-primary btn-sm" id="hooks-btn-save">Save Hook</button>
-                <button class="btn btn-ghost btn-sm" id="hooks-btn-cancel">Cancel</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Hooks list -->
-          <div id="hooks-list">
-            <div class="empty-state">
-              <div class="empty-state-icon">
-                <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              </div>
-              <h3>No hooks</h3>
-              <p>Hooks let your agent respond to browser events automatically. Create one to get started, or ask your agent to set up hooks via chat.</p>
-            </div>
-          </div>
-        </div>
+        <chaos-hooks-view></chaos-hooks-view>
       </div>
 
       <!-- ════════ Usage View ════════ -->
