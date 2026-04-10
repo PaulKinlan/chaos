@@ -418,6 +418,16 @@ document.addEventListener('show-artifact-detail', async (e: Event) => {
   }
 });
 
+// When an artifact is updated (pinned/unpinned), refresh the active view
+document.addEventListener('artifact-updated', () => {
+  // Refresh dashboard if visible
+  const dashEl = document.querySelector('chaos-dashboard-view') as any;
+  if (dashEl && activeView === 'dashboard') dashEl.refresh();
+  // Refresh artifacts view if visible
+  const artEl = document.querySelector('chaos-artifacts-view') as any;
+  if (artEl && activeView === 'artifacts') artEl.refresh();
+});
+
 document.addEventListener('view-change', (e: Event) => {
   const detail = (e as CustomEvent).detail;
   if (!detail) return;
