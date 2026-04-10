@@ -411,19 +411,11 @@ document.addEventListener('show-artifact-detail', async (e: Event) => {
   const artifact = detail?.artifact as ArtifactMeta;
   if (!artifact) return;
 
-  // Switch to artifacts view and show the detail there
-  activeView = 'artifacts';
-  sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === 'artifacts'));
-  updateViewVisibility();
-  loadCurrentViewData();
-
-  // Wait for the view to render, then show the detail
-  setTimeout(() => {
-    const artifactsEl = document.querySelector('chaos-artifacts-view') as any;
-    if (artifactsEl && typeof artifactsEl.showDetail === 'function') {
-      artifactsEl.showDetail(artifact);
-    }
-  }, 200);
+  // Show in the global artifact detail component — works from any view
+  const detailEl = document.getElementById('global-artifact-detail') as any;
+  if (detailEl && typeof detailEl.show === 'function') {
+    detailEl.show(artifact);
+  }
 });
 
 document.addEventListener('view-change', (e: Event) => {

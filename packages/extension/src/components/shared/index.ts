@@ -9,3 +9,4 @@ export type { FilterConfig } from './filter-bar.js';
 export { ChaosChatMessage } from './chat-message.js';
 export { ChaosStepDetails } from './step-details.js';
 export { ChaosChatInput } from './chat-input.js';
+export { ChaosArtifactDetail } from './artifact-detail.js';
