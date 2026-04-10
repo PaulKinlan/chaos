@@ -2426,7 +2426,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 // ══════════════════════════════════════════
 
 interface MentionItem {
-  type: 'tab' | 'bookmark' | 'history' | 'agent';
+  type: 'tab' | 'bookmark' | 'history' | 'agent' | 'artifact';
   title: string;
   subtitle: string;
   value: string;
@@ -2439,7 +2439,7 @@ let mentionItems: MentionItem[] = [];
 let mentionActiveIndex = -1;
 let mentionStartPos = -1;
 
-const MENTION_CATEGORIES = ['tab', 'bookmark', 'history', 'agent'] as const;
+const MENTION_CATEGORIES = ['tab', 'bookmark', 'history', 'agent', 'artifact'] as const;
 type MentionCategory = typeof MENTION_CATEGORIES[number];
 
 const MENTION_ICONS: Record<MentionCategory, string> = {
@@ -2447,6 +2447,7 @@ const MENTION_ICONS: Record<MentionCategory, string> = {
   bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
   history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
   agent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  artifact: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
 };
 
 const MENTION_LABELS: Record<MentionCategory, string> = {
@@ -2454,6 +2455,7 @@ const MENTION_LABELS: Record<MentionCategory, string> = {
   bookmark: 'Bookmarks',
   history: 'History',
   agent: 'Agents',
+  artifact: 'Artifacts',
 };
 
 function columnMentionVisible(col: ChatColumn): boolean {
@@ -2576,6 +2578,18 @@ async function fetchMentionItems(category: MentionCategory, filter: string): Pro
         if (query && !title.toLowerCase().includes(query) && !subtitle.toLowerCase().includes(query)) continue;
         items.push({ type: 'agent', title, subtitle, value: `@agent[${title}](${agent.id})`, id: agent.id });
       }
+      break;
+    }
+    case 'artifact': {
+      try {
+        const result = await sendMsg<{ artifacts: ArtifactMeta[] }>({ type: 'getArtifacts' });
+        for (const a of (result.artifacts || [])) {
+          const title = a.title || a.path.split('/').pop() || a.path;
+          const subtitle = a.description || a.path;
+          if (query && !title.toLowerCase().includes(query) && !subtitle.toLowerCase().includes(query)) continue;
+          items.push({ type: 'artifact', title, subtitle, value: `@artifact[${title}](${a.path})`, id: a.path });
+        }
+      } catch { /* artifacts unavailable */ }
       break;
     }
   }
