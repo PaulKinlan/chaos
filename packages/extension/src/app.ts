@@ -45,8 +45,12 @@ import DOMPurify from 'dompurify';
 import './components/design-system/index.js';
 // ── Shared components (registers chaos-sidebar, chaos-filter-bar) ──
 import './components/shared/index.js';
+// ── View components (registers chaos-*-view elements) ──
+import './components/views/index.js';
 // ── Global state signals ──
 import './state/index.js';
+// ── Messaging singleton (lets Lit components call sendMsg) ──
+import { setSendMsg, setSendPortMessage } from './services/messaging.js';
 import type { AgentMeta, AgentMessage, Task, TaskEvent, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';
@@ -668,24 +672,39 @@ function loadCurrentViewData(): void {
       loadTasks();
     }
       break;
-    case 'messages':
-      loadMessages();
+    case 'messages': {
+      const messagesEl = document.querySelector('chaos-messages-view');
+      if (messagesEl) {
+        messagesEl.activeAgentId = activeAgentId;
+        messagesEl.agents = agents;
+        messagesEl.refresh();
+      }
       break;
+    }
     case 'artifacts':
       loadArtifacts();
       break;
     case 'channels':
       renderChannelsUI();
       break;
-    case 'files':
-      loadFilesView();
+    case 'files': {
+      const filesEl = document.querySelector('chaos-files-view');
+      if (filesEl) {
+        filesEl.activeAgentId = activeAgentId;
+        filesEl.refresh();
+      }
       break;
+    }
     case 'hooks':
       loadHooksView();
       break;
-    case 'usage':
-      loadUsageView();
+    case 'usage': {
+      const usageEl = document.querySelector('chaos-usage-view');
+      if (usageEl) {
+        usageEl.refresh();
+      }
       break;
+    }
     case 'agent-settings':
       loadAgentSettings();
       break;
@@ -888,6 +907,10 @@ function sendPortMessage(msg: Record<string, unknown>): void {
   console.log(`[app] sendPortMessage: ${msg.type}`);
   port.postMessage(msg);
 }
+
+// Expose messaging to Lit view components via the singleton
+setSendMsg(sendMsg);
+setSendPortMessage(sendPortMessage);
 
 function handlePortMessage(msg: Record<string, unknown>): void {
   // Route chat-related messages to the correct column by columnId (preferred) or agentId
@@ -3240,8 +3263,9 @@ async function loadMessages(): Promise<void> {
 }
 
 function renderMessages(): void {
-  const list = document.getElementById('message-list')!;
-  const empty = document.getElementById('messages-empty')!;
+  const list = document.getElementById('message-list');
+  const empty = document.getElementById('messages-empty');
+  if (!list || !empty) return;
 
   const searchText = (document.getElementById('messages-search') as HTMLInputElement).value
     .toLowerCase()
@@ -3303,8 +3327,8 @@ function renderMessages(): void {
   list.scrollTop = list.scrollHeight;
 }
 
-document.getElementById('messages-search')!.addEventListener('input', renderMessages);
-document.getElementById('messages-filter-agent')!.addEventListener('change', renderMessages);
+document.getElementById('messages-search')?.addEventListener('input', renderMessages);
+document.getElementById('messages-filter-agent')?.addEventListener('change', renderMessages);
 
 // ══════════════════════════════════════════
 // ── Dashboard View
@@ -3991,16 +4015,17 @@ interface FileEntry {
   children?: FileEntry[];
 }
 
-const filesTree = document.getElementById('files-tree') as HTMLDivElement;
-const filesViewerFilename = document.getElementById('files-viewer-filename') as HTMLSpanElement;
-const filesViewerContent = document.getElementById('files-viewer-content') as HTMLDivElement;
-const filesBtnDownload = document.getElementById('files-btn-download') as HTMLButtonElement;
+const filesTree = document.getElementById('files-tree') as HTMLDivElement | null;
+const filesViewerFilename = document.getElementById('files-viewer-filename') as HTMLSpanElement | null;
+const filesViewerContent = document.getElementById('files-viewer-content') as HTMLDivElement | null;
+const filesBtnDownload = document.getElementById('files-btn-download') as HTMLButtonElement | null;
 
 let filesSelectedPath: string | null = null;
 let filesSelectedContent: string | null = null;
 
 function loadFilesView(): void {
   if (!activeAgentId) return;
+  if (!filesTree || !filesViewerFilename || !filesViewerContent || !filesBtnDownload) return;
 
   filesTree.innerHTML = '<p style="color:var(--text-muted);padding:12px;">Loading...</p>';
   filesViewerFilename.textContent = 'No file selected';
@@ -4010,11 +4035,13 @@ function loadFilesView(): void {
   sendMsg<{ files: FileEntry[] }>({ type: 'listAgentFiles', agentId: activeAgentId }).then((result) => {
     renderFileTree(result.files, activeAgentId!, 0);
   }).catch((err) => {
-    filesTree.innerHTML = `<p style="color:var(--danger-text);padding:12px;">Error: ${err instanceof Error ? err.message : String(err)}</p>`;
+    if (filesTree) filesTree.innerHTML = `<p style="color:var(--danger-text);padding:12px;">Error: ${err instanceof Error ? err.message : String(err)}</p>`;
   });
 }
 
 function renderFileTree(entries: FileEntry[], agentId: string, depth: number): void {
+  if (!filesTree) return;
+
   if (depth === 0) {
     filesTree.innerHTML = '';
   }
@@ -4046,7 +4073,7 @@ function renderFileTree(entries: FileEntry[], agentId: string, depth: number): v
 
     if (entry.kind === 'file') {
       item.addEventListener('click', () => {
-        filesTree.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
+        filesTree?.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
         item.classList.add('selected');
         loadFileContent(agentId, entry.path, entry.name);
       });
@@ -4067,6 +4094,8 @@ function formatFileSize(bytes: number): string {
 }
 
 async function loadFileContent(agentId: string, filePath: string, fileName: string): Promise<void> {
+  if (!filesViewerFilename || !filesViewerContent || !filesBtnDownload) return;
+
   filesViewerFilename.textContent = fileName;
   filesViewerContent.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
   filesBtnDownload.style.display = 'none';
@@ -4101,12 +4130,14 @@ async function loadFileContent(agentId: string, filePath: string, fileName: stri
       filesViewerContent.textContent = result.content;
     }
   } catch (err) {
-    filesViewerContent.className = 'files-viewer-content raw-view';
-    filesViewerContent.textContent = `Error reading file: ${err instanceof Error ? err.message : String(err)}`;
+    if (filesViewerContent) {
+      filesViewerContent.className = 'files-viewer-content raw-view';
+      filesViewerContent.textContent = `Error reading file: ${err instanceof Error ? err.message : String(err)}`;
+    }
   }
 }
 
-filesBtnDownload.addEventListener('click', () => {
+filesBtnDownload?.addEventListener('click', () => {
   if (!filesSelectedContent || !filesSelectedPath) return;
   const fileName = filesSelectedPath.split('/').pop() || 'file';
   const blob = new Blob([filesSelectedContent], { type: 'text/plain' });

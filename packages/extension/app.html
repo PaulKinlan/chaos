@@ -3917,31 +3917,7 @@
 
       <!-- ════════ Messages View ════════ -->
       <div class="view-panel" id="view-messages">
-        <div class="view-padded">
-          <div class="section-header">
-            <h2>Messages</h2>
-            <button class="help-btn" data-help="messages" title="Help: Messages">
-              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            </button>
-          </div>
-          <p style="font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--sp-4); line-height: 1.5;">Messages sent and received by this agent.</p>
-          <div class="filter-bar" id="messages-filter-bar">
-            <select id="messages-filter-agent">
-              <option value="">All</option>
-              <option value="sent">Sent</option>
-              <option value="received">Received</option>
-            </select>
-            <input type="text" id="messages-search" placeholder="Search messages...">
-          </div>
-          <div class="message-list" id="message-list"></div>
-          <div class="empty-state" id="messages-empty" style="display:none;">
-            <div class="empty-state-icon">
-              <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <h3>No messages</h3>
-            <p>Inter-agent messages will appear here.</p>
-          </div>
-        </div>
+        <chaos-messages-view></chaos-messages-view>
       </div>
 
       <!-- ════════ Artifacts View ════════ -->
@@ -4076,25 +4052,7 @@
         <button class="help-btn" data-help="files" title="Help: Agent Memory" style="position:absolute;top:8px;right:8px;z-index:10;">
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </button>
-        <div class="files-container">
-          <div class="files-tree-panel">
-            <div class="files-tree-header">Agent Memory</div>
-            <div class="files-tree" id="files-tree">
-              <div class="empty-state" style="padding:24px;">
-                <p>Select an agent to browse its files.</p>
-              </div>
-            </div>
-          </div>
-          <div class="files-viewer-panel">
-            <div class="files-viewer-header">
-              <span class="filename" id="files-viewer-filename">No file selected</span>
-              <button class="btn btn-ghost btn-sm" id="files-btn-download" style="display:none;">Download</button>
-            </div>
-            <div class="files-viewer-content" id="files-viewer-content">
-              <div class="files-viewer-empty">Select a file to view its contents.</div>
-            </div>
-          </div>
-        </div>
+        <chaos-files-view></chaos-files-view>
       </div>
 
       <!-- ════════ Hooks View ════════ -->
@@ -4183,54 +4141,7 @@
 
       <!-- ════════ Usage View ════════ -->
       <div class="view-panel" id="view-usage">
-        <div class="view-padded">
-          <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;">
-            <h2>Usage &amp; Costs</h2>
-            <div style="display:flex;gap:var(--sp-2);align-items:center;">
-              <select id="usage-time-range" class="settings-select" style="padding:4px 8px;font-size:var(--text-xs);">
-                <option value="24h">Last 24 hours</option>
-                <option value="7d" selected>Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="all">All time</option>
-              </select>
-              <button class="btn btn-sm" id="usage-refresh">Refresh</button>
-              <button class="btn btn-sm btn-danger" id="usage-clear">Clear</button>
-            </div>
-          </div>
-
-          <!-- Global Spending Alert -->
-          <div style="margin-top:var(--sp-3);padding:var(--sp-3);background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;">
-            <div style="display:flex;align-items:center;gap:var(--sp-2);font-size:var(--text-sm);">
-              <span style="color:var(--text-secondary);font-weight:500;">Daily spending alert:</span>
-              <span style="color:var(--text-primary);">$</span>
-              <input type="number" id="global-spending-alert" min="0" step="0.5" placeholder="none" style="width:80px;padding:2px 6px;font-size:var(--text-sm);background:var(--bg-base);border:1px solid var(--border-default);border-radius:4px;color:var(--text-primary);">
-              <button class="btn btn-sm" id="global-alert-save">Save</button>
-              <span id="global-alert-status" style="font-size:var(--text-xs);color:var(--text-muted);"></span>
-            </div>
-            <div id="global-alert-warning" style="display:none;margin-top:var(--sp-2);padding:var(--sp-2);background:var(--danger-subtle);border-radius:4px;font-size:var(--text-xs);color:var(--danger-text);"></div>
-          </div>
-
-          <!-- Summary stats -->
-          <div id="usage-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:var(--sp-3);margin:var(--sp-4) 0;"></div>
-
-          <!-- By Provider -->
-          <div style="margin-bottom:var(--sp-4);">
-            <h3 style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--sp-2);">By Provider</h3>
-            <div id="usage-by-provider"></div>
-          </div>
-
-          <!-- By Agent -->
-          <div style="margin-bottom:var(--sp-4);">
-            <h3 style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--sp-2);">By Agent</h3>
-            <div id="usage-by-agent"></div>
-          </div>
-
-          <!-- Recent Requests -->
-          <div>
-            <h3 style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--sp-2);">Recent Requests</h3>
-            <div id="usage-recent" style="max-height:400px;overflow-y:auto;"></div>
-          </div>
-        </div>
+        <chaos-usage-view></chaos-usage-view>
       </div>
 
       <!-- ════════ Agent Settings View ════════ -->
