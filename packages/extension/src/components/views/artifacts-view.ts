@@ -141,6 +141,11 @@ export class ChaosArtifactsView extends LitElement {
     return filtered;
   }
 
+  /** Public method so other components can show an artifact detail */
+  async showDetail(artifact: ArtifactMeta): Promise<void> {
+    return this._showDetail(artifact);
+  }
+
   private async _showDetail(artifact: ArtifactMeta): Promise<void> {
     // Destroy any previous secure viewer
     if (this._activeSecureViewer) {

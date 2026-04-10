@@ -402,6 +402,58 @@ sidebarItems.forEach((btn) => {
   });
 });
 
+// ── Component event delegation ──
+// Lit components fire custom events that bubble up to document.
+// Handle them here to bridge between components and the rest of app.ts.
+
+document.addEventListener('show-artifact-detail', async (e: Event) => {
+  const detail = (e as CustomEvent).detail;
+  const artifact = detail?.artifact as ArtifactMeta;
+  if (!artifact) return;
+
+  // Show the artifact in the artifacts view's detail modal
+  const artifactsEl = document.querySelector('chaos-artifacts-view') as any;
+  if (artifactsEl && typeof artifactsEl.showDetail === 'function') {
+    artifactsEl.showDetail(artifact);
+  } else {
+    // Fallback: switch to artifacts view
+    activeView = 'artifacts';
+    sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === 'artifacts'));
+    updateViewVisibility();
+    loadCurrentViewData();
+  }
+});
+
+document.addEventListener('view-change', (e: Event) => {
+  const detail = (e as CustomEvent).detail;
+  if (!detail) return;
+
+  const targetView = typeof detail === 'string' ? detail : detail.view;
+  const prompt = typeof detail === 'object' ? detail.prompt : undefined;
+
+  if (targetView) {
+    activeView = targetView;
+    sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === targetView));
+    updateViewVisibility();
+    loadCurrentViewData();
+
+    // If there's a prompt, inject it into the focused chat column's input
+    if (prompt && targetView === 'chat') {
+      setTimeout(() => {
+        const col = getFocusedColumn();
+        if (col) {
+          const textarea = col.columnEl.querySelector('.chat-input textarea') as HTMLTextAreaElement;
+          if (textarea) {
+            textarea.value = prompt;
+            textarea.dispatchEvent(new Event('input'));
+            textarea.focus();
+          }
+        }
+      }, 100);
+    }
+  }
+});
+
 // Global settings — shared logic used by button click and hash navigation
 function showGlobalSettings(updateURL = true): void {
   if (activeView === 'global-settings') return; // already showing

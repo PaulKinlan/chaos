@@ -1696,6 +1696,14 @@ async function handleOneShotMessage(
       }
     }
 
+    case 'writeAgentFile': {
+      const wfAgentId = msg.agentId as string;
+      const wfPath = msg.path as string;
+      const wfContent = msg.content as string;
+      await opfs.writeFile(`agents/${wfAgentId}/${wfPath}`, wfContent);
+      return { ok: true };
+    }
+
     case 'getApiKeys': {
       const keys = await getApiKeys();
       return { keys };

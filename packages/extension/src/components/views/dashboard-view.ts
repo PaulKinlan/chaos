@@ -285,8 +285,27 @@ Write the JSON array directly to suggestions/latest.json using write_file. Do no
     }
   }
 
-  private _onDismissSuggestion(idx: number): void {
+  private async _onDismissSuggestion(idx: number): Promise<void> {
     this._suggestions[idx].dismissedAt = new Date().toISOString();
+
+    // Persist the dismissed state back to the suggestions file
+    const masterAgent = this.agents.find(a => a.master);
+    if (masterAgent) {
+      try {
+        const allSuggestions = [...this._suggestions]; // includes dismissed
+        await sendMsg({
+          type: 'writeAgentFile',
+          agentId: masterAgent.id,
+          path: 'suggestions/latest.json',
+          content: JSON.stringify(allSuggestions, null, 2),
+        });
+        console.log('[dashboard] Dismissed suggestion persisted');
+      } catch (err) {
+        console.warn('[dashboard] Failed to persist dismissed suggestion:', err);
+      }
+    }
+
+    // Remove from visible list
     this._suggestions = this._suggestions.filter(s => !s.dismissedAt);
   }
 
