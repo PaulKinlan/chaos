@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CHAOS - Chrome Agent OS",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Multiple personal AI agents that live in your browser, learn about you, and act on your behalf.",
   "permissions": [
     "activeTab",
@@ -74,5 +74,5 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "version_name": "0.1.26 (3fcf000)"
+  "version_name": "0.1.27 (4002129)"
 }
