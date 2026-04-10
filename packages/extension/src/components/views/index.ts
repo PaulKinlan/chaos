@@ -13,3 +13,4 @@ export { ChaosHooksView } from './hooks-view.js';
 export { ChaosChannelsView } from './channels-view.js';
 export { ChaosAgentSettingsView } from './agent-settings-view.js';
 export { ChaosGlobalSettingsView } from './global-settings-view.js';
+export { ChaosChatView } from './chat-view.js';
