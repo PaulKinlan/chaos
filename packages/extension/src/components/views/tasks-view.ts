@@ -381,24 +381,24 @@ export class ChaosTasksView extends SignalWatcher(LitElement) {
 
           return html`
             <details class="scheduled-task-item" style="border:1px solid var(--border-subtle);border-radius:6px;padding:0;margin-bottom:var(--sp-2);">
-              <summary style="display:flex;align-items:center;justify-content:space-between;padding:var(--sp-3);cursor:pointer;user-select:none;">
+              <summary style="display:flex;align-items:flex-start;justify-content:space-between;padding:var(--sp-3);cursor:pointer;user-select:none;gap:var(--sp-3);">
                 <div style="flex:1;min-width:0;">
-                  <div style="font-weight:500;font-size:var(--text-sm);color:var(--text-primary);">${escapeHtml(t.description)}</div>
-                  <div style="display:flex;gap:var(--sp-1);margin-top:var(--sp-1);flex-wrap:wrap;align-items:center;">
-                    <span class="badge badge-info">${escapeHtml(scheduleLabel)}</span>
+                  <div style="font-weight:500;font-size:var(--text-sm);color:var(--text-primary);margin-bottom:var(--sp-1);">${escapeHtml(t.description)}</div>
+                  <div style="display:flex;gap:var(--sp-1);flex-wrap:wrap;align-items:center;font-size:var(--text-xs);">
+                    <span class="badge badge-info" style="font-size:10px;">${escapeHtml(scheduleLabel)}</span>
                     ${isRunning
-                      ? html`<span class="badge" style="background:var(--accent-subtle);color:var(--accent-text);"><span class="spinner" style="width:10px;height:10px;display:inline-block;vertical-align:middle;margin-right:4px;"></span>Running...</span>`
-                      : html`<span class="badge badge-active">Active</span>`}
-                    ${runCount > 0 ? html`<span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);">${runCount} runs</span>` : nothing}
-                    <span style="font-size:var(--text-xs);color:var(--text-muted);">Next: ${nextRun}</span>
-                    <span style="font-size:var(--text-xs);color:var(--text-muted);">Agent: ${escapeHtml(agentName)}</span>
+                      ? html`<span class="badge" style="background:var(--accent-subtle);color:var(--accent-text);font-size:10px;"><span class="spinner" style="width:10px;height:10px;display:inline-block;vertical-align:middle;margin-right:4px;"></span>Running...</span>`
+                      : html`<span class="badge badge-active" style="font-size:10px;">Active</span>`}
+                    ${runCount > 0 ? html`<span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);font-size:10px;">${runCount} runs</span>` : nothing}
+                    <span style="color:var(--text-muted);">&middot; Next: ${nextRun}</span>
+                    <span style="color:var(--text-muted);">&middot; ${escapeHtml(agentName)}</span>
                   </div>
                 </div>
-                <div style="display:flex;gap:4px;flex-shrink:0;" @click=${(e: Event) => e.stopPropagation()}>
-                  <button class="btn btn-ghost btn-sm" ?disabled=${isRunning} @click=${() => this._runScheduledTaskWithState(t)}>
+                <div style="display:flex;gap:4px;flex-shrink:0;align-self:center;" @click=${(e: Event) => e.stopPropagation()}>
+                  <button class="btn btn-ghost btn-xs" ?disabled=${isRunning} @click=${() => this._runScheduledTaskWithState(t)}>
                     ${isRunning ? 'Running...' : 'Run Now'}
                   </button>
-                  <button class="btn btn-danger btn-sm" @click=${() => this._cancelScheduledTask(t.alarmId)}>Cancel</button>
+                  <button class="btn btn-danger btn-xs" @click=${() => this._cancelScheduledTask(t.alarmId)}>Cancel</button>
                 </div>
               </summary>
               <div style="padding:0 var(--sp-3) var(--sp-3);border-top:1px solid var(--border-subtle);">
