@@ -442,14 +442,19 @@ document.addEventListener('view-change', (e: Event) => {
       setTimeout(() => {
         const col = getFocusedColumn();
         if (col) {
-          const textarea = col.columnEl.querySelector('.chat-input textarea') as HTMLTextAreaElement;
+          const textarea = col.columnEl.querySelector('.chat-input-area textarea') as HTMLTextAreaElement;
           if (textarea) {
             textarea.value = prompt;
             textarea.dispatchEvent(new Event('input'));
             textarea.focus();
+            console.log('[app] Injected prompt into chat:', prompt.slice(0, 80));
+          } else {
+            console.warn('[app] Could not find textarea in focused column');
           }
+        } else {
+          console.warn('[app] No focused column for prompt injection');
         }
-      }, 100);
+      }, 300);
     }
   }
 });
