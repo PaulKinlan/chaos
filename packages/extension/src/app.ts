@@ -43,6 +43,10 @@ import DOMPurify from 'dompurify';
 
 // ── Design system components (registers custom elements) ──
 import './components/design-system/index.js';
+// ── Shared components (registers chaos-sidebar, chaos-filter-bar) ──
+import './components/shared/index.js';
+// ── Global state signals ──
+import './state/index.js';
 import type { AgentMeta, AgentMessage, Task, TaskEvent, ArtifactMeta, ApiKeys, ScheduledTask, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
 import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionLevel } from './tools/permissions.js';
 import { needsSandbox, renderInSandbox } from './ui/sandbox-renderer.js';

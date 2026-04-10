@@ -2,7 +2,9 @@
 
 ## Status
 
-All phases: TODO.
+- Phase 1: DONE (design system primitives)
+- Phase 2: DONE (shared components + state signals)
+- Phases 3-8: TODO.
 
 ---
 
