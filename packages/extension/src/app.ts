@@ -639,95 +639,49 @@ document.addEventListener('click', (e) => {
   }
 });
 
-function loadCurrentViewData(): void {
+async function loadCurrentViewData(): Promise<void> {
+  // Helper: set properties on a Lit element, wait for render, then refresh
+  async function wireAndRefresh(el: any, props: Record<string, unknown>): Promise<void> {
+    if (!el) return;
+    for (const [k, v] of Object.entries(props)) el[k] = v;
+    await el.updateComplete;
+    if (typeof el.refresh === 'function') el.refresh();
+  }
+
   switch (activeView) {
-    case 'dashboard': {
-      const dashEl = document.querySelector('chaos-dashboard-view') as any;
-      if (dashEl) {
-        dashEl.agents = agents;
-        refreshArtifacts(); // Signal update triggers re-render
-        dashEl.refresh();
-      }
+    case 'dashboard':
+      refreshArtifacts();
+      await wireAndRefresh(document.querySelector('chaos-dashboard-view'), { agents });
       break;
-    }
     case 'chat':
-      // Chat is always connected via port
       break;
-    /* dashboard refresh button wired below */
-    case 'tasks': {
-      const tasksEl = document.querySelector('chaos-tasks-view') as any;
-      if (tasksEl) {
-        tasksEl.agents = agents;
-        tasksEl.activeAgentId = activeAgentId;
-        tasksEl.refresh();
-      }
+    case 'tasks':
+      await wireAndRefresh(document.querySelector('chaos-tasks-view'), { agents, activeAgentId });
       break;
-    }
-    case 'messages': {
-      const messagesEl = document.querySelector('chaos-messages-view') as any;
-      if (messagesEl) {
-        messagesEl.activeAgentId = activeAgentId;
-        messagesEl.agents = agents;
-        messagesEl.refresh();
-      }
+    case 'messages':
+      await wireAndRefresh(document.querySelector('chaos-messages-view'), { activeAgentId, agents });
       break;
-    }
-    case 'artifacts': {
-      const artifactsEl = document.querySelector('chaos-artifacts-view') as any;
-      if (artifactsEl) {
-        artifactsEl.agents = agents;
-        artifactsEl.refresh();
-      }
+    case 'artifacts':
+      await wireAndRefresh(document.querySelector('chaos-artifacts-view'), { agents });
       break;
-    }
-    case 'channels': {
-      const channelsEl = document.querySelector('chaos-channels-view') as any;
-      if (channelsEl) {
-        channelsEl.agents = agents;
-        channelsEl.refresh();
-      }
+    case 'channels':
+      await wireAndRefresh(document.querySelector('chaos-channels-view'), { agents });
       break;
-    }
-    case 'files': {
-      const filesEl = document.querySelector('chaos-files-view');
-      if (filesEl) {
-        filesEl.activeAgentId = activeAgentId;
-        filesEl.refresh();
-      }
+    case 'files':
+      await wireAndRefresh(document.querySelector('chaos-files-view'), { activeAgentId });
       break;
-    }
-    case 'hooks': {
-      const hooksEl = document.querySelector('chaos-hooks-view') as any;
-      if (hooksEl) {
-        hooksEl.agents = agents;
-        hooksEl.activeAgentId = activeAgentId;
-        hooksEl.refresh();
-      }
+    case 'hooks':
+      await wireAndRefresh(document.querySelector('chaos-hooks-view'), { agents, activeAgentId });
       break;
-    }
-    case 'usage': {
-      const usageEl = document.querySelector('chaos-usage-view');
-      if (usageEl) {
-        usageEl.refresh();
-      }
+    case 'usage':
+      await wireAndRefresh(document.querySelector('chaos-usage-view'), {});
       break;
-    }
-    case 'agent-settings': {
-      const agentSettingsEl = document.querySelector('chaos-agent-settings-view') as any;
-      if (agentSettingsEl) {
-        agentSettingsEl.activeAgentId = activeAgentId;
-        agentSettingsEl.refresh();
-      }
+    case 'agent-settings':
+      await wireAndRefresh(document.querySelector('chaos-agent-settings-view'), { activeAgentId });
       break;
-    }
-    case 'global-settings': {
-      const globalSettingsEl = document.querySelector('chaos-global-settings-view') as any;
-      if (globalSettingsEl) {
-        globalSettingsEl.agents = agents;
-        globalSettingsEl.refresh();
-      }
+    case 'global-settings':
+      await wireAndRefresh(document.querySelector('chaos-global-settings-view'), { agents });
       break;
-    }
   }
 }
 
