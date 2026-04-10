@@ -11,6 +11,8 @@ import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sendMsg, sendPortMessage } from '../../services/messaging.js';
 import type { AgentMeta, ArtifactMeta } from '../../storage/types.js';
+import { artifacts as artifactsSignal, pinnedArtifacts, recentArtifacts, agents as agentsSignal, refreshArtifacts } from '../../state/app-state.js';
+import { SignalWatcher } from '../../state/signal-watcher.js';
 
 // ── Helpers ──
 
@@ -82,13 +84,12 @@ function artifactTypeBadgeClass(type?: string): string {
 }
 
 @customElement('chaos-dashboard-view')
-export class ChaosDashboardView extends LitElement {
+export class ChaosDashboardView extends SignalWatcher(LitElement) {
   createRenderRoot() { return this; }
 
-  @property({ type: Array }) agents: AgentMeta[] = [];
+  protected watchSignals() { return [pinnedArtifacts, recentArtifacts, agentsSignal]; }
 
-  @state() private _pinned: ArtifactMeta[] = [];
-  @state() private _recent: ArtifactMeta[] = [];
+  @property({ type: Array }) agents: AgentMeta[] = [];
   @state() private _suggestions: DashboardSuggestion[] = [];
   @state() private _usage: UsageSummary | null = null;
   @state() private _hookDetails: HookDetail[] = [];
@@ -121,18 +122,9 @@ export class ChaosDashboardView extends LitElement {
     this._loading = true;
 
     try {
-      // Load artifacts
-      const artifactsResult = await sendMsg<{ artifacts: ArtifactMeta[] }>({ type: 'getArtifacts' });
-      const allArtifacts = artifactsResult.artifacts;
-
-      // Pinned artifacts
-      this._pinned = allArtifacts.filter(a => a.pinned);
-
-      // Recent artifacts (last 10, excluding pinned)
-      this._recent = allArtifacts
-        .filter(a => !a.pinned)
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 10);
+      // Refresh artifacts signal — views re-render automatically via SignalWatcher
+      await refreshArtifacts();
+      const allArtifacts = artifactsSignal.value;
 
       // Load today's usage
       const todayStart = new Date();
@@ -360,7 +352,7 @@ Write the JSON array directly to suggestions/latest.json using write_file. Do no
   }
 
   private _renderPinned(pinSvg: unknown) {
-    const pinned = this._pinned;
+    const pinned = pinnedArtifacts.value;
     const todayStr = new Date().toISOString().slice(0, 10);
     const hasToday = pinned.some(a => a.timestamp.startsWith(todayStr));
     const sectionTitle = pinned.length > 0 && hasToday ? 'Today' : pinned.length > 0 ? 'Pinned Artifacts' : 'Today';
@@ -434,7 +426,7 @@ Write the JSON array directly to suggestions/latest.json using write_file. Do no
   }
 
   private _renderRecent(artifactSvg: unknown) {
-    const recent = this._recent;
+    const recent = recentArtifacts.value;
 
     return html`
       <div class="dashboard-section">

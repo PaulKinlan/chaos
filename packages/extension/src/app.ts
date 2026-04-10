@@ -49,6 +49,7 @@ import './components/shared/index.js';
 import './components/views/index.js';
 // ── Global state signals ──
 import './state/index.js';
+import { agents as agentsSignal, artifacts as artifactsSignal, hooks as hooksSignal, refreshArtifacts, refreshHooks } from './state/app-state.js';
 // ── Messaging singleton (lets Lit components call sendMsg) ──
 import { setSendMsg, setSendPortMessage } from './services/messaging.js';
 import type { AgentMeta, ArtifactMeta, ApiKeys, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
@@ -418,14 +419,10 @@ document.addEventListener('show-artifact-detail', async (e: Event) => {
   }
 });
 
-// When an artifact is updated (pinned/unpinned), refresh the active view
+// When an artifact is updated (pinned/unpinned), refresh the artifacts signal.
+// All views watching the signal re-render automatically.
 document.addEventListener('artifact-updated', () => {
-  // Refresh dashboard if visible
-  const dashEl = document.querySelector('chaos-dashboard-view') as any;
-  if (dashEl && activeView === 'dashboard') dashEl.refresh();
-  // Refresh artifacts view if visible
-  const artEl = document.querySelector('chaos-artifacts-view') as any;
-  if (artEl && activeView === 'artifacts') artEl.refresh();
+  refreshArtifacts();
 });
 
 document.addEventListener('view-change', (e: Event) => {
@@ -645,6 +642,7 @@ function loadCurrentViewData(): void {
       const dashEl = document.querySelector('chaos-dashboard-view') as any;
       if (dashEl) {
         dashEl.agents = agents;
+        refreshArtifacts(); // Signal update triggers re-render
         dashEl.refresh();
       }
       break;
@@ -1446,8 +1444,10 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     }
 
     case 'hooksList': {
+      const hooksList = msg.hooks as Hook[];
+      hooksSignal.value = hooksList;
       const hooksViewEl = document.querySelector('chaos-hooks-view') as any;
-      if (hooksViewEl) hooksViewEl.setHooks(msg.hooks as Hook[]);
+      if (hooksViewEl) hooksViewEl.setHooks(hooksList);
       break;
     }
 
@@ -1468,6 +1468,7 @@ let hasRestoredFromHash = false;
 
 function onAgentListReceived(agentList: AgentMeta[]): void {
   agents = agentList;
+  agentsSignal.value = agentList;
   renderAgentTabs();
 
   // On first load, restore state from URL hash
@@ -3324,6 +3325,10 @@ async function init(): Promise<void> {
   }
 
   sendPortMessage({ type: 'listAgents' });
+
+  // Load initial data into signals
+  refreshArtifacts();
+  refreshHooks();
 }
 
 // Handle browser back/forward

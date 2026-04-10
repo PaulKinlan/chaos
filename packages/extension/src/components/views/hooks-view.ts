@@ -12,6 +12,8 @@ import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sendMsg, sendPortMessage } from '../../services/messaging.js';
 import type { AgentMeta, Hook, HookTrigger } from '../../storage/types.js';
+import { hooks as hooksSignal } from '../../state/app-state.js';
+import { SignalWatcher } from '../../state/signal-watcher.js';
 
 // ── Helpers ──
 
@@ -78,8 +80,10 @@ const HOOK_PRESETS = [
 ];
 
 @customElement('chaos-hooks-view')
-export class ChaosHooksView extends LitElement {
+export class ChaosHooksView extends SignalWatcher(LitElement) {
   createRenderRoot() { return this; }
+
+  protected watchSignals() { return [hooksSignal]; }
 
   @property({ type: Array }) agents: AgentMeta[] = [];
   @property({ type: String }) activeAgentId: string | null = null;
@@ -118,6 +122,7 @@ export class ChaosHooksView extends LitElement {
   /** Called from app.ts when a getHooks response comes back via port */
   setHooks(hooks: Hook[]): void {
     this._hooks = hooks;
+    hooksSignal.value = hooks;
   }
 
   private _agentName(agentId: string): string {

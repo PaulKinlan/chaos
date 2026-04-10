@@ -12,6 +12,8 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { sendMsg } from '../../services/messaging.js';
 import { createSecureViewer, detectContentType, type SecureViewer } from '../../ui/secure-viewer.js';
 import type { AgentMeta, ArtifactMeta } from '../../storage/types.js';
+import { artifacts as artifactsSignal, refreshArtifacts } from '../../state/app-state.js';
+import { SignalWatcher } from '../../state/signal-watcher.js';
 
 // ── Helpers ──
 
@@ -68,12 +70,12 @@ function artifactTypeLabel(a: ArtifactMeta): string {
 }
 
 @customElement('chaos-artifacts-view')
-export class ChaosArtifactsView extends LitElement {
+export class ChaosArtifactsView extends SignalWatcher(LitElement) {
   createRenderRoot() { return this; }
 
-  @property({ type: Array }) agents: AgentMeta[] = [];
+  protected watchSignals() { return [artifactsSignal]; }
 
-  @state() private _artifacts: ArtifactMeta[] = [];
+  @property({ type: Array }) agents: AgentMeta[] = [];
   @state() private _filterAgentId = '';
   @state() private _searchQuery = '';
   @state() private _loading = false;
@@ -107,8 +109,7 @@ export class ChaosArtifactsView extends LitElement {
     console.log('[chaos-artifacts-view] refresh');
     this._loading = true;
     try {
-      const result = await sendMsg<{ artifacts: ArtifactMeta[] }>({ type: 'getArtifacts' });
-      this._artifacts = result.artifacts;
+      await refreshArtifacts();
     } catch (err) {
       console.error('[chaos-artifacts-view] Error loading artifacts:', err);
     } finally {
@@ -118,8 +119,8 @@ export class ChaosArtifactsView extends LitElement {
 
   private get _filtered(): ArtifactMeta[] {
     let filtered = this._filterAgentId
-      ? this._artifacts.filter(a => a.agentId === this._filterAgentId)
-      : [...this._artifacts];
+      ? artifactsSignal.value.filter(a => a.agentId === this._filterAgentId)
+      : [...artifactsSignal.value];
 
     const q = this._searchQuery.toLowerCase().trim();
     if (q) {
@@ -212,8 +213,8 @@ export class ChaosArtifactsView extends LitElement {
     await sendMsg({ type: 'updateArtifactMeta', artifactPath: artifact.path, updates: { pinned: newPinned } });
     artifact.pinned = newPinned;
     this.requestUpdate();
-    // Refresh the list
-    await this.refresh();
+    // Refresh via signal — all watching views update automatically
+    await refreshArtifacts();
   }
 
   private _downloadArtifact(): void {
@@ -253,7 +254,7 @@ export class ChaosArtifactsView extends LitElement {
     const onOk = async () => {
       cleanup();
       await sendMsg({ type: 'deleteArtifact', artifactPath });
-      await this.refresh();
+      await refreshArtifacts();
     };
 
     const onCancel = () => {
