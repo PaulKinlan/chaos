@@ -12,7 +12,7 @@ import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sendMsg, sendPortMessage } from '../../services/messaging.js';
 import type { AgentMeta, Hook, HookTrigger } from '../../storage/types.js';
-import { hooks as hooksSignal } from '../../state/app-state.js';
+import { hooks as hooksSignal, refreshHooks } from '../../state/app-state.js';
 import { SignalWatcher } from '../../state/signal-watcher.js';
 
 // ── Helpers ──
@@ -116,7 +116,7 @@ export class ChaosHooksView extends SignalWatcher(LitElement) {
 
   async refresh(): Promise<void> {
     console.log('[chaos-hooks-view] refresh');
-    sendPortMessage({ type: 'getHooks' });
+    await refreshHooks();
   }
 
   /** Called from app.ts when a getHooks response comes back via port */
@@ -204,14 +204,18 @@ export class ChaosHooksView extends SignalWatcher(LitElement) {
     }
   }
 
-  private _toggleHook(hookId: string, currentlyEnabled: boolean): void {
+  private async _toggleHook(hookId: string, currentlyEnabled: boolean): Promise<void> {
     sendPortMessage({ type: 'updateHook', hookId, updates: { enabled: !currentlyEnabled } });
-    setTimeout(() => this.refresh(), 200);
+    // Allow background to process, then refresh signal
+    await new Promise(r => setTimeout(r, 100));
+    await refreshHooks();
   }
 
-  private _deleteHook(hookId: string): void {
+  private async _deleteHook(hookId: string): Promise<void> {
     sendPortMessage({ type: 'removeHook', hookId });
-    setTimeout(() => this.refresh(), 200);
+    // Allow background to process, then refresh signal
+    await new Promise(r => setTimeout(r, 100));
+    await refreshHooks();
   }
 
   private async _loadBookmarkFolders(): Promise<void> {
@@ -348,7 +352,8 @@ export class ChaosHooksView extends SignalWatcher(LitElement) {
 
     this._resetForm();
     this._showForm = false;
-    setTimeout(() => this.refresh(), 200);
+    // Allow background to process, then refresh signal
+    setTimeout(() => refreshHooks(), 100);
   }
 
   private _onRefinePrompt(): void {

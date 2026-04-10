@@ -15,6 +15,7 @@ import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionL
 import { hasPermission, hasHostPermissions } from '../../permissions.js';
 import { getFallbackModels, listProviders } from '../../agents/provider-registry.js';
 import { showOnboarding, resetOnboarding } from '../../ui/onboarding.js';
+import { refreshSettings, refreshUsage, refreshHooks } from '../../state/app-state.js';
 
 // ── Helpers ──
 
@@ -194,6 +195,7 @@ export class ChaosGlobalSettingsView extends LitElement {
     const settingsResult = await sendMsg<{ settings: { theme: string } }>({ type: 'getSettings' });
     const currentTheme = settingsResult.settings?.theme || 'system';
     await sendMsg({ type: 'setSettings', settings: { activeProvider: provider, theme: currentTheme, model } });
+    await refreshSettings();
     console.log('[global-settings] Settings saved');
   }
 
@@ -201,6 +203,7 @@ export class ChaosGlobalSettingsView extends LitElement {
     const settingsResult = await sendMsg<{ settings: { activeProvider: string; model?: string } }>({ type: 'getSettings' });
     const current = settingsResult.settings;
     await sendMsg({ type: 'setSettings', settings: { activeProvider: current?.activeProvider || 'anthropic', theme: this._theme, model: current?.model } });
+    await refreshSettings();
 
     // Apply theme
     const html = document.documentElement;
@@ -383,6 +386,7 @@ export class ChaosGlobalSettingsView extends LitElement {
 
   private async _debugClearUsage(): Promise<void> {
     await sendMsg({ type: 'clearUsage' });
+    await refreshUsage();
     console.log('[CHAOS debug] Usage data cleared');
   }
 
@@ -399,6 +403,8 @@ export class ChaosGlobalSettingsView extends LitElement {
     for (const hook of hooks) {
       sendPortMessage({ type: 'removeHook', hookId: hook.id });
     }
+    // Allow background to process all removals, then refresh signal
+    setTimeout(() => refreshHooks(), 200);
     console.log(`[CHAOS debug] Cleared ${hooks.length} hooks`);
   }
 

@@ -49,7 +49,7 @@ import './components/shared/index.js';
 import './components/views/index.js';
 // ── Global state signals ──
 import './state/index.js';
-import { agents as agentsSignal, artifacts as artifactsSignal, hooks as hooksSignal, refreshArtifacts, refreshHooks, refreshUsage, refreshTasks, refreshMessages, refreshTodayUsage } from './state/app-state.js';
+import { agents as agentsSignal, artifacts as artifactsSignal, hooks as hooksSignal, refreshArtifacts, refreshHooks, refreshUsage, refreshTasks, refreshMessages, refreshTodayUsage, refreshSettings } from './state/app-state.js';
 // ── Messaging singleton (lets Lit components call sendMsg) ──
 import { setSendMsg, setSendPortMessage } from './services/messaging.js';
 import type { AgentMeta, ArtifactMeta, ApiKeys, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
@@ -497,9 +497,8 @@ document.addEventListener('run-scheduled-task', (e: Event) => {
   const detail = (e as CustomEvent).detail;
   if (detail?.alarmId) {
     sendMsg({ type: 'runScheduledTask', alarmId: detail.alarmId }).then(() => {
-      // Refresh the tasks view
-      const tasksEl = document.querySelector('chaos-tasks-view') as any;
-      if (tasksEl) tasksEl.refresh();
+      // Refresh tasks signal so all watching views update
+      refreshTasks();
     }).catch(console.error);
   }
 });
@@ -1356,6 +1355,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       refreshTodayUsage();
       refreshArtifacts(); // Agent may have published artifacts
       refreshHooks(); // Agent may have created hooks
+      refreshTasks(); // Agent may have created/updated tasks
 
       // Feature: Show sub-agent completion in master's chat column
       if (msgAgentId) {
@@ -1387,7 +1387,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         const alarmId = pendingRunNowAlarmId;
         pendingRunNowAlarmId = null;
         sendMsg({ type: 'updateScheduledTaskRun', alarmId, result: ((msg.result as string) || '(no output)').slice(0, 200) })
-          .then(() => { if (activeView === 'tasks') { const tv = document.querySelector('chaos-tasks-view') as any; if (tv) { tv.agents = agents; tv.activeAgentId = activeAgentId; tv.refresh(); } } })
+          .then(() => refreshTasks())
           .catch(() => {});
       }
       break;
@@ -1412,6 +1412,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     case 'apiKeysSaved': {
       const col = getFocusedColumn();
       if (col) addChatSystemMessageToColumn(col, 'Settings saved.');
+      refreshSettings();
       break;
     }
 
@@ -1459,6 +1460,8 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     case 'hookAdded':
     case 'hookUpdated':
     case 'hookRemoved':
+      // Refresh hooks signal so all watching views update
+      refreshHooks();
       break;
 
     case 'error': {
@@ -3247,6 +3250,8 @@ function renderSmartStartContent(
       };
 
       sendPortMessage({ type: 'addHook', hook });
+      // Refresh hooks signal after adding
+      setTimeout(() => refreshHooks(), 100);
 
       // Update button to show enabled
       (btn as HTMLButtonElement).textContent = 'Enabled!';
@@ -3315,7 +3320,8 @@ async function init(): Promise<void> {
     if (shouldOnboard) {
         const result = await showOnboarding(sendMsg);
         if (result) {
-          // Onboarding completed — now load agents and show Smart Start
+          // Onboarding completed — refresh settings signal and load agents
+          refreshSettings();
           sendPortMessage({ type: 'listAgents' });
           // Wait briefly for agents to load, then show smart start
           setTimeout(() => {

@@ -291,6 +291,7 @@ export class ChaosAgentSettingsView extends LitElement {
       this._hasExistingApiKey = false;
     }
 
+    sendPortMessage({ type: 'listAgents' });
     this._modelStatus = 'Saved!';
     setTimeout(() => { this._modelStatus = ''; }, 2000);
   }
@@ -311,6 +312,7 @@ export class ChaosAgentSettingsView extends LitElement {
       disabledTools: disabled.length > 0 ? disabled : undefined,
       enabledTools: undefined,
     });
+    sendPortMessage({ type: 'listAgents' });
     this._toolsStatus = 'Saved!';
     setTimeout(() => { this._toolsStatus = ''; }, 2000);
   }
