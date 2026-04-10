@@ -615,7 +615,7 @@ export class ChaosHooksView extends SignalWatcher(LitElement) {
   }
 
   private _renderHooksList() {
-    const hooks = this._hooks;
+    const hooks = hooksSignal.value.length > 0 ? hooksSignal.value : this._hooks;
 
     if (hooks.length === 0) {
       return html`
