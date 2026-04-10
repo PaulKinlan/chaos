@@ -88,6 +88,7 @@ export class ChaosTasksView extends SignalWatcher(LitElement) {
   @state() private _filterStatus = '';
   @state() private _loading = false;
   @state() private _detailTask: Task | null = null;
+  @state() private _runningTasks = new Set<string>();
   @state() private _detailOpen = false;
 
   connectedCallback() {
@@ -158,6 +159,18 @@ export class ChaosTasksView extends SignalWatcher(LitElement) {
       bubbles: true,
       composed: true,
     }));
+  }
+
+  private _runScheduledTaskWithState(task: ScheduledTask): void {
+    this._runningTasks = new Set([...this._runningTasks, task.alarmId]);
+    this._runScheduledTask(task);
+    // Clear running state after a timeout (the task runs in background)
+    setTimeout(() => {
+      const next = new Set(this._runningTasks);
+      next.delete(task.alarmId);
+      this._runningTasks = next;
+      refreshTasks();
+    }, 30000); // 30s max — refresh will also clear it
   }
 
   private _showTaskDetail(taskId: string): void {
@@ -329,37 +342,100 @@ export class ChaosTasksView extends SignalWatcher(LitElement) {
     `;
   }
 
+  private _getNextRunTime(t: ScheduledTask): string {
+    if (t.schedule.type === 'once') return 'One-shot (pending)';
+    const period = t.schedule.periodInMinutes || 60;
+    if (t.lastRunAt) {
+      const lastRun = new Date(t.lastRunAt).getTime();
+      const nextRun = new Date(lastRun + period * 60 * 1000);
+      const now = Date.now();
+      if (nextRun.getTime() <= now) return 'Due now';
+      const diffMin = Math.round((nextRun.getTime() - now) / 60000);
+      if (diffMin < 60) return `in ${diffMin}m`;
+      const diffHr = Math.floor(diffMin / 60);
+      const remMin = diffMin % 60;
+      return `in ${diffHr}h${remMin > 0 ? ` ${remMin}m` : ''} (${nextRun.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+    }
+    // Never run — estimate from creation time
+    const created = new Date(t.createdAt).getTime();
+    const firstDelay = 15; // minutes
+    const firstRun = new Date(created + firstDelay * 60 * 1000);
+    if (firstRun.getTime() <= Date.now()) return 'Due now';
+    return `in ${Math.round((firstRun.getTime() - Date.now()) / 60000)}m`;
+  }
+
   private _renderScheduled(agentScheduled: ScheduledTask[]) {
     return html`
       <div class="tasks-section">
         <div class="tasks-section-header">
           <h3>Scheduled Tasks</h3>
-          <p class="tasks-section-subtitle">Recurring and one-shot tasks this agent runs automatically.</p>
         </div>
         ${agentScheduled.map(t => {
           const scheduleLabel = t.schedule.type === 'recurring'
             ? `Every ${formatDuration(t.schedule.periodInMinutes || 0)}`
             : 'One-shot';
           const runCount = t.runHistory?.length || 0;
+          const isRunning = this._runningTasks.has(t.alarmId);
+          const nextRun = this._getNextRunTime(t);
+          const agentName = this._agentName(t.agentId);
+
           return html`
-            <div class="scheduled-task-item">
-              <div class="scheduled-task-info">
-                <div class="task-desc">${escapeHtml(t.description)}</div>
-                <div class="task-schedule-badge">
-                  <span class="badge badge-info">${escapeHtml(scheduleLabel)}</span>
-                  <span class="badge badge-active">Active</span>
-                  ${runCount > 0 ? html`<span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);">${runCount} runs</span>` : nothing}
+            <details class="scheduled-task-item" style="border:1px solid var(--border-subtle);border-radius:6px;padding:0;margin-bottom:var(--sp-2);">
+              <summary style="display:flex;align-items:center;justify-content:space-between;padding:var(--sp-3);cursor:pointer;user-select:none;">
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:500;font-size:var(--text-sm);color:var(--text-primary);">${escapeHtml(t.description)}</div>
+                  <div style="display:flex;gap:var(--sp-1);margin-top:var(--sp-1);flex-wrap:wrap;align-items:center;">
+                    <span class="badge badge-info">${escapeHtml(scheduleLabel)}</span>
+                    ${isRunning
+                      ? html`<span class="badge" style="background:var(--accent-subtle);color:var(--accent-text);"><span class="spinner" style="width:10px;height:10px;display:inline-block;vertical-align:middle;margin-right:4px;"></span>Running...</span>`
+                      : html`<span class="badge badge-active">Active</span>`}
+                    ${runCount > 0 ? html`<span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);">${runCount} runs</span>` : nothing}
+                    <span style="font-size:var(--text-xs);color:var(--text-muted);">Next: ${nextRun}</span>
+                    <span style="font-size:var(--text-xs);color:var(--text-muted);">Agent: ${escapeHtml(agentName)}</span>
+                  </div>
                 </div>
-                <div class="task-prompt">${escapeHtml(t.prompt.slice(0, 120))}${t.prompt.length > 120 ? '...' : ''}</div>
+                <div style="display:flex;gap:4px;flex-shrink:0;" @click=${(e: Event) => e.stopPropagation()}>
+                  <button class="btn btn-ghost btn-sm" ?disabled=${isRunning} @click=${() => this._runScheduledTaskWithState(t)}>
+                    ${isRunning ? 'Running...' : 'Run Now'}
+                  </button>
+                  <button class="btn btn-danger btn-sm" @click=${() => this._cancelScheduledTask(t.alarmId)}>Cancel</button>
+                </div>
+              </summary>
+              <div style="padding:0 var(--sp-3) var(--sp-3);border-top:1px solid var(--border-subtle);">
+                <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--sp-2);">
+                  <strong>Prompt:</strong>
+                  <pre style="white-space:pre-wrap;word-break:break-word;background:var(--bg-base);padding:var(--sp-2);border-radius:4px;margin-top:var(--sp-1);font-size:11px;max-height:150px;overflow-y:auto;">${escapeHtml(t.prompt)}</pre>
+                </div>
                 ${t.lastRunAt ? html`
-                  <div class="task-last-run">Last run: ${formatTimeFull(t.lastRunAt)}${t.lastResult ? ` — ${escapeHtml(t.lastResult.slice(0, 80))}${t.lastResult.length > 80 ? '...' : ''}` : ''}</div>
-                ` : html`<div style="font-size:12px;color:var(--text-muted);">Not run yet</div>`}
+                  <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--sp-2);">
+                    <strong>Last run:</strong> ${formatTimeFull(t.lastRunAt)}
+                  </div>
+                  ${t.lastResult ? html`
+                    <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--sp-1);">
+                      <strong>Result:</strong>
+                      <pre style="white-space:pre-wrap;word-break:break-word;background:var(--bg-base);padding:var(--sp-2);border-radius:4px;margin-top:var(--sp-1);font-size:11px;max-height:200px;overflow-y:auto;">${escapeHtml(t.lastResult)}</pre>
+                    </div>
+                  ` : nothing}
+                ` : html`<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--sp-2);">Not run yet</div>`}
+                ${t.runHistory && t.runHistory.length > 1 ? html`
+                  <details style="margin-top:var(--sp-2);font-size:var(--text-xs);">
+                    <summary style="cursor:pointer;color:var(--accent-text);">Run history (${t.runHistory.length})</summary>
+                    <div style="margin-top:var(--sp-1);">
+                      ${t.runHistory.slice().reverse().map(run => html`
+                        <div style="padding:var(--sp-1) 0;border-bottom:1px solid var(--border-subtle);">
+                          <span style="color:var(--text-muted);">${formatTimeFull(run.timestamp)}</span>
+                          ${run.durationMs ? html`<span style="color:var(--text-muted);"> (${Math.round(run.durationMs / 1000)}s)</span>` : nothing}
+                          <div style="color:var(--text-secondary);margin-top:2px;">${escapeHtml(run.result.slice(0, 200))}${run.result.length > 200 ? '...' : ''}</div>
+                        </div>
+                      `)}
+                    </div>
+                  </details>
+                ` : nothing}
+                <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--sp-2);">
+                  Created: ${formatTimeFull(t.createdAt)} &middot; Alarm: <code style="font-size:10px;">${escapeHtml(t.alarmId)}</code>
+                </div>
               </div>
-              <div style="display:flex;gap:4px;flex-shrink:0;">
-                <button class="btn btn-ghost btn-sm" @click=${() => this._runScheduledTask(t)}>Run Now</button>
-                <button class="btn btn-danger btn-sm" @click=${() => this._cancelScheduledTask(t.alarmId)}>Cancel</button>
-              </div>
-            </div>
+            </details>
           `;
         })}
       </div>
