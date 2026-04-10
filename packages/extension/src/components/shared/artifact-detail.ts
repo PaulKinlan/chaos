@@ -11,6 +11,7 @@
  */
 
 import { LitElement, html, nothing } from 'lit';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, state } from 'lit/decorators.js';
 import { sendMsg } from '../../services/messaging.js';
 import { createSecureViewer, detectContentType } from '../../ui/secure-viewer.js';
@@ -146,7 +147,7 @@ export class ChaosArtifactDetail extends LitElement {
           <h3 style="margin:0;font-size:var(--text-base);">${this._escapeHtml(displayName)}</h3>
           <div style="display:flex;gap:var(--sp-2);align-items:center;">
             <button class="btn btn-ghost btn-xs" @click=${this._togglePin} title="${artifact.pinned ? 'Unpin' : 'Pin'}" style="color:${artifact.pinned ? 'var(--accent)' : 'var(--text-muted)'};">
-              ${html`<span>${pinIcon}</span>`}
+              ${unsafeHTML(pinIcon)}
             </button>
             <button class="btn btn-ghost btn-xs" @click=${this._download} title="Download">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
