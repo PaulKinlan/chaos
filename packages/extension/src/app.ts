@@ -454,6 +454,55 @@ document.addEventListener('view-change', (e: Event) => {
   }
 });
 
+document.addEventListener('agent-change', (e: Event) => {
+  const agentId = (e as CustomEvent).detail;
+  if (typeof agentId === 'string') {
+    switchToAgent(agentId);
+  }
+});
+
+document.addEventListener('agent-deleted', () => {
+  sendPortMessage({ type: 'listAgents' });
+  activeAgentId = null;
+  activeView = 'chat';
+  sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === 'chat'));
+  updateViewVisibility();
+});
+
+document.addEventListener('agent-jump', (e: Event) => {
+  const detail = (e as CustomEvent).detail;
+  if (detail?.agentId) {
+    switchToAgent(detail.agentId);
+    if (detail.view) {
+      activeView = detail.view;
+      sidebarItems.forEach((b) => b.classList.toggle('active', b.dataset.view === detail.view));
+      updateViewVisibility();
+      loadCurrentViewData();
+    }
+  }
+});
+
+document.addEventListener('create-agent', () => {
+  const modal = document.getElementById('create-agent-modal');
+  if (modal) modal.classList.add('visible');
+});
+
+document.addEventListener('run-scheduled-task', (e: Event) => {
+  const detail = (e as CustomEvent).detail;
+  if (detail?.alarmId) {
+    sendMsg({ type: 'runScheduledTask', alarmId: detail.alarmId }).then(() => {
+      // Refresh the tasks view
+      const tasksEl = document.querySelector('chaos-tasks-view') as any;
+      if (tasksEl) tasksEl.refresh();
+    }).catch(console.error);
+  }
+});
+
+document.addEventListener('rerun-smart-start', async () => {
+  await chrome.storage.local.remove('chaos:smart-start-completed');
+  showSmartStart();
+});
+
 // Global settings — shared logic used by button click and hash navigation
 function showGlobalSettings(updateURL = true): void {
   if (activeView === 'global-settings') return; // already showing
