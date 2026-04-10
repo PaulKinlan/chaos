@@ -132,9 +132,10 @@ export class ChaosTasksView extends SignalWatcher(LitElement) {
   }
 
   private get _agentScheduled(): ScheduledTask[] {
+    const all = scheduledTasksSignal.value;
     return this._filterAgentId
-      ? scheduledTasksSignal.value.filter(t => t.agentId === this._filterAgentId)
-      : [];
+      ? all.filter(t => t.agentId === this._filterAgentId)
+      : all;
   }
 
   private _onAgentJump(agentId: string): void {
@@ -151,8 +152,9 @@ export class ChaosTasksView extends SignalWatcher(LitElement) {
   }
 
   private _runScheduledTask(task: ScheduledTask): void {
+    console.log('[tasks-view] Run Now clicked for:', task.alarmId, task.description);
     this.dispatchEvent(new CustomEvent('run-scheduled-task', {
-      detail: { task },
+      detail: { task, alarmId: task.alarmId },
       bubbles: true,
       composed: true,
     }));
