@@ -495,11 +495,15 @@ document.addEventListener('create-agent', () => {
 
 document.addEventListener('run-scheduled-task', (e: Event) => {
   const detail = (e as CustomEvent).detail;
-  if (detail?.alarmId) {
-    sendMsg({ type: 'runScheduledTask', alarmId: detail.alarmId }).then(() => {
-      // Refresh tasks signal so all watching views update
+  const alarmId = detail?.alarmId || detail?.task?.alarmId;
+  if (alarmId) {
+    console.log('[app] Running scheduled task:', alarmId);
+    sendMsg({ type: 'runScheduledTask', alarmId }).then(() => {
       refreshTasks();
-    }).catch(console.error);
+      refreshTodayUsage();
+    }).catch((err) => console.error('[app] Run scheduled task failed:', err));
+  } else {
+    console.warn('[app] run-scheduled-task event missing alarmId:', detail);
   }
 });
 
