@@ -3864,7 +3864,8 @@
 
       <!-- ════════ Channels View ════════ -->
       <div class="view-panel" id="view-channels">
-        <div class="view-padded">
+        <chaos-channels-view></chaos-channels-view>
+        <div class="view-padded" style="display:none;">
           <div class="section-header">
             <h2>Channels</h2>
             <button class="help-btn" data-help="channels" title="Help: Channels">
@@ -3986,7 +3987,8 @@
         <button class="help-btn" data-help="agent-settings" title="Help: Agent Settings" style="position:absolute;top:8px;right:8px;z-index:10;">
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </button>
-        <div class="view-padded" id="agent-settings-content">
+        <chaos-agent-settings-view></chaos-agent-settings-view>
+        <div class="view-padded" id="agent-settings-content" style="display:none;">
           <div class="empty-state">
             <p>Select an agent to view its settings.</p>
           </div>
@@ -3995,7 +3997,8 @@
 
       <!-- ════════ Global Settings View ════════ -->
       <div class="view-panel" id="view-global-settings">
-        <div class="view-padded">
+        <chaos-global-settings-view></chaos-global-settings-view>
+        <div class="view-padded" style="display:none;">
           <div class="section-header">
             <h2 id="global-settings-title">Global Settings</h2>
             <button class="help-btn" data-help="global-settings" title="Help: Global Settings">

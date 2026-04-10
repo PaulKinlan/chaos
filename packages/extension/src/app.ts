@@ -693,9 +693,16 @@ function loadCurrentViewData(): void {
       }
       break;
     }
-    case 'channels':
-      renderChannelsUI();
+    case 'channels': {
+      const channelsEl = document.querySelector('chaos-channels-view') as any;
+      if (channelsEl) {
+        channelsEl.agents = agents;
+        channelsEl.refresh();
+      } else {
+        renderChannelsUI();
+      }
       break;
+    }
     case 'files': {
       const filesEl = document.querySelector('chaos-files-view');
       if (filesEl) {
@@ -720,14 +727,28 @@ function loadCurrentViewData(): void {
       }
       break;
     }
-    case 'agent-settings':
-      loadAgentSettings();
+    case 'agent-settings': {
+      const agentSettingsEl = document.querySelector('chaos-agent-settings-view') as any;
+      if (agentSettingsEl) {
+        agentSettingsEl.activeAgentId = activeAgentId;
+        agentSettingsEl.refresh();
+      } else {
+        loadAgentSettings();
+      }
       break;
-    case 'global-settings':
-      loadSettings();
-      loadPermissions();
-      loadBrowserPermissions();
+    }
+    case 'global-settings': {
+      const globalSettingsEl = document.querySelector('chaos-global-settings-view') as any;
+      if (globalSettingsEl) {
+        globalSettingsEl.agents = agents;
+        globalSettingsEl.refresh();
+      } else {
+        loadSettings();
+        loadPermissions();
+        loadBrowserPermissions();
+      }
       break;
+    }
   }
 }
 

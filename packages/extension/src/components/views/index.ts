@@ -10,3 +10,6 @@ export { ChaosDashboardView } from './dashboard-view.js';
 export { ChaosArtifactsView } from './artifacts-view.js';
 export { ChaosTasksView } from './tasks-view.js';
 export { ChaosHooksView } from './hooks-view.js';
+export { ChaosChannelsView } from './channels-view.js';
+export { ChaosAgentSettingsView } from './agent-settings-view.js';
+export { ChaosGlobalSettingsView } from './global-settings-view.js';
