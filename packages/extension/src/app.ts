@@ -49,7 +49,7 @@ import './components/shared/index.js';
 import './components/views/index.js';
 // ── Global state signals ──
 import './state/index.js';
-import { agents as agentsSignal, artifacts as artifactsSignal, hooks as hooksSignal, refreshArtifacts, refreshHooks, refreshUsage, refreshTasks, refreshMessages } from './state/app-state.js';
+import { agents as agentsSignal, artifacts as artifactsSignal, hooks as hooksSignal, refreshArtifacts, refreshHooks, refreshUsage, refreshTasks, refreshMessages, refreshTodayUsage } from './state/app-state.js';
 // ── Messaging singleton (lets Lit components call sendMsg) ──
 import { setSendMsg, setSendPortMessage } from './services/messaging.js';
 import type { AgentMeta, ArtifactMeta, ApiKeys, Hook, HookTrigger, AgenticProgressEntry } from './storage/types.js';
@@ -1351,6 +1351,11 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         col.currentProgressEntries = [];
         columnScrollToBottom(col);
       }
+
+      // Refresh reactive data after agentic loop completes
+      refreshTodayUsage();
+      refreshArtifacts(); // Agent may have published artifacts
+      refreshHooks(); // Agent may have created hooks
 
       // Feature: Show sub-agent completion in master's chat column
       if (msgAgentId) {
@@ -3330,6 +3335,7 @@ async function init(): Promise<void> {
   refreshArtifacts();
   refreshHooks();
   refreshUsage();
+  refreshTodayUsage();
   refreshTasks();
   refreshMessages();
 }

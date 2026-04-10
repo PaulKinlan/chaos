@@ -63,6 +63,22 @@ export const visibleAgents = computed(() =>
   agents.value.filter(a => a.role !== 'archived')
 );
 
+// Today's usage — specifically for dashboard activity section
+export const todayUsage = signal<UsageSummaryData | null>(null);
+
+export async function refreshTodayUsage(): Promise<void> {
+  const { sendMsg } = await import('../services/messaging.js');
+  try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const result = await sendMsg<{ summary: UsageSummaryData }>({
+      type: 'getUsageSummary',
+      since: todayStart.toISOString(),
+    });
+    todayUsage.value = result.summary || null;
+  } catch { /* */ }
+}
+
 export const pinnedArtifacts = computed(() =>
   artifacts.value.filter(a => a.pinned)
 );
