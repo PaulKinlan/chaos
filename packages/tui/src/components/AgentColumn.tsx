@@ -213,10 +213,11 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
     }
   }, [agent, agentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const maxVisible = 15;
-  const endIdx = messages.length - scrollBack;
+  // Show all messages when at bottom (scrollBack=0), or a window when scrolled
+  const maxVisible = 50; // generous — Ink handles overflow via the Box overflow="hidden"
+  const endIdx = Math.max(0, messages.length - scrollBack);
   const startMsgIdx = Math.max(0, endIdx - maxVisible);
-  const visibleMessages = messages.slice(startMsgIdx, endIdx);
+  const visibleMessages = messages.slice(startMsgIdx, endIdx > 0 ? endIdx : undefined);
   const inputDisplay = focused ? `> ${input}\u2588` : '  (tab to focus)';
 
   return (
