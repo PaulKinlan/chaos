@@ -2065,11 +2065,17 @@ function sendColumnMessage(col: ChatColumn): void {
     timestamp: new Date().toISOString(),
   };
 
+  // Build conversation history for multi-turn context
+  const history = col.conversationHistory
+    .filter(e => e.role === 'user' || e.role === 'assistant')
+    .map(e => ({ role: e.role, content: e.content }));
+
   const chatMsg: Record<string, unknown> = {
     type: 'chat',
     agentId: col.agentId,
     message: text,
     columnId: col.id,
+    history,
   };
 
   if (col.pageContext) {

@@ -718,6 +718,7 @@ async function handleChat(
     agentId: string;
     message: string;
     pageContext?: { title: string; url: string; content: string };
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   },
 ): Promise<void> {
   port.postMessage({ type: 'chatStart', agentId: msg.agentId });
@@ -747,8 +748,11 @@ async function handleChat(
       } catch { /* */ }
     }
 
+    // Pass conversation history for multi-turn context
+    const history = Array.isArray(msg.history) ? msg.history as Array<{ role: 'user' | 'assistant'; content: string }> : undefined;
+
     let fullResponse = '';
-    for await (const event of chatAgent.stream(msg.message, msg.pageContext ? JSON.stringify(msg.pageContext) : undefined)) {
+    for await (const event of chatAgent.stream(msg.message, msg.pageContext ? JSON.stringify(msg.pageContext) : undefined, history)) {
       if (abortController.signal.aborted) break;
       const update = mapProgressEvent(event, 10);
       if (event.type === 'thinking') {
