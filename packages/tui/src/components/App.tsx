@@ -1,6 +1,5 @@
 /**
  * Main App — TweetDeck-style multi-agent TUI.
- * Manages agent columns, keyboard navigation, agent lifecycle, and editing.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -32,7 +31,6 @@ type InputMode =
   | { type: 'editor'; agentId: string };
 
 export function App({ model, provider, modelId, initialAgents }: AppProps) {
-  const { exit } = useApp();
   const { stdout } = useStdout();
   const [agents, setAgents] = useState<Array<{ meta: AgentMeta; agent: Agent }>>([]);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -40,11 +38,9 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
 
   const roles = listRoles();
 
-  // Load or create initial agents
   useEffect(() => {
     let registry = loadAgentRegistry();
 
-    // Create initial agents from --agent flags if they don't exist
     if (initialAgents && initialAgents.length > 0) {
       for (const spec of initialAgents) {
         if (!registry.find(a => a.id === spec.id)) {
@@ -54,7 +50,6 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       registry = loadAgentRegistry();
     }
 
-    // If no agents at all, create a default assistant
     if (registry.length === 0) {
       createAgentMeta('Assistant', 'assistant');
       registry = loadAgentRegistry();
@@ -96,10 +91,9 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
   }
 
   useInput((ch, key) => {
-    // Editor mode — Ctrl+E to close, all other input handled by editor
+    // Editor mode — Escape to close
     if (mode.type === 'editor') {
-      if (ch === 'e' && key.ctrl) {
-        // Reload agent with updated CLAUDE.md
+      if (key.escape) {
         reloadAgent(mode.agentId);
         setMode({ type: 'chat' });
       }
@@ -113,17 +107,13 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         setMode({ type: 'new-role', name, roleIdx: 0 });
         return;
       }
-      if (key.escape) {
-        setMode({ type: 'chat' });
-        return;
-      }
+      if (key.escape) { setMode({ type: 'chat' }); return; }
       if (key.backspace || key.delete) {
         setMode({ type: 'new-name', buffer: mode.buffer.slice(0, -1) });
         return;
       }
       if (ch && !key.ctrl && !key.meta) {
         setMode({ type: 'new-name', buffer: mode.buffer + ch });
-        return;
       }
       return;
     }
@@ -135,51 +125,34 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         setMode({ type: 'chat' });
         return;
       }
-      if (key.escape) {
-        setMode({ type: 'chat' });
-        return;
-      }
+      if (key.escape) { setMode({ type: 'chat' }); return; }
       if (key.upArrow) {
         setMode({ type: 'new-role', name: mode.name, roleIdx: (mode.roleIdx - 1 + roles.length) % roles.length });
         return;
       }
       if (key.downArrow || key.tab) {
         setMode({ type: 'new-role', name: mode.name, roleIdx: (mode.roleIdx + 1) % roles.length });
-        return;
       }
       return;
     }
 
-    // Chat mode — global keybindings
+    // Chat mode keybindings
     if (key.tab) {
-      if (key.shift) {
-        setActiveIdx(prev => (prev - 1 + agents.length) % agents.length);
-      } else {
-        setActiveIdx(prev => (prev + 1) % agents.length);
-      }
+      setActiveIdx(prev => key.shift
+        ? (prev - 1 + agents.length) % agents.length
+        : (prev + 1) % agents.length
+      );
       return;
     }
-
-    if (ch === 'n' && key.ctrl) {
-      setMode({ type: 'new-name', buffer: '' });
-      return;
-    }
-
+    if (ch === 'n' && key.ctrl) { setMode({ type: 'new-name', buffer: '' }); return; }
     if (ch === 'e' && key.ctrl) {
       const current = agents[activeIdx];
-      if (current) {
-        setMode({ type: 'editor', agentId: current.meta.id });
-      }
+      if (current) setMode({ type: 'editor', agentId: current.meta.id });
       return;
     }
-
-    if (ch === 'd' && key.ctrl) {
-      removeAgent(activeIdx);
-      return;
-    }
+    if (ch === 'd' && key.ctrl) { removeAgent(activeIdx); return; }
   });
 
-  // Visible columns
   const maxVisible = 3;
   const colCount = agents.length;
   let startIdx = 0;
@@ -190,13 +163,11 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
 
   return (
     <Box flexDirection="column" height={stdout.rows || 40}>
-      {/* Header */}
       <Box paddingX={1} justifyContent="space-between">
         <Text bold color="cyan">CHAOS TUI</Text>
         <Text dimColor>{process.cwd()}</Text>
       </Box>
 
-      {/* Modal overlays */}
       {mode.type === 'new-name' && (
         <Box paddingX={1}>
           <Text color="yellow">New agent name: </Text>
@@ -225,7 +196,6 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         </Box>
       )}
 
-      {/* Agent columns */}
       {mode.type !== 'editor' && (
         <Box flexGrow={1} flexDirection="row">
           {visibleAgents.length === 0 ? (
@@ -237,6 +207,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
               <AgentColumn
                 key={entry.meta.id}
                 agent={entry.agent}
+                agentId={entry.meta.id}
                 focused={mode.type === 'chat' && startIdx + i === activeIdx}
                 role={entry.meta.role}
               />
@@ -245,7 +216,6 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         </Box>
       )}
 
-      {/* Status bar */}
       <StatusBar
         agentCount={colCount}
         activeIndex={activeIdx}

@@ -1,32 +1,35 @@
 /**
  * Agent Column — one vertical panel in the TUI.
  * Shows agent name, conversation history, streaming tool calls, and input.
+ * Saves conversations to .chaos/{agentId}/conversations/.
  */
 
 import React, { useState, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Agent, ProgressEvent } from '@chaos/agent-loop';
+import type { Agent } from '@chaos/agent-loop';
+import { saveConversation, type ConversationEntry } from '../agent-manager.js';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  timestamp: string;
 }
 
 interface ToolCall {
   name: string;
   args: string;
   result?: string;
-  expanded: boolean;
 }
 
 interface AgentColumnProps {
   agent: Agent;
+  agentId: string;
   focused: boolean;
   role?: string;
   onSubmit?: (agentId: string, message: string) => void;
 }
 
-export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps) {
+export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState('');
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
@@ -34,6 +37,7 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
   const [busy, setBusy] = useState(false);
   const [showTools, setShowTools] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+  const convoIdRef = useRef<string>(`convo-${Date.now()}`);
 
   useInput((ch, key) => {
     if (!focused) return;
@@ -57,7 +61,6 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
       return;
     }
 
-    // Ctrl+T toggles tool call visibility
     if (ch === 't' && key.ctrl) {
       setShowTools(prev => !prev);
       return;
@@ -68,13 +71,29 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
     }
   });
 
+  function persistConversation(msgs: Message[]) {
+    const convo: ConversationEntry = {
+      id: convoIdRef.current,
+      agentId,
+      timestamp: msgs[0]?.timestamp || new Date().toISOString(),
+      messages: msgs
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content, timestamp: m.timestamp })),
+    };
+    if (convo.messages.length > 0) {
+      saveConversation(agentId, convo);
+    }
+  }
+
   async function handleSubmit(message: string) {
     setBusy(true);
     setStreaming('');
     setToolCalls([]);
 
-    setMessages(prev => [...prev, { role: 'user', content: message }]);
-    onSubmit?.(agent.id, message);
+    const ts = new Date().toISOString();
+    const newMessages = [...messages, { role: 'user' as const, content: message, timestamp: ts }];
+    setMessages(newMessages);
+    onSubmit?.(agentId, message);
 
     try {
       const controller = new AbortController();
@@ -92,7 +111,7 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
           case 'tool-call': {
             const name = event.toolName || '?';
             const argsStr = formatArgs(event.toolArgs);
-            setToolCalls(prev => [...prev, { name, args: argsStr, expanded: true }]);
+            setToolCalls(prev => [...prev, { name, args: argsStr }]);
             setStreaming(`Using ${name}...`);
             break;
           }
@@ -101,10 +120,7 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
             setToolCalls(prev => {
               const updated = [...prev];
               if (updated.length > 0) {
-                updated[updated.length - 1] = {
-                  ...updated[updated.length - 1]!,
-                  result: resultStr,
-                };
+                updated[updated.length - 1] = { ...updated[updated.length - 1]!, result: resultStr };
               }
               return updated;
             });
@@ -123,18 +139,27 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
         }
       }
 
-      setMessages(prev => [...prev, {
-        role: 'assistant',
+      const responseTs = new Date().toISOString();
+      const updatedMessages = [...newMessages, {
+        role: 'assistant' as const,
         content: fullText || '(no response)',
-      }]);
+        timestamp: responseTs,
+      }];
+      setMessages(updatedMessages);
       setStreaming('');
+
+      // Persist conversation after each exchange
+      persistConversation(updatedMessages);
+
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       if (!errMsg.includes('aborted')) {
-        setMessages(prev => [...prev, {
-          role: 'system',
+        const errMessages = [...newMessages, {
+          role: 'system' as const,
           content: `Error: ${errMsg}`,
-        }]);
+          timestamp: new Date().toISOString(),
+        }];
+        setMessages(errMessages);
       }
       setStreaming('');
     } finally {
@@ -144,9 +169,7 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
   }
 
   const visibleMessages = messages.slice(-10);
-  const inputDisplay = focused
-    ? `> ${input}\u2588`
-    : '  (tab to focus)';
+  const inputDisplay = focused ? `> ${input}\u2588` : '  (tab to focus)';
 
   return (
     <Box
@@ -159,16 +182,10 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
     >
       {/* Header */}
       <Box>
-        <Text bold color={focused ? 'cyan' : 'white'}>
-          {agent.name}
-        </Text>
-        {role && (
-          <Text dimColor> [{role}]</Text>
-        )}
+        <Text bold color={focused ? 'cyan' : 'white'}>{agent.name}</Text>
+        {role && <Text dimColor> [{role}]</Text>}
         <Text> </Text>
-        <Text dimColor>
-          {busy ? '(working...)' : ''}
-        </Text>
+        <Text dimColor>{busy ? '(working...)' : ''}</Text>
       </Box>
 
       {/* Messages */}
@@ -185,12 +202,12 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
           </Box>
         ))}
 
-        {/* Active tool calls — always visible during generation */}
+        {/* Tool calls */}
         {busy && toolCalls.length > 0 && (
-          <Box flexDirection="column" marginTop={0}>
+          <Box flexDirection="column">
             <Box>
               <Text dimColor>
-                {showTools ? '[-]' : '[+]'} {toolCalls.length} tool call{toolCalls.length !== 1 ? 's' : ''} (Ctrl+T toggle)
+                {showTools ? '[-]' : '[+]'} {toolCalls.length} tool call{toolCalls.length !== 1 ? 's' : ''} (^T toggle)
               </Text>
             </Box>
             {showTools && toolCalls.map((tc, i) => (
@@ -210,25 +227,18 @@ export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps
 
         {/* Streaming text */}
         {streaming && !streaming.startsWith('Using ') && streaming !== 'Thinking...' && (
-          <Box>
-            <Text color="yellow" wrap="truncate-end">
-              {streaming.length > 400 ? '...' + streaming.slice(-400) : streaming}
-            </Text>
-          </Box>
+          <Box><Text color="yellow" wrap="truncate-end">
+            {streaming.length > 400 ? '...' + streaming.slice(-400) : streaming}
+          </Text></Box>
         )}
-
         {streaming === 'Thinking...' && (
-          <Box>
-            <Text color="yellow">Thinking...</Text>
-          </Box>
+          <Box><Text color="yellow">Thinking...</Text></Box>
         )}
       </Box>
 
       {/* Input */}
       <Box borderTop borderStyle="single" borderColor="gray" borderBottom={false} borderLeft={false} borderRight={false}>
-        <Text color={focused ? 'cyan' : 'gray'}>
-          {inputDisplay}
-        </Text>
+        <Text color={focused ? 'cyan' : 'gray'}>{inputDisplay}</Text>
       </Box>
     </Box>
   );
@@ -239,15 +249,11 @@ function formatArgs(args: unknown): string {
   if (typeof args === 'string') return args.slice(0, 80);
   try {
     const str = JSON.stringify(args);
-    if (str.length > 80) return str.slice(0, 77) + '...';
-    return str;
-  } catch {
-    return String(args).slice(0, 80);
-  }
+    return str.length > 80 ? str.slice(0, 77) + '...' : str;
+  } catch { return String(args).slice(0, 80); }
 }
 
 function formatResult(result: unknown): string {
   if (result === undefined || result === null) return '(empty)';
-  const str = typeof result === 'string' ? result : JSON.stringify(result);
-  return str;
+  return typeof result === 'string' ? result : JSON.stringify(result);
 }

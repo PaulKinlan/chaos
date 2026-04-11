@@ -141,12 +141,29 @@ export function listConversations(agentId: string): Array<{ id: string; timestam
 export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']): Agent {
   const claudeMd = readClaudeMd(meta.id);
   const osTools = createOsTools();
+  const agentDir = path.resolve(BASE_DIR, meta.id);
+
+  // Append context about the agent's private storage location
+  const storageContext = `
+
+## Runtime Context
+
+- **Working directory:** ${process.cwd()}
+- **Your private storage:** ${agentDir}/
+  - To read/write your own memory files, use paths like \`.chaos/${meta.id}/memories/user.md\`
+  - To read/write project files, use paths relative to the working directory
+- **Your CLAUDE.md:** \`.chaos/${meta.id}/CLAUDE.md\`
+`;
+
+  const systemPrompt = claudeMd
+    ? claudeMd + storageContext
+    : `You are ${meta.name}, a helpful assistant.${storageContext}`;
 
   return createAgent({
     id: meta.id,
     name: meta.name,
     model,
-    systemPrompt: claudeMd || `You are ${meta.name}, a helpful assistant.`,
+    systemPrompt,
     tools: { ...osTools },
     maxIterations: 20,
     permissions: { mode: 'accept-all' },
