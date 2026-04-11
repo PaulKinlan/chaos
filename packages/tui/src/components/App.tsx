@@ -51,7 +51,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     }
 
     if (registry.length === 0) {
-      createAgentMeta('Assistant', 'assistant');
+      createAgentMeta('Assistant', 'master');
       registry = loadAgentRegistry();
     }
 
