@@ -191,7 +191,10 @@ export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']
   // Schedule tools always available
   Object.assign(allTools, createScheduleTools(meta.id));
 
-  // Provider-native tools (web search, code execution, etc.)
+  // Provider-native tools (web search, bash, text editor, code execution, etc.)
+  // Provider tools take priority — they're server-side and more capable.
+  // Our custom tools (fetch_url, web_search from createWebTools) serve as fallbacks
+  // under different names so both are available.
   if (providerTools) {
     Object.assign(allTools, providerTools);
   }

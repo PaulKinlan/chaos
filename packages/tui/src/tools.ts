@@ -185,8 +185,8 @@ export function createProjectTools(): ToolSet {
  */
 export function createWebTools(): ToolSet {
   return {
-    fetch_url: tool({
-      description: 'Fetch a URL and return its content. For web pages, returns the text content. For APIs, returns the raw response.',
+    local_fetch: tool({
+      description: 'Fetch a URL using local network (fallback). Use the provider web_fetch/url_context tool first — only use this if the provider tool is unavailable or blocked.',
       inputSchema: s(z.object({
         url: z.string().describe('The URL to fetch'),
         method: z.string().optional().describe('HTTP method (default: GET)'),
@@ -222,8 +222,8 @@ export function createWebTools(): ToolSet {
       },
     }),
 
-    web_search: tool({
-      description: 'Search the web. Uses a search engine and returns results with titles, URLs, and snippets.',
+    local_web_search: tool({
+      description: 'Search the web using DuckDuckGo (fallback). Use the provider web_search/google_search tool first — only use this if the provider search is unavailable.',
       inputSchema: s(z.object({
         query: z.string().describe('Search query'),
         count: z.number().optional().describe('Number of results (default 5)'),
