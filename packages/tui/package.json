@@ -1,0 +1,32 @@
+{
+  "name": "@chaos/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "chaos-tui": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.tsx",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chaos/agent-loop": "*",
+    "ai": "^6.0.0",
+    "ink": "^5.1.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^18.3.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/google": "^1.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "@types/react": "^18.3.0",
+    "typescript": "^5.5.0",
+    "tsx": "^4.0.0",
+    "vitest": "^3.0.0"
+  }
+}
