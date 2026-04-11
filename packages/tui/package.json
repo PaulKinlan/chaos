@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "bin": {
-    "chaos-tui": "./dist/index.js"
+    "chaos-tui": "./bin/chaos-tui.mjs"
   },
   "scripts": {
     "build": "tsc",
+    "start": "tsx src/index.tsx",
     "dev": "tsx src/index.tsx",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

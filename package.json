@@ -11,6 +11,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build:extension": "npm run build --workspace=packages/extension",
     "dev": "npm run dev --workspace=packages/extension",
+    "tui": "npm run start --workspace=packages/tui --",
     "version:patch": "node scripts/bump-version.mjs patch",
     "version:minor": "node scripts/bump-version.mjs minor",
     "version:major": "node scripts/bump-version.mjs major"
