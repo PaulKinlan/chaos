@@ -68,10 +68,20 @@ These tools access the PROJECT filesystem — the codebase, config files, etc. U
 - **project_info** — Get project file metadata
 - **shell** — Run a shell command (git, npm, grep, find, make, etc.)
 
+### Web Tools
+- **fetch_url** — Fetch any URL and return its content (web pages, APIs, JSON endpoints)
+- **web_search** — Search the web and return results with titles, URLs, and snippets
+
+### System Tools
+- **find_command** — Check if a command-line tool is installed (e.g. curl, docker, python)
+- **list_system_tools** — Discover available tools by category (dev, web, media, data, system)
+
 ### IMPORTANT: Permission Rules
 
 - **Memory tools are always safe** — freely read/write your own memories, TODO, etc.
 - **Project read tools are safe** — use project_read, project_list, project_search, project_info freely.
+- **Web tools are safe** — use fetch_url and web_search freely for research.
+- **System discovery tools are safe** — use find_command and list_system_tools freely.
 - **NEVER use project_write or project_edit unless the user explicitly asks.**
 - **NEVER run destructive shell commands** (rm -rf, git reset --hard, etc.) unless explicitly asked.
 - For shell, prefer read-only commands (git status, git log, grep, find, ls) unless asked otherwise.

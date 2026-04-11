@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import { createAgent, createFileTools } from '@chaos/agent-loop';
 import type { Agent, AgentConfig } from '@chaos/agent-loop';
 import { getTemplate, listRoles } from './templates/index.js';
-import { createProjectTools } from './tools.js';
+import { createProjectTools, createWebTools, createSystemTools } from './tools.js';
 import { createFsMemoryStore } from './stores/fs-memory.js';
 
 const BASE_DIR = path.resolve(process.cwd(), '.chaos');
@@ -24,6 +24,8 @@ export interface AgentMeta {
   name: string;
   role: string;
   createdAt: string;
+  enabledToolSets?: string[];   // which tool sets to enable: 'memory', 'project', 'web', 'system'
+  disabledTools?: string[];     // specific tools to disable
 }
 
 export interface ConversationToolCall {
@@ -155,12 +157,30 @@ export function listConversations(agentId: string): Array<{ id: string; timestam
 export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']): Agent {
   const claudeMd = readClaudeMd(meta.id);
 
-  // Memory tools — scoped to .chaos/{agentId}/ via MemoryStore
-  const memoryStore = createFsMemoryStore(BASE_DIR);
-  const memoryTools = createFileTools(memoryStore, meta.id);
+  // Build tool sets based on agent config
+  const enabledSets = new Set(meta.enabledToolSets || ['memory', 'project', 'web', 'system']);
+  const disabledTools = new Set(meta.disabledTools || []);
 
-  // Project tools — read/write/search the working directory
-  const projectTools = createProjectTools();
+  let allTools: Record<string, unknown> = {};
+
+  if (enabledSets.has('memory')) {
+    const memoryStore = createFsMemoryStore(BASE_DIR);
+    Object.assign(allTools, createFileTools(memoryStore, meta.id));
+  }
+  if (enabledSets.has('project')) {
+    Object.assign(allTools, createProjectTools());
+  }
+  if (enabledSets.has('web')) {
+    Object.assign(allTools, createWebTools());
+  }
+  if (enabledSets.has('system')) {
+    Object.assign(allTools, createSystemTools());
+  }
+
+  // Remove individually disabled tools
+  for (const name of disabledTools) {
+    delete allTools[name];
+  }
 
   const runtimeContext = `
 
@@ -188,12 +208,23 @@ These operate on the project filesystem. Use them to explore and modify the code
 - **project_info** — Get project file metadata
 - **shell** — Run a shell command
 
+### Web Tools
+- **fetch_url** — Fetch any URL and return its content (web pages, APIs)
+- **web_search** — Search the web via DuckDuckGo (no API key needed)
+
+### System Tools
+- **find_command** — Check if a command is available (e.g. curl, python, docker)
+- **list_system_tools** — List available tools by category (dev, web, media, data, system)
+
 ### IMPORTANT: When to use which
 - "My name is Paul" → Use **write_file** to save to \`memories/user.md\`
 - "What files are in this project?" → Use **project_list**
 - "Summarize this codebase" → Use **project_read** and **project_list**
 - "Remember that I prefer TypeScript" → Use **write_file** or **edit_file** on your CLAUDE.md
 - "Create a new file called app.ts" → Use **project_write** (only because the user asked)
+- "Search for React tutorials" → Use **web_search**
+- "What does the API at this URL return?" → Use **fetch_url**
+- "Is Docker installed?" → Use **find_command**
 `;
 
   const systemPrompt = claudeMd
@@ -205,7 +236,7 @@ These operate on the project filesystem. Use them to explore and modify the code
     name: meta.name,
     model,
     systemPrompt,
-    tools: { ...memoryTools, ...projectTools },
+    tools: allTools as AgentConfig['tools'],
     maxIterations: 20,
     permissions: { mode: 'accept-all' },
   });

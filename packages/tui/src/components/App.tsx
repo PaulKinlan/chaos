@@ -232,7 +232,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
   const visibleColumns = columns.slice(startIdx, startIdx + maxVisible);
 
   return (
-    <Box flexDirection="column" height={stdout.rows || 40}>
+    <Box flexDirection="column" height={(stdout.rows || 40) - 1}>
       <Box paddingX={1} justifyContent="space-between">
         <Text bold color="cyan">CHAOS TUI</Text>
         <Text dimColor>{process.cwd()}</Text>

@@ -179,3 +179,161 @@ export function createProjectTools(): ToolSet {
     }),
   };
 }
+
+/**
+ * Web tools — fetch URLs and search the web.
+ */
+export function createWebTools(): ToolSet {
+  return {
+    fetch_url: tool({
+      description: 'Fetch a URL and return its content. For web pages, returns the text content. For APIs, returns the raw response.',
+      inputSchema: s(z.object({
+        url: z.string().describe('The URL to fetch'),
+        method: z.string().optional().describe('HTTP method (default: GET)'),
+        headers: z.record(z.string()).optional().describe('Request headers'),
+      })),
+      execute: async ({ url, method, headers }: { url: string; method?: string; headers?: Record<string, string> }) => {
+        try {
+          const resp = await fetch(url, {
+            method: method || 'GET',
+            headers: headers || {},
+            signal: AbortSignal.timeout(30_000),
+          });
+          const contentType = resp.headers.get('content-type') || '';
+          let text = await resp.text();
+
+          // For HTML, strip tags for a cleaner text view
+          if (contentType.includes('html')) {
+            text = text
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
+
+          if (text.length > 15_000) {
+            text = text.slice(0, 15_000) + '\n\n... (truncated)';
+          }
+          return `[${resp.status}] ${text}`;
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+    }),
+
+    web_search: tool({
+      description: 'Search the web. Uses a search engine and returns results with titles, URLs, and snippets.',
+      inputSchema: s(z.object({
+        query: z.string().describe('Search query'),
+        count: z.number().optional().describe('Number of results (default 5)'),
+      })),
+      execute: async ({ query, count }: { query: string; count?: number }) => {
+        try {
+          // Use DuckDuckGo lite (no API key needed)
+          const encoded = encodeURIComponent(query);
+          const resp = await fetch(`https://lite.duckduckgo.com/lite/?q=${encoded}`, {
+            headers: { 'User-Agent': 'CHAOS-TUI/1.0' },
+            signal: AbortSignal.timeout(10_000),
+          });
+          const html = await resp.text();
+
+          // Parse results from DDG lite HTML
+          const results: string[] = [];
+          const linkRegex = /<a[^>]+class="result-link"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
+          const snippetRegex = /<td[^>]*class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi;
+
+          let linkMatch;
+          const links: Array<{ url: string; title: string }> = [];
+          while ((linkMatch = linkRegex.exec(html)) !== null) {
+            links.push({ url: linkMatch[1]!, title: linkMatch[2]!.trim() });
+          }
+
+          let snippetMatch;
+          const snippets: string[] = [];
+          while ((snippetMatch = snippetRegex.exec(html)) !== null) {
+            snippets.push(snippetMatch[1]!.replace(/<[^>]+>/g, '').trim());
+          }
+
+          const max = count || 5;
+          for (let i = 0; i < Math.min(links.length, max); i++) {
+            const link = links[i]!;
+            const snippet = snippets[i] || '';
+            results.push(`${i + 1}. ${link.title}\n   ${link.url}\n   ${snippet}`);
+          }
+
+          return results.length > 0 ? results.join('\n\n') : '(no results found)';
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+    }),
+  };
+}
+
+/**
+ * System discovery tools — find available commands and tools on the system.
+ */
+export function createSystemTools(): ToolSet {
+  return {
+    find_command: tool({
+      description: 'Check if a command-line tool is available on the system. Returns its path and version if found.',
+      inputSchema: s(z.object({
+        name: z.string().describe('Command name to look for (e.g. "curl", "python", "docker", "ffmpeg")'),
+      })),
+      execute: async ({ name }: { name: string }) => {
+        try {
+          const whichResult = child_process.execSync(`which ${name} 2>/dev/null`, { encoding: 'utf-8', timeout: 5_000 }).trim();
+          let version = '';
+          try {
+            version = child_process.execSync(`${name} --version 2>&1 | head -1`, { encoding: 'utf-8', timeout: 5_000 }).trim();
+          } catch {
+            // Some commands don't support --version
+          }
+          return `Found: ${whichResult}${version ? `\nVersion: ${version}` : ''}`;
+        } catch {
+          return `Command '${name}' not found on this system.`;
+        }
+      },
+    }),
+
+    list_system_tools: tool({
+      description: 'List commonly available command-line tools on this system. Checks for categories of tools.',
+      inputSchema: s(z.object({
+        category: z.enum(['all', 'dev', 'web', 'media', 'data', 'system']).optional()
+          .describe('Category to check (default: all)'),
+      })),
+      execute: async ({ category }: { category?: string }) => {
+        const checks: Record<string, string[]> = {
+          dev: ['git', 'node', 'npm', 'npx', 'python3', 'python', 'pip', 'cargo', 'go', 'java', 'gcc', 'make', 'cmake', 'docker', 'deno', 'bun'],
+          web: ['curl', 'wget', 'httpie', 'chromium', 'google-chrome', 'firefox'],
+          media: ['ffmpeg', 'ffprobe', 'convert', 'identify', 'sox', 'inkscape'],
+          data: ['jq', 'yq', 'sqlite3', 'psql', 'mysql', 'redis-cli', 'mongosh'],
+          system: ['tar', 'zip', 'unzip', 'gzip', 'ssh', 'rsync', 'tmux', 'screen', 'htop', 'lsof', 'strace'],
+        };
+
+        const cats = category && category !== 'all' ? [category] : Object.keys(checks);
+        const results: string[] = [];
+
+        for (const cat of cats) {
+          const tools = checks[cat] || [];
+          const found: string[] = [];
+          for (const t of tools) {
+            try {
+              child_process.execSync(`which ${t} 2>/dev/null`, { encoding: 'utf-8', timeout: 2_000 });
+              found.push(t);
+            } catch {
+              // not found
+            }
+          }
+          if (found.length > 0) {
+            results.push(`${cat}: ${found.join(', ')}`);
+          }
+        }
+
+        return results.length > 0 ? results.join('\n') : '(no common tools found)';
+      },
+    }),
+  };
+}
+
