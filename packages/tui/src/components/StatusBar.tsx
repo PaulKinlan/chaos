@@ -23,7 +23,7 @@ export function StatusBar({ agentCount, columnCount, activeIndex, provider, mode
         <Text dimColor>^O:column</Text>
         <Text dimColor>^W:close</Text>
         <Text dimColor>^E:edit</Text>
-        <Text dimColor>^H:hooks</Text>
+        <Text dimColor>^K:hooks</Text>
         <Text dimColor>^T:tools</Text>
         <Text dimColor>PgUp/Dn:scroll</Text>
         <Text dimColor>Esc:abort</Text>

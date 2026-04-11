@@ -359,7 +359,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       if (current) setMode({ type: 'editor', agentId: current.agentId });
       return;
     }
-    if (ch === 'h' && key.ctrl) { setMode({ type: 'hooks' }); return; }
+    if (ch === 'k' && key.ctrl) { setMode({ type: 'hooks' }); return; }
     if (ch === 'd' && key.ctrl) { deleteAgent(); return; }
   });
 
