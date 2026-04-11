@@ -470,6 +470,24 @@ const masterTools: ToolMeta[] = [
     keywords: ['agent', 'find', 'search', 'lookup', 'role', 'name', 'discover'],
     category: 'master',
   },
+  {
+    name: 'broadcast_message',
+    description: 'Broadcast a message to all visible sub-agents at once. Master-only.',
+    keywords: ['broadcast', 'message', 'all', 'agents', 'announce', 'notify', 'mass'],
+    category: 'master',
+  },
+  {
+    name: 'set_agent_hook',
+    description: 'Create a hook for a specific sub-agent (browser event automation). Master-only.',
+    keywords: ['hook', 'agent', 'set', 'create', 'automation', 'trigger', 'event', 'delegate'],
+    category: 'master',
+  },
+  {
+    name: 'set_agent_schedule',
+    description: 'Set a scheduled task for a specific sub-agent (one-time or recurring). Master-only.',
+    keywords: ['schedule', 'agent', 'set', 'timer', 'recurring', 'cron', 'alarm', 'delegate'],
+    category: 'master',
+  },
 ];
 
 /** Skills tools */

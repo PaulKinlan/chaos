@@ -1521,11 +1521,16 @@ chrome.runtime.onMessage.addListener(
       } catch { /* */ }
       return false;
     }
+    // Handle MCP requests from relay (forwarded by offscreen WS)
+    if (msgType === 'wsMcpRequest') {
+      handleInboundMcpRequest(msg);
+      return false;
+    }
     // Messages handled by other listeners — don't intercept
     const passthroughTypes = new Set([
       'wsChannelMessage', 'wsLog', 'wsConnect', 'wsDisconnect', 'wsStatus',
       'channelLog', 'filesystemChanged', 'parseHtml',
-      'extractContent',
+      'extractContent', 'wsMcpListAgents',
     ]);
     if (passthroughTypes.has(msgType)) {
       return false; // Let other listeners handle it
@@ -2570,3 +2575,234 @@ chrome.bookmarks?.onCreated?.addListener(async (_id, bookmark) => {
     console.error('Bookmark watcher error:', err);
   }
 });
+
+// ── MCP Inbound Request Handler ──
+// Handles MCP requests forwarded from the relay server via WebSocket
+
+async function handleInboundMcpRequest(msg: Record<string, unknown>): Promise<void> {
+  const correlationId = msg.correlationId as string;
+  const agentId = msg.agentId as string;
+  const jsonrpc = msg.jsonrpc as { method: string; params?: unknown; id?: string | number };
+
+  if (!correlationId || !agentId || !jsonrpc) {
+    console.warn('[mcp-handler] Invalid MCP request — missing fields', msg);
+    return;
+  }
+
+  console.log(`[mcp-handler] Processing MCP request: ${jsonrpc.method} for agent ${agentId}`);
+
+  try {
+    let result: unknown;
+    const method = jsonrpc.method;
+    const params = jsonrpc.params as Record<string, unknown> | undefined;
+
+    switch (method) {
+      case 'tools/call': {
+        const toolName = params?.name as string;
+        const toolArgs = params?.arguments as Record<string, unknown> | undefined;
+
+        if (toolName === 'chat') {
+          // Run the agent loop with the message
+          const message = (toolArgs?.message as string) || '';
+          result = await runMcpChat(agentId, message);
+        } else if (toolName === 'read_memory') {
+          result = await opfsReadFile(agentId, (toolArgs?.path as string) || '');
+        } else if (toolName === 'write_memory') {
+          await opfsWriteFile(agentId, (toolArgs?.path as string) || '', (toolArgs?.content as string) || '');
+          result = { ok: true };
+        } else if (toolName === 'list_files') {
+          result = await listOPFSDir(agentId);
+        } else if (toolName === 'get_status') {
+          result = await getMcpAgentStatus(agentId);
+        } else if (toolName === 'list_artifacts') {
+          const { listArtifacts } = await import('./storage/shared.js');
+          const filterAgentId = toolArgs?.agentId as string | undefined;
+          result = await listArtifacts(filterAgentId ? { agentId: filterAgentId } : undefined);
+        } else if (toolName === 'read_artifact') {
+          // Read artifact content from shared OPFS
+          const artifactPath = (toolArgs?.path as string) || '';
+          result = await opfsReadFile('shared', `artifacts/${artifactPath}`);
+        } else if (toolName === 'delegate_task') {
+          // Create a task and run it
+          const { appendTaskEvent } = await import('./storage/shared.js');
+          const taskId = `task-${crypto.randomUUID()}`;
+          await appendTaskEvent({
+            taskId,
+            type: 'created',
+            timestamp: new Date().toISOString(),
+            data: {
+              subject: (toolArgs?.task as string) || '',
+              description: (toolArgs?.task as string) || '',
+              owner: agentId,
+              status: 'pending',
+            },
+          });
+          executeAssignedTask(agentId, taskId);
+          result = { taskId, status: 'delegated' };
+        } else {
+          result = { error: `Unknown tool: ${toolName}` };
+        }
+        break;
+      }
+
+      case 'resources/read': {
+        const uri = (params?.uri as string) || '';
+        if (uri.includes('/activity')) {
+          // Read activity log
+          const content = await opfsReadFile(agentId, 'activity-log.jsonl');
+          result = {
+            contents: [{
+              uri,
+              mimeType: 'application/json',
+              text: content || '[]',
+            }],
+          };
+        } else if (uri.includes('/claudemd')) {
+          const content = await opfsReadFile(agentId, 'CLAUDE.md');
+          result = {
+            contents: [{
+              uri,
+              mimeType: 'text/markdown',
+              text: content || '# No instructions configured',
+            }],
+          };
+        } else {
+          result = { error: `Unknown resource URI: ${uri}` };
+        }
+        break;
+      }
+
+      case 'prompts/get': {
+        const promptName = (params?.name as string) || '';
+        const promptArgs = params?.arguments as Record<string, string> | undefined;
+        if (promptName === 'chat_with_agent') {
+          result = {
+            messages: [{
+              role: 'user',
+              content: { type: 'text', text: promptArgs?.message || 'Hello' },
+            }],
+          };
+        } else if (promptName === 'delegate_to_agent') {
+          const task = promptArgs?.task || '';
+          const context = promptArgs?.context || '';
+          result = {
+            messages: [{
+              role: 'user',
+              content: { type: 'text', text: `Task: ${task}${context ? `\n\nContext: ${context}` : ''}` },
+            }],
+          };
+        } else {
+          result = { error: `Unknown prompt: ${promptName}` };
+        }
+        break;
+      }
+
+      default:
+        result = { error: `Unsupported method for forwarding: ${method}` };
+    }
+
+    // Send response back to relay via WS
+    await sendMcpResponse(correlationId, {
+      jsonrpc: '2.0',
+      id: jsonrpc.id,
+      result,
+    });
+
+  } catch (err) {
+    console.error(`[mcp-handler] Error processing MCP request:`, err);
+    await sendMcpResponse(correlationId, {
+      jsonrpc: '2.0',
+      id: jsonrpc.id,
+      error: {
+        code: -32000,
+        message: err instanceof Error ? err.message : String(err),
+      },
+    });
+  }
+}
+
+async function runMcpChat(agentId: string, message: string): Promise<{ content: Array<{ type: string; text: string }> }> {
+  // Use the agent-loop's run() for a synchronous MCP response
+  const { createExtensionAgent } = await import('./agents/extension-agent.js');
+  const { agent } = await createExtensionAgent(agentId, { task: message, maxIterations: 10 });
+
+  const result = await agent.run(message);
+
+  return {
+    content: [{
+      type: 'text',
+      text: result || '(no response)',
+    }],
+  };
+}
+
+async function getMcpAgentStatus(agentId: string): Promise<unknown> {
+  const { getAgent } = await import('./agents/manager.js');
+  try {
+    const { meta } = await getAgent(agentId);
+    const activityLog = await opfsReadFile(agentId, 'activity-log.jsonl');
+    const recentActivity = activityLog
+      ? activityLog.split('\n').filter(Boolean).slice(-10).map((line: string) => {
+          try { return JSON.parse(line); } catch { return line; }
+        })
+      : [];
+
+    return {
+      name: meta.name,
+      role: meta.role,
+      visibility: meta.visibility,
+      recentActivity,
+    };
+  } catch {
+    return { error: `Agent ${agentId} not found` };
+  }
+}
+
+async function sendMcpResponse(correlationId: string, response: unknown): Promise<void> {
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'wsSendData',
+      data: {
+        type: 'mcp-response',
+        correlationId,
+        jsonrpc: response,
+      },
+    });
+    console.log(`[mcp-handler] Sent MCP response for ${correlationId}`);
+  } catch (err) {
+    console.error(`[mcp-handler] Failed to send MCP response:`, err);
+  }
+}
+
+async function opfsReadFile(agentId: string, path: string): Promise<string> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const agentDir = await root.getDirectoryHandle(agentId, { create: false });
+    const parts = path.split('/').filter(Boolean);
+    let dir = agentDir;
+    for (let i = 0; i < parts.length - 1; i++) {
+      dir = await dir.getDirectoryHandle(parts[i], { create: false });
+    }
+    const fileName = parts[parts.length - 1] || path;
+    const fileHandle = await dir.getFileHandle(fileName, { create: false });
+    const file = await fileHandle.getFile();
+    return await file.text();
+  } catch {
+    return '';
+  }
+}
+
+async function opfsWriteFile(agentId: string, path: string, content: string): Promise<void> {
+  const root = await navigator.storage.getDirectory();
+  const agentDir = await root.getDirectoryHandle(agentId, { create: true });
+  const parts = path.split('/').filter(Boolean);
+  let dir = agentDir;
+  for (let i = 0; i < parts.length - 1; i++) {
+    dir = await dir.getDirectoryHandle(parts[i], { create: true });
+  }
+  const fileName = parts[parts.length - 1] || path;
+  const fileHandle = await dir.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(content);
+  await writable.close();
+}

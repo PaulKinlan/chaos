@@ -80,6 +80,13 @@ function wsConnect(url: string): void {
         wsLog(`Message received: ${msg.id?.slice(0, 8) ?? '???'} from ${msg.channelType ?? 'unknown'}`);
         // Forward to service worker for processing
         chrome.runtime.sendMessage({ type: 'wsChannelMessage', message: msg }).catch(() => {});
+      } else if (data.type === 'mcp-request') {
+        // MCP request from relay — forward to service worker
+        wsLog(`MCP request: ${data.jsonrpc?.method ?? '???'} for agent ${data.agentId ?? '???'}`);
+        chrome.runtime.sendMessage({ type: 'wsMcpRequest', ...data }).catch(() => {});
+      } else if (data.type === 'mcp-list-agents') {
+        // MCP agent discovery — forward to service worker
+        chrome.runtime.sendMessage({ type: 'wsMcpListAgents', correlationId: data.correlationId }).catch(() => {});
       } else if (data.type === 'pong' || data.type === 'ping') {
         // keepalive
       } else if (data.type === 'reply_ack') {
@@ -145,6 +152,20 @@ chrome.runtime.onMessage.addListener(
     }
     if (message.type === 'wsStatus') {
       sendResponse({ connected: ws !== null && ws.readyState === WebSocket.OPEN });
+      return true;
+    }
+    // Send arbitrary data through the WebSocket (used by MCP response handler)
+    if (message.type === 'wsSendData') {
+      if (ws && ws.readyState === WebSocket.OPEN && (message as Record<string, unknown>).data) {
+        try {
+          ws.send(JSON.stringify((message as Record<string, unknown>).data));
+          sendResponse({ ok: true });
+        } catch (err) {
+          sendResponse({ ok: false, error: String(err) });
+        }
+      } else {
+        sendResponse({ ok: false, error: 'WebSocket not connected' });
+      }
       return true;
     }
 

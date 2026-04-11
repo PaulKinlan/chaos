@@ -1,6 +1,6 @@
 # Plan: Per-Agent Model & Provider Configuration
 
-## Status (audited 2026-04-07)
+## Status (audited 2026-04-11)
 
 All phases complete. Agents can have individual provider, model, and API key overrides.
 

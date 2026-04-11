@@ -1,6 +1,6 @@
 # Plan: Agent Loop Library (`@chaos/agent-loop`)
 
-## Status (audited 2026-04-07)
+## Status (audited 2026-04-11)
 
 ### Phase 1: Core Loop — DONE
 - [x] `packages/agent-loop/` package created (`@chaos/agent-loop` v0.1.38)

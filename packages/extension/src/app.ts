@@ -69,6 +69,9 @@ import messagesHelp from '../docs/help/messages.md?raw';
 import tasksHelp from '../docs/help/tasks.md?raw';
 import agentSettingsHelp from '../docs/help/agent-settings.md?raw';
 import globalSettingsHelp from '../docs/help/global-settings.md?raw';
+import dashboardHelp from '../docs/help/dashboard.md?raw';
+import usageHelp from '../docs/help/usage.md?raw';
+import filesHelp from '../docs/help/files.md?raw';
 
 // ── Configure marked ──
 
@@ -549,12 +552,15 @@ document.getElementById('btn-add-agent-sidebar')?.addEventListener('click', () =
 
 const helpContent: Record<string, { title: string; content: string }> = {
   chat: { title: 'Help: Chat', content: chatHelp },
+  dashboard: { title: 'Help: Dashboard', content: dashboardHelp },
   tasks: { title: 'Help: Jobs', content: jobsHelp },
   artifacts: { title: 'Help: Artifacts', content: artifactsHelp },
   channels: { title: 'Help: Channels', content: channelsHelp },
   hooks: { title: 'Help: Hooks', content: hooksHelp },
-  files: { title: 'Help: Agent Memory', content: memoryHelp },
+  files: { title: 'Help: Agent Memory', content: filesHelp },
+  memory: { title: 'Help: Agent Memory', content: memoryHelp },
   messages: { title: 'Help: Messages', content: messagesHelp },
+  usage: { title: 'Help: Usage', content: usageHelp },
   'scheduled-tasks': { title: 'Help: Scheduled Tasks', content: tasksHelp },
   'agent-settings': { title: 'Help: Agent Settings', content: agentSettingsHelp },
   'global-settings': { title: 'Help: Global Settings', content: globalSettingsHelp },
@@ -563,12 +569,15 @@ const helpContent: Record<string, { title: string; content: string }> = {
 // Human-readable labels for the "Ask the agent" pre-fill
 const helpViewLabels: Record<string, string> = {
   chat: 'Chat',
+  dashboard: 'Dashboard',
   tasks: 'Jobs',
   artifacts: 'Artifacts',
   channels: 'Channels',
   hooks: 'Hooks',
   files: 'Agent Memory',
+  memory: 'Agent Memory',
   messages: 'Messages',
+  usage: 'Usage & Costs',
   'scheduled-tasks': 'Scheduled Tasks',
   'agent-settings': 'Agent Settings',
   'global-settings': 'Global Settings',

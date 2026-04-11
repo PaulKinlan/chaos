@@ -2,7 +2,7 @@
 
 ## Status
 
-**Audited 2026-04-07**
+**Audited 2026-04-11**
 
 - Phase 1 (Secure Content Renderer): DONE — `src/ui/secure-viewer.ts`
 - Phase 2 (Rich Artifact Viewer): DONE — `<chaos-artifact-detail>` shared component

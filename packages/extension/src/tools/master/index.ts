@@ -11,11 +11,14 @@ import { createDeleteAgentTool } from './delete-agent.js';
 import { createAssignTaskTool } from './assign-task.js';
 import { createGetAgentStatusTool } from './get-agent-status.js';
 import { createFindAgentTool } from './find-agent.js';
+import { createBroadcastMessageTool } from './broadcast-message.js';
+import { createSetAgentHookTool } from './set-agent-hook.js';
+import { createSetAgentScheduleTool } from './set-agent-schedule.js';
 
 /**
  * Get master tools for an agent.
  *
- * - If isMaster is true: returns all master tools (create, delete, assign, status, find)
+ * - If isMaster is true: returns all master tools (create, delete, assign, status, find, broadcast, set-hook, set-schedule)
  * - If isMaster is false: returns only find_agent (available to all agents)
  */
 export function getMasterTools(agentId: string, isMaster: boolean): ToolSet {
@@ -30,6 +33,9 @@ export function getMasterTools(agentId: string, isMaster: boolean): ToolSet {
     tools.delete_agent = createDeleteAgentTool(agentId);
     tools.assign_task = createAssignTaskTool(agentId);
     tools.get_agent_status = createGetAgentStatusTool(agentId);
+    tools.broadcast_message = createBroadcastMessageTool(agentId);
+    tools.set_agent_hook = createSetAgentHookTool(agentId);
+    tools.set_agent_schedule = createSetAgentScheduleTool(agentId);
   }
 
   return tools;

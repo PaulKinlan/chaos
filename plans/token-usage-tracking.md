@@ -2,7 +2,7 @@
 
 ## Status
 
-**Audited 2026-04-07**
+**Audited 2026-04-11**
 
 - Phase 1 (Core Tracking): DONE — `src/agents/usage.ts`, `src/agents/pricing.ts`
 - Phase 2 (Global Usage View): DONE — `<chaos-usage-view>` with time range filter, stat cards, breakdown tables

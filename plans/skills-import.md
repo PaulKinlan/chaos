@@ -1,6 +1,6 @@
 # Plan: Skills Import
 
-## Status (audited 2026-04-07)
+## Status (audited 2026-04-11)
 
 ### Phase 1: Manual skill import — DONE
 - [x] `src/agents/skills.ts` with `SkillMeta`, `installSkill()`, `removeSkill()`, `listSkills()`, `getSkillContent()`, `getSkillManifest()`, `parseFrontmatter()`, `buildSkillsPromptSection()`

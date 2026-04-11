@@ -10,7 +10,7 @@
  */
 
 export interface SecureViewerOptions {
-  type?: 'html' | 'markdown' | 'text' | 'json' | 'csv' | 'image' | 'svg';
+  type?: 'html' | 'markdown' | 'text' | 'json' | 'csv' | 'image' | 'svg' | 'pdf';
   title?: string;
   downloadFilename?: string;
   onClose?: () => void;
@@ -47,6 +47,8 @@ export function detectContentType(path: string): SecureViewerOptions['type'] {
       return 'csv';
     case 'svg':
       return 'svg';
+    case 'pdf':
+      return 'pdf';
     case 'png':
     case 'jpg':
     case 'jpeg':
@@ -141,13 +143,27 @@ function contentToHtml(content: string, type: string): string {
       return `<!DOCTYPE html><html><head><style>${baseStyle}</style></head><body>${markdownToHtml(content)}</body></html>`;
 
     case 'json': {
-      let formatted: string;
       try {
-        formatted = JSON.stringify(JSON.parse(content), null, 2);
+        const parsed = JSON.parse(content);
+        return `<!DOCTYPE html><html><head><style>${baseStyle}${jsonTreeStyle}</style></head><body>${jsonToTree(parsed, '')}</body></html>`;
       } catch {
-        formatted = content;
+        return `<!DOCTYPE html><html><head><style>${baseStyle}</style></head><body><pre><code>${escapeHtml(content)}</code></pre></body></html>`;
       }
-      return `<!DOCTYPE html><html><head><style>${baseStyle}</style></head><body><pre><code>${escapeHtml(formatted)}</code></pre></body></html>`;
+    }
+
+    case 'pdf': {
+      // PDF content: if base64-encoded, render as embedded object via data URI
+      const trimmed = content.trim();
+      const isBase64 = /^[A-Za-z0-9+/\n\r]+=*$/.test(trimmed.replace(/\s/g, ''));
+      if (isBase64) {
+        const src = `data:application/pdf;base64,${trimmed.replace(/\s/g, '')}`;
+        return `<!DOCTYPE html><html><head><style>${baseStyle} html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; } embed { width: 100%; height: 100%; }</style></head><body><embed src="${escapeHtml(src)}" type="application/pdf"></body></html>`;
+      }
+      if (trimmed.startsWith('data:application/pdf')) {
+        return `<!DOCTYPE html><html><head><style>${baseStyle} html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; } embed { width: 100%; height: 100%; }</style></head><body><embed src="${escapeHtml(trimmed)}" type="application/pdf"></body></html>`;
+      }
+      // Fallback: show PDF as raw text with download prompt
+      return `<!DOCTYPE html><html><head><style>${baseStyle} body { display:flex; align-items:center; justify-content:center; min-height:100vh; } .placeholder { text-align:center; color:#8b949e; }</style></head><body><div class="placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><p style="margin-top:12px">PDF file — use the download button to save</p></div></body></html>`;
     }
 
     case 'csv':
@@ -360,6 +376,61 @@ function csvToTable(csv: string): string {
 
   html += '</tbody></table>';
   return html;
+}
+
+/** CSS for the interactive JSON tree viewer */
+const jsonTreeStyle = `
+  .json-tree { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.6; }
+  .json-key { color: #8b9cf6; }
+  .json-string { color: #a5d6ff; }
+  .json-number { color: #79c0ff; }
+  .json-bool { color: #ff7b72; }
+  .json-null { color: #8b949e; font-style: italic; }
+  .json-toggle {
+    cursor: pointer; user-select: none; display: inline;
+  }
+  .json-toggle::before {
+    content: '\\25BC'; display: inline-block; width: 14px; font-size: 10px;
+    color: #484f58; transition: transform 0.15s;
+  }
+  .json-toggle.collapsed::before { transform: rotate(-90deg); }
+  .json-toggle.collapsed + .json-children { display: none; }
+  .json-children { padding-left: 20px; }
+  .json-bracket { color: #8b949e; }
+  .json-count { color: #484f58; font-size: 11px; margin-left: 4px; }
+  .json-comma { color: #8b949e; }
+`;
+
+/** Render a JSON value as an interactive tree (pure HTML, no scripts needed — uses CSS :checked) */
+function jsonToTree(value: unknown, indent: string): string {
+  if (value === null) return '<span class="json-null">null</span>';
+  if (value === undefined) return '<span class="json-null">undefined</span>';
+
+  const type = typeof value;
+  if (type === 'string') return `<span class="json-string">"${escapeHtml(value as string)}"</span>`;
+  if (type === 'number') return `<span class="json-number">${value}</span>`;
+  if (type === 'boolean') return `<span class="json-bool">${value}</span>`;
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '<span class="json-bracket">[]</span>';
+    const items = value.map((item, i) => {
+      const comma = i < value.length - 1 ? '<span class="json-comma">,</span>' : '';
+      return `<div>${jsonToTree(item, indent + '  ')}${comma}</div>`;
+    }).join('');
+    return `<span class="json-bracket">[</span><span class="json-count">${value.length} items</span><div class="json-children">${items}</div><span class="json-bracket">]</span>`;
+  }
+
+  if (type === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return '<span class="json-bracket">{}</span>';
+    const items = entries.map(([key, val], i) => {
+      const comma = i < entries.length - 1 ? '<span class="json-comma">,</span>' : '';
+      return `<div><span class="json-key">"${escapeHtml(key)}"</span>: ${jsonToTree(val, indent + '  ')}${comma}</div>`;
+    }).join('');
+    return `<span class="json-bracket">{</span><span class="json-count">${entries.length} keys</span><div class="json-children">${items}</div><span class="json-bracket">}</span>`;
+  }
+
+  return `<span>${escapeHtml(String(value))}</span>`;
 }
 
 /** Escape HTML special characters */

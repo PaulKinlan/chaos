@@ -1,6 +1,6 @@
 # Plan: Master Agent + Shared Workspace
 
-## Status (audited 2026-04-07)
+## Status (audited 2026-04-11)
 
 ### Phase 1: Mark master agent + shared views — DONE
 - [x] `master: boolean` on AgentMeta (`storage/types.ts`)

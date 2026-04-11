@@ -38,7 +38,18 @@ import { getKv, initKv, isKvAvailable } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
 import { sanitizeMessage } from "./sanitize.ts";
 import { logger, requestLog } from "./logger.ts";
-import { addConnection, getConnectionCount, removeConnection } from "./ws.ts";
+import {
+  addConnection,
+  getConnectionCount,
+  pushToUser,
+  removeConnection,
+} from "./ws.ts";
+import {
+  handleMcpDelete,
+  handleMcpGet,
+  handleMcpPost,
+  handleMcpResponse,
+} from "./channels/mcp.ts";
 import type { ChannelConfig } from "@chaos/shared";
 
 const PORT = parseInt(Deno.env.get("PORT") || "8787");
@@ -840,6 +851,11 @@ Deno.serve(serveOptions, async (req: Request) => {
           payload.content = sanitized.content;
           const result = await handleReply(wsUserId, payload);
           socket.send(JSON.stringify({ type: "reply_ack", ...result }));
+        } else if (data.type === "mcp-response") {
+          // MCP response from extension — resolve the pending request
+          if (data.correlationId && data.jsonrpc) {
+            handleMcpResponse(data.correlationId, data.jsonrpc);
+          }
         } else if (data.type === "ping") {
           socket.send(JSON.stringify({ type: "pong" }));
         }
@@ -877,6 +893,48 @@ Deno.serve(serveOptions, async (req: Request) => {
   }
 
   const { session } = authResult;
+
+  // ── MCP Server Endpoints ──
+  const mcpMatch = url.pathname.match(/^\/mcp\/([^/]+)$/);
+  if (mcpMatch) {
+    const agentId = mcpMatch[1];
+    const mcpRateKey = `mcp:${session.userId}`;
+
+    if (!rateLimiter.check(mcpRateKey, 120, 60_000)) {
+      return error("Too many MCP requests. Try again later.", 429);
+    }
+
+    if (method === "POST") {
+      const resp = await handleMcpPost(agentId, req, session);
+      // Add CORS headers
+      for (const [k, v] of Object.entries(corsHeaders)) resp.headers.set(k, v);
+      return resp;
+    }
+    if (method === "GET") {
+      const resp = handleMcpGet(agentId, req, session);
+      for (const [k, v] of Object.entries(corsHeaders)) resp.headers.set(k, v);
+      return resp;
+    }
+    if (method === "DELETE") {
+      const resp = await handleMcpDelete(agentId, req, session);
+      for (const [k, v] of Object.entries(corsHeaders)) resp.headers.set(k, v);
+      return resp;
+    }
+  }
+
+  // MCP Agent Discovery endpoint
+  if (url.pathname === "/mcp/agents" && method === "GET") {
+    // Return list of agents — forward to extension
+    pushToUser(session.userId, {
+      type: "mcp-list-agents",
+      correlationId: crypto.randomUUID(),
+    });
+    // For now, return a message directing the client to use /mcp/:agentId
+    return json({
+      info:
+        "Use POST /mcp/{agentId} with JSON-RPC initialize to connect to a specific agent. Agent IDs are configured in the Chrome extension.",
+    });
+  }
 
   // Poll for messages
   if (url.pathname === "/messages" && method === "GET") {

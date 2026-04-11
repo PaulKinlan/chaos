@@ -2,7 +2,7 @@
 
 ## Status
 
-**Audited 2026-04-07**
+**Audited 2026-04-11**
 
 ### Phase 1: OpenAPI Specification — DONE
 - [x] docs/relay-openapi.yaml (1591 lines, all 19 endpoints)
@@ -12,7 +12,7 @@
 - [x] All passing against our implementation
 - [x] Added to CI (runs on every push)
 
-### Phase 3: Client SDK Specification — PARTIAL (docs only)
+### Phase 3: Client SDK Specification — TODO
 - [x] Registration flow documentation (in `docs/relay-api-spec.md`)
 - [x] Request signing documentation (in `docs/relay-api-spec.md`)
 - [x] WebSocket connection documentation (in `docs/relay-api-spec.md`)
@@ -21,7 +21,7 @@
 - [ ] Polling strategy documentation (detailed backoff/timing guide)
 - [ ] Standalone SDK specification document
 
-### Phase 4: Self-Hosting Guide — DONE
+### Phase 4: Self-Hosting Guide — TODO
 - [x] `docs/relay-self-hosting.md` — comprehensive self-hosting guide
 - [x] Docker image instructions and Dockerfile
 - [x] docker-compose.yml

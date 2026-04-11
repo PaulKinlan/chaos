@@ -2,7 +2,7 @@
 
 ## Status
 
-**Audited 2026-04-07**
+**Audited 2026-04-11**
 
 - Phase 1: DONE (design system primitives)
 - Phase 2: DONE (shared components + state signals)

@@ -1,6 +1,6 @@
 # Plan: Agent API Abstraction Layer
 
-## Status (audited 2026-04-07)
+## Status (audited 2026-04-11)
 
 ### Phase 1: Define Types & SDK Shell — DONE
 - [x] `packages/sdk/` package created (`@chaos/sdk` v0.1.38)

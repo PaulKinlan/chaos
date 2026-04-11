@@ -1,17 +1,18 @@
 # Plan: MCP Integration
 
-## Status (audited 2026-04-07)
+## Status (audited 2026-04-11)
 
-### Phase 1: MCP Client — Streamable HTTP transport — TODO
-- [ ] MCP client module (`src/mcp/client.ts`) with Streamable HTTP transport
-- [ ] JSON-RPC 2.0 message layer (`src/mcp/jsonrpc.ts`)
-- [ ] Session management (Mcp-Session-Id lifecycle)
-- [ ] Connection state machine (disconnected / connecting / ready / error)
-- [ ] Tool discovery (`tools/list`) and dynamic registration
-- [ ] Resource discovery (`resources/list`) and read support
-- [ ] Prompt template discovery (`prompts/list`) and retrieval
-
-**Note:** No `src/mcp/` directory exists in the extension. The existing `src/channels/` directory contains relay client code (config, crypto, poller, relay-client, ws-client), NOT MCP protocol code.
+### Phase 1: MCP Client — Streamable HTTP transport — DONE
+- [x] MCP client module (`src/mcp/client.ts`) with Streamable HTTP transport
+- [x] JSON-RPC 2.0 message encoding/decoding (inline in client.ts)
+- [x] Session management (Mcp-Session-Id lifecycle)
+- [x] Connection state machine (disconnected / connecting / ready / error)
+- [x] Tool discovery (`tools/list`) and dynamic registration
+- [x] Resource discovery (`resources/list`) and read support
+- [x] Prompt template discovery (`prompts/list`) and retrieval
+- [x] SSE response parsing for streaming responses
+- [x] Bearer auth support
+- [x] 34 unit tests (`src/mcp/__tests__/client.test.ts`)
 
 ### Phase 2: MCP Client — Configuration & UI — DONE
 - [x] Global MCP server config in `chrome.storage.local` (`src/mcp/config.ts`)
@@ -26,25 +27,32 @@
 - [x] Dynamic tool injection from connected MCP servers into the tool set (`extension-agent.ts`)
 - [x] MCP tool execution bridge (`src/mcp/tool-bridge.ts` — uses AI SDK `jsonSchema()` + `tool()`)
 - [x] Tool namespacing to avoid collisions (e.g. `mcp_github_create_issue`)
-- [x] Tests for tool bridge (`src/mcp/__tests__/tool-bridge.test.ts`)
+- [x] Tests for tool bridge (`src/mcp/__tests__/tool-bridge.test.ts` — 8 tests)
 - [ ] MCP resource injection as context (agent can read MCP resources) (deferred)
 - [ ] MCP prompt templates surfaced in agent UI (deferred)
 - [ ] Deferred/lazy tool loading (only fetch tool schemas on first use) (deferred)
 
-### Phase 4: MCP Server — Expose agents via relay — TODO
-- [ ] MCP server endpoint on the relay (`/mcp/:agentId`)
-- [ ] Streamable HTTP transport handler on relay server
-- [ ] JSON-RPC request forwarding: relay -> extension via WS/poll
-- [ ] Tool definitions generated from agent capabilities
-- [ ] Resource definitions for agent artifacts
-- [ ] Prompt templates from agent skills
-- [ ] Authentication: reuse existing ECDSA signing + API key
+### Phase 4: MCP Server — Expose agents via relay — DONE
+- [x] MCP server endpoint on the relay (`/mcp/:agentId`) — Streamable HTTP
+- [x] JSON-RPC request handler (`src/channels/mcp.ts`) with initialize, tools/list, tools/call, resources/list, resources/read, prompts/list, prompts/get, ping
+- [x] JSON-RPC request forwarding: relay -> extension via WebSocket (correlation-based)
+- [x] Built-in tool definitions: chat, delegate_task, read_memory, write_memory, list_files, get_status, list_artifacts, read_artifact
+- [x] Resource definitions: agent activity log, CLAUDE.md instructions
+- [x] Prompt templates: chat_with_agent, delegate_to_agent
+- [x] MCP session management in Deno KV (30-min TTL, create/touch/delete)
+- [x] Authentication: reuses existing Bearer token validation
+- [x] Rate limiting: 120 requests/min per user on MCP endpoints
+- [x] Extension-side handler: processes inbound MCP requests, runs agent loop, returns results
+- [x] Batch JSON-RPC request support
+- [x] SSE stream endpoint (GET /mcp/:agentId) with keepalive
+- [x] Session termination (DELETE /mcp/:agentId)
+- [x] 13 unit tests (`src/__tests__/mcp.test.ts`)
 
 ### Phase 5: MCP Server — External client support — TODO
 - [ ] Claude Code configuration instructions (`.claude/settings.json` MCP block)
 - [ ] Cursor / VS Code MCP client configuration docs
-- [ ] Agent discovery endpoint (`/mcp/agents` listing available agents)
-- [ ] Rate limiting on MCP server endpoints
+- [x] Agent discovery endpoint (`/mcp/agents`) — basic implementation
+- [x] Rate limiting on MCP server endpoints (120/min per user)
 - [ ] Audit logging of external MCP tool calls
 
 ---
