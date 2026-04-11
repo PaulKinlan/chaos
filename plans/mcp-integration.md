@@ -48,12 +48,13 @@
 - [x] Session termination (DELETE /mcp/:agentId)
 - [x] 13 unit tests (`src/__tests__/mcp.test.ts`)
 
-### Phase 5: MCP Server — External client support — TODO
-- [ ] Claude Code configuration instructions (`.claude/settings.json` MCP block)
-- [ ] Cursor / VS Code MCP client configuration docs
+### Phase 5: MCP Server — External client support — DONE
+- [x] Claude Code configuration instructions (`docs/mcp-client-setup.md`)
+- [x] Cursor / VS Code MCP client configuration docs (`docs/mcp-client-setup.md`)
 - [x] Agent discovery endpoint (`/mcp/agents`) — basic implementation
 - [x] Rate limiting on MCP server endpoints (120/min per user)
-- [ ] Audit logging of external MCP tool calls
+- [x] Generic MCP client setup with curl examples
+- [ ] Audit logging of external MCP tool calls (deferred — lower priority)
 
 ---
 
