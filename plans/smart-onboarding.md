@@ -8,6 +8,8 @@
 - Phase 4 (Fallback — No Permissions): DONE (built into Phase 2 fallback)
 - Phase 5 (Progressive Profiling): TODO
 
+**Note (audited 2026-04-07):** Smart Start logic is referenced in `background.ts`, `app.ts`, and `global-settings-view.ts`. The dashboard view does NOT reference Smart Start directly -- it generates its own AI suggestions independently.
+
 ---
 
 ## Problem

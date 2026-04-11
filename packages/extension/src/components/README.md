@@ -11,6 +11,12 @@ components/
     index.ts           Barrel export — registers all design-system elements
     README.md          Design system documentation
   shared/              Complex components used across multiple views
+    artifact-detail.ts Artifact detail viewer with secure content rendering
+    chat-input.ts      Chat text input with send/stop toggle
+    chat-message.ts    Single chat message bubble
+    filter-bar.ts      Reusable filter bar with dropdowns and search
+    sidebar.ts         Main navigation sidebar
+    step-details.ts    Expandable agentic step indicator
     index.ts           Barrel export — registers all shared elements
     README.md          Shared component documentation
   views/               Screen-level components, one per application view

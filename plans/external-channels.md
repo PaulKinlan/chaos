@@ -1,6 +1,6 @@
 # Plan: External Channels
 
-## Status (audited 2026-04-05)
+## Status (audited 2026-04-07)
 
 ### Monorepo Architecture — DONE
 - [x] `packages/` directory structure (extension, server, shared, web)

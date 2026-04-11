@@ -2,6 +2,8 @@
 
 ## Status
 
+**Audited 2026-04-07**
+
 ### Phase 1: OpenAPI Specification — DONE
 - [x] docs/relay-openapi.yaml (1591 lines, all 19 endpoints)
 
@@ -10,7 +12,25 @@
 - [x] All passing against our implementation
 - [x] Added to CI (runs on every push)
 
-### Phase 3-5: TODO
+### Phase 3: Client SDK Specification — TODO
+- [ ] Registration flow documentation
+- [ ] Request signing documentation
+- [ ] Polling strategy documentation
+- [ ] WebSocket connection documentation
+- [ ] Channel management documentation
+- [ ] Message processing documentation
+
+### Phase 4: Self-Hosting Guide — TODO
+- [ ] Docker image for the relay server
+- [ ] docker-compose.yml
+- [ ] Environment variable documentation
+- [ ] Reverse proxy setup
+- [ ] Deployment guides (Deno Deploy, Fly.io, Railway, Render)
+
+### Phase 5: Reference Client Library — TODO
+- [ ] `@chaos/relay-client` standalone package
+- [ ] Typed methods for all endpoints
+- [ ] Works in any JavaScript environment
 
 ---
 

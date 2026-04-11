@@ -1,6 +1,6 @@
 # Plan: MCP Integration
 
-## Status (audited 2026-04-04)
+## Status (audited 2026-04-07)
 
 ### Phase 1: MCP Client — Streamable HTTP transport — TODO
 - [ ] MCP client module (`src/mcp/client.ts`) with Streamable HTTP transport
@@ -10,6 +10,8 @@
 - [ ] Tool discovery (`tools/list`) and dynamic registration
 - [ ] Resource discovery (`resources/list`) and read support
 - [ ] Prompt template discovery (`prompts/list`) and retrieval
+
+**Note:** No `src/mcp/` directory exists in the extension. The existing `src/channels/` directory contains relay client code (config, crypto, poller, relay-client, ws-client), NOT MCP protocol code.
 
 ### Phase 2: MCP Client — Configuration & UI — TODO
 - [ ] Global MCP server config in `chrome.storage.sync`

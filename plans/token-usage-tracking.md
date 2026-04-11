@@ -2,10 +2,12 @@
 
 ## Status
 
-- Phase 1 (Core Tracking): DONE
-- Phase 2 (Global Usage View): DONE
-- Phase 3 (Per-Agent Usage): DONE
-- Phase 4 (Alerts & Limits): DONE
+**Audited 2026-04-07**
+
+- Phase 1 (Core Tracking): DONE — `src/agents/usage.ts`, `src/agents/pricing.ts`
+- Phase 2 (Global Usage View): DONE — `<chaos-usage-view>` with time range filter, stat cards, breakdown tables
+- Phase 3 (Per-Agent Usage): DONE — per-agent usage in `<chaos-agent-settings-view>`
+- Phase 4 (Alerts & Limits): DONE — spending limit config per agent and global alerts
 
 ---
 

@@ -1,8 +1,30 @@
 # Plan: Onboarding Experience & Integrated Help System
 
-## Status
+## Status (audited 2026-04-07)
 
-All phases: TODO.
+### Phase 1: First-Run Onboarding Wizard — DONE
+- [x] `src/ui/onboarding.ts` — multi-step onboarding dialog
+- [x] Detects first run (no API keys configured)
+- [x] Provider selection + API key input
+- [x] Completion state stored in chrome.storage.local
+- [x] "Re-run wizard" button in global settings (`rerun-smart-start` event)
+
+### Phase 2: Help Content Files — DONE
+- [x] `docs/help/*.md` for all 10 views (chat, jobs, artifacts, channels, hooks, memory, messages, tasks, agent-settings, global-settings)
+
+### Phase 3: Help Button UI — TODO
+- [ ] ? button in every view's section header
+- [ ] Help panel component (slide-in or dialog)
+- [ ] Markdown rendering of help content
+- [ ] "Ask the agent" fallback button
+
+### Phase 4: Improved Empty States — PARTIAL
+- [x] Some views have contextual empty states (via `<chaos-empty-state>` design system component)
+- [ ] Not all views have action-oriented empty state guidance
+
+### Phase 5: Contextual Tooltips — TODO
+- [ ] First-time tooltips for key UI elements
+- [ ] "Don't show again" option
 
 ---
 

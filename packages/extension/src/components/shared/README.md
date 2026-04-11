@@ -94,6 +94,33 @@ Expandable agentic step indicator. Shows a collapsible details element with a st
 
 ---
 
+## `<chaos-artifact-detail>`
+
+Full-screen artifact detail viewer with secure content rendering, pin/download/delete actions.
+
+**Properties:**
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `artifact` | `ArtifactMeta \| null` | `null` | The artifact to display |
+| `content` | `string` | `''` | The artifact's raw content |
+
+**Events:**
+
+| Event | Detail | Description |
+|-------|--------|-------------|
+| `close` | none | User dismissed the detail view |
+| `pin` | `{ artifact: ArtifactMeta }` | Toggle pin status |
+| `delete` | `{ artifact: ArtifactMeta }` | Delete the artifact |
+
+**Key behavior:**
+- Renders content in a secure double-iframe sandbox (via `createSecureViewer`)
+- Detects content type (HTML, markdown, JSON, CSV, text) and renders appropriately
+- Download button generates a file with appropriate extension
+- Copy button copies raw content to clipboard
+
+---
+
 ## `<chaos-chat-input>`
 
 Chat text input area with send/stop toggle button.

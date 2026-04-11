@@ -2,11 +2,13 @@
 
 ## Status
 
-- Phase 1 (Secure Content Renderer): DONE
-- Phase 2 (Rich Artifact Viewer): DONE
+**Audited 2026-04-07**
+
+- Phase 1 (Secure Content Renderer): DONE — `src/ui/secure-viewer.ts`
+- Phase 2 (Rich Artifact Viewer): DONE — `<chaos-artifact-detail>` shared component
 - Phase 3 (Proactive Artifact Creation): DONE
-- Phase 4 (Proactive Dashboard): DONE
-- Phase 5 (Advanced Artifact Types): TODO
+- Phase 4 (Proactive Dashboard): DONE — `<chaos-dashboard-view>` with suggestions, pinned artifacts, activity stats
+- Phase 5 (Advanced Artifact Types): TODO — PDF, CSV table, JSON tree, image preview, SVG rendering
 
 ---
 

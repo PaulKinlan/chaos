@@ -2,11 +2,13 @@
 
 ## Status
 
+**Audited 2026-04-07**
+
 - Phase 1: DONE (design system primitives)
 - Phase 2: DONE (shared components + state signals)
 - Phase 3: DONE (usage-view, messages-view, files-view extracted as Lit components)
 - Phase 4-6: DONE (all views extracted as Lit components)
-- Phase 7: DONE (dead rendering code removed from app.ts, shrunk from 8,043 to 3,223 lines)
+- Phase 7: DONE (dead rendering code removed from app.ts, shrunk from 8,043 to 3,325 lines)
 - Phase 8: DONE (comprehensive documentation for all components, state, services, and migration guide)
 
 ---

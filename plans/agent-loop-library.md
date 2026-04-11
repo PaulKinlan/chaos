@@ -1,8 +1,46 @@
 # Plan: Agent Loop Library (`@chaos/agent-loop`)
 
-## Status
+## Status (audited 2026-04-07)
 
-All phases: TODO.
+### Phase 1: Core Loop — DONE
+- [x] `packages/agent-loop/` package created (`@chaos/agent-loop` v0.1.38)
+- [x] `src/loop.ts` — core autonomous loop extracted
+- [x] `src/agent.ts` — agent creation
+- [x] `src/types.ts` — public types
+- [x] `src/index.ts` — barrel export
+- [x] Tests: `tests/loop.test.ts`
+
+### Phase 2: File Tools + Storage — DONE
+- [x] `src/tools/file-tools.ts` — file tools backed by MemoryStore
+- [x] Tests: `tests/file-tools.test.ts`
+
+### Phase 3: Skills — DONE
+- [x] `src/skills.ts` — skill loading and prompt injection
+- [x] Tests: `tests/skills.test.ts`
+
+### Phase 4: Lifecycle Hooks + Permissions — DONE
+- [x] `src/permissions.ts` — permission pipeline
+- [x] Tests: `tests/hooks.test.ts`, `tests/permissions.test.ts`
+
+### Phase 5: Usage Tracking + Limits — DONE
+- [x] `src/usage.ts` — token tracking and cost estimation
+- [x] Tests: `tests/usage.test.ts`
+
+### Phase 6: Multi-Agent Orchestration — TODO
+- [ ] `createOrchestrator()` with master + worker agents
+- [ ] Delegation tools
+- [ ] Pluggable messaging interface
+
+### Phase 7: Migrate Extension — TODO
+- [ ] Extension replaces `agentic-loop.ts` / `loop.ts` with `@chaos/agent-loop` calls
+- [ ] Chrome-specific tools passed as custom tools
+
+### Phase 8: Tests + Documentation — PARTIAL
+- [x] Test suite for core modules (loop, file-tools, skills, hooks, permissions, usage)
+- [x] Testing utilities (`src/testing/index.ts`)
+- [x] README.md, docs/, llms.txt
+- [ ] Examples: CLI agent, web agent, serverless agent
+- [ ] Quickstart guides per runtime
 
 ---
 

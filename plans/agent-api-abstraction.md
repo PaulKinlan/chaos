@@ -1,8 +1,51 @@
 # Plan: Agent API Abstraction Layer
 
-## Status
+## Status (audited 2026-04-07)
 
-All phases: TODO.
+### Phase 1: Define Types & SDK Shell — DONE
+- [x] `packages/sdk/` package created (`@chaos/sdk` v0.1.38)
+- [x] `packages/sdk/src/types.ts` — all API types
+- [x] `packages/sdk/src/sdk.ts` — SDK class
+- [x] `packages/sdk/src/index.ts` — barrel export
+
+### Phase 2: Migrate Agent CRUD — DONE
+- [x] SDK agents module implemented
+- [x] Extension uses `@chaos/sdk` as workspace dependency
+
+### Phase 3: Migrate Chat — DONE
+- [x] SDK chat module with streaming support
+
+### Phase 4: Migrate Hooks, Channels, Artifacts — DONE
+- [x] Hooks, channels, artifacts CRUD through SDK
+
+### Phase 5: Migrate Settings, Usage, Files — DONE
+- [x] Settings, usage, files through SDK
+
+### Phase 6: Extract SDK Package — DONE
+- [x] `packages/sdk/` as standalone workspace package
+- [x] Store interfaces in `@chaos/sdk/stores`
+- [x] Connection interfaces in `@chaos/sdk/connections`
+- [x] Browser capabilities in `@chaos/sdk/browser`
+- [x] Services in `@chaos/sdk/services`
+- [x] In-memory store implementation in `@chaos/sdk/stores/in-memory`
+- [x] Conformance tests in `packages/sdk/tests/conformance/`
+- [x] Integration tests in `packages/sdk/tests/integration/`
+
+### Phase 7: Reference Implementation — TODO
+- [ ] `packages/demo-web/` — minimal web app consuming `@chaos/sdk`
+- [ ] `packages/demo-cli/` — CLI tool consuming `@chaos/sdk`
+
+### Phase 8: Testing & Conformance Suite — PARTIAL
+- [x] Conformance test directory exists (`packages/sdk/tests/conformance/`)
+- [x] Integration test directory exists (`packages/sdk/tests/integration/`)
+- [ ] Conformance CLI (`@chaos/sdk-conformance`) — not built
+- [ ] Full coverage verification — unknown
+
+### Phase 9: Documentation — PARTIAL
+- [x] TypeDoc configured (`packages/sdk/typedoc.json`)
+- [x] README.md exists for the SDK package
+- [ ] Architecture guide for external developers
+- [ ] Conformance guide for custom implementations
 
 ---
 
