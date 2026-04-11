@@ -1,6 +1,6 @@
 {
   "name": "@chaos/shared",
-  "version": "0.1.74",
+  "version": "0.1.75",
   "private": true,
   "type": "module",
   "main": "src/types.ts",
