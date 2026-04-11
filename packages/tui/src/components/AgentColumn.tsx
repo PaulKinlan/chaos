@@ -29,6 +29,7 @@ interface AgentColumnProps {
   conversationId: string;
   focused: boolean;
   role?: string;
+  initialPrompt?: string; // If set, runs this instead of TODO check on startup
 }
 
 /** Strip control characters that break terminal rendering, keep printable text */
@@ -40,7 +41,7 @@ function clean(str: string): string {
     .replace(/\r/g, '\n');
 }
 
-export function AgentColumn({ agent, agentId, columnId, conversationId, focused, role }: AgentColumnProps) {
+export function AgentColumn({ agent, agentId, columnId, conversationId, focused, role, initialPrompt }: AgentColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState('');
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
@@ -56,13 +57,13 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
   const historyRef = useRef<AgentHistoryMessage[]>([]);
   const startupDoneRef = useRef(false);
 
-  // On first mount, run startup check (review TODO.md for pending items)
+  // On first mount, run startup task (scheduled prompt or TODO check)
   useEffect(() => {
     if (!startupDoneRef.current) {
       startupDoneRef.current = true;
-      setQueue(prev => [...prev,
-        'Read my TODO.md file. If there are active tasks (unchecked items), briefly list them and ask if I want you to work on any. If TODO.md is empty or all tasks are done, just say "No pending tasks." Keep it very short.'
-      ]);
+      const startupMsg = initialPrompt ||
+        'Read my TODO.md file. If there are active tasks (unchecked items), briefly list them and ask if I want you to work on any. If TODO.md is empty or all tasks are done, just say "No pending tasks." Keep it very short.';
+      setQueue(prev => [...prev, startupMsg]);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

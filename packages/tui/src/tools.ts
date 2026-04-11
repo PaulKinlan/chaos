@@ -337,3 +337,49 @@ export function createSystemTools(): ToolSet {
   };
 }
 
+/**
+ * Schedule tools — agents can create recurring tasks.
+ */
+export function createScheduleTools(agentId: string): ToolSet {
+  return {
+    schedule_task: tool({
+      description: 'Schedule a recurring task. The task will run at the specified interval while the TUI is open. Each run opens a new conversation column.',
+      inputSchema: s(z.object({
+        prompt: z.string().describe('What to do each time the task runs'),
+        description: z.string().describe('Short human-readable description'),
+        intervalMinutes: z.number().describe('How often to run, in minutes (e.g. 60 for hourly, 1440 for daily)'),
+      })),
+      execute: async ({ prompt, description, intervalMinutes }: { prompt: string; description: string; intervalMinutes: number }) => {
+        const { addSchedule } = await import('./scheduler.js');
+        const task = addSchedule({ agentId, prompt, description, intervalMinutes });
+        return `Scheduled: "${description}" every ${intervalMinutes} minutes (id: ${task.id})`;
+      },
+    }),
+
+    list_schedules: tool({
+      description: 'List all scheduled tasks for this agent.',
+      inputSchema: s(z.object({})),
+      execute: async () => {
+        const { loadSchedules } = await import('./scheduler.js');
+        const all = loadSchedules().filter((t: { agentId: string }) => t.agentId === agentId);
+        if (all.length === 0) return 'No scheduled tasks.';
+        return all.map((t: { enabled: boolean; description: string; intervalMinutes: number; id: string; lastRunAt?: string }) =>
+          `[${t.enabled ? 'ON' : 'OFF'}] ${t.description} — every ${t.intervalMinutes}min (id: ${t.id}, last: ${t.lastRunAt || 'never'})`
+        ).join('\n');
+      },
+    }),
+
+    cancel_schedule: tool({
+      description: 'Cancel a scheduled task by its ID.',
+      inputSchema: s(z.object({
+        id: z.string().describe('Schedule ID to cancel'),
+      })),
+      execute: async ({ id }: { id: string }) => {
+        const { removeSchedule } = await import('./scheduler.js');
+        removeSchedule(id);
+        return `Cancelled schedule ${id}`;
+      },
+    }),
+  };
+}
+

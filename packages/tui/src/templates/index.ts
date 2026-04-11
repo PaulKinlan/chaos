@@ -94,6 +94,11 @@ These tools access the PROJECT filesystem — the codebase, config files, etc. U
 - **find_command** — Check if a command-line tool is installed (e.g. curl, docker, python)
 - **list_system_tools** — Discover available tools by category (dev, web, media, data, system)
 
+### Schedule Tools
+- **schedule_task** — Schedule a recurring task (runs at an interval while TUI is open)
+- **list_schedules** — List your scheduled tasks
+- **cancel_schedule** — Cancel a scheduled task by ID
+
 ### CRITICAL: Be Efficient
 
 Use the MINIMUM number of tool calls to get the job done. Do not explore, list, or search unless the task requires it.

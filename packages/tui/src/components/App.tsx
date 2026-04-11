@@ -28,6 +28,7 @@ import {
   type AgentMeta,
 } from '../agent-manager.js';
 import { resolveModelFor } from '../model.js';
+import { startScheduler, stopScheduler, type ScheduledTask } from '../scheduler.js';
 
 interface AppProps {
   model: AgentConfig['model'];
@@ -37,11 +38,12 @@ interface AppProps {
 }
 
 interface Column {
-  id: string;             // unique column ID
-  agentId: string;        // which agent this column talks to
-  conversationId: string; // conversation ID for persistence
-  agent: Agent;           // agent instance
-  meta: AgentMeta;        // agent metadata
+  id: string;
+  agentId: string;
+  conversationId: string;
+  agent: Agent;
+  meta: AgentMeta;
+  initialPrompt?: string; // For scheduled tasks — runs this instead of TODO check
 }
 
 type InputMode =
@@ -129,6 +131,31 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     setAgents(agentMap);
     setColumns(cols);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Start scheduler for recurring tasks
+  useEffect(() => {
+    startScheduler((task: ScheduledTask) => {
+      // Find the agent for this task
+      const registry = loadAgentRegistry();
+      const meta = registry.find(a => a.id === task.agentId);
+      if (!meta) return;
+
+      const taskAgent = createAgentInstance(meta, model);
+      const convoId = `sched-${task.id}-${Date.now()}`;
+      const col: Column = {
+        id: nextColId(),
+        agentId: task.agentId,
+        conversationId: convoId,
+        agent: taskAgent,
+        meta,
+      };
+
+      // Add column with the scheduled prompt — it runs instead of the TODO check
+      setColumns(prev => [...prev, { ...col, initialPrompt: task.prompt }]);
+    });
+
+    return () => stopScheduler();
+  }, [model]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save session whenever columns or active index change
   useEffect(() => {
@@ -348,6 +375,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
               conversationId={col.conversationId}
               focused={mode.type === 'chat' && startIdx + i === activeIdx}
               role={col.meta.role}
+              initialPrompt={col.initialPrompt}
             />
           ))
         )}

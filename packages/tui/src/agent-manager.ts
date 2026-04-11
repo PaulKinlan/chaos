@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import { createAgent, createFileTools } from '@chaos/agent-loop';
 import type { Agent, AgentConfig } from '@chaos/agent-loop';
 import { getTemplate, listRoles } from './templates/index.js';
-import { createProjectTools, createWebTools, createSystemTools } from './tools.js';
+import { createProjectTools, createWebTools, createSystemTools, createScheduleTools } from './tools.js';
 import { createFsMemoryStore } from './stores/fs-memory.js';
 
 const BASE_DIR = path.resolve(process.cwd(), '.chaos');
@@ -187,6 +187,9 @@ export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']
   if (enabledSets.has('system')) {
     Object.assign(allTools, createSystemTools());
   }
+
+  // Schedule tools always available
+  Object.assign(allTools, createScheduleTools(meta.id));
 
   // Remove individually disabled tools
   for (const name of disabledTools) {
