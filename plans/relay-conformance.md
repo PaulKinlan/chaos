@@ -12,22 +12,26 @@
 - [x] All passing against our implementation
 - [x] Added to CI (runs on every push)
 
-### Phase 3: Client SDK Specification — TODO
-- [ ] Registration flow documentation
-- [ ] Request signing documentation
-- [ ] Polling strategy documentation
-- [ ] WebSocket connection documentation
-- [ ] Channel management documentation
-- [ ] Message processing documentation
+### Phase 3: Client SDK Specification — PARTIAL (docs only)
+- [x] Registration flow documentation (in `docs/relay-api-spec.md`)
+- [x] Request signing documentation (in `docs/relay-api-spec.md`)
+- [x] WebSocket connection documentation (in `docs/relay-api-spec.md`)
+- [x] Channel management documentation (in `docs/relay-api-spec.md`)
+- [x] Message processing documentation (in `docs/relay-api-spec.md`)
+- [ ] Polling strategy documentation (detailed backoff/timing guide)
+- [ ] Standalone SDK specification document
 
-### Phase 4: Self-Hosting Guide — TODO
-- [ ] Docker image for the relay server
-- [ ] docker-compose.yml
-- [ ] Environment variable documentation
-- [ ] Reverse proxy setup
-- [ ] Deployment guides (Deno Deploy, Fly.io, Railway, Render)
+### Phase 4: Self-Hosting Guide — DONE
+- [x] `docs/relay-self-hosting.md` — comprehensive self-hosting guide
+- [x] Docker image instructions and Dockerfile
+- [x] docker-compose.yml
+- [x] Environment variable documentation (all 9 variables)
+- [x] Reverse proxy setup (nginx and Caddy)
+- [x] Deployment guides (Deno Deploy, Docker, Fly.io, generic VPS)
+- [x] Security considerations
+- [x] Monitoring and admin dashboard
 
-### Phase 5: Reference Client Library — TODO
+### Phase 5: Reference Client Library — TODO (documentation done)
 - [ ] `@chaos/relay-client` standalone package
 - [ ] Typed methods for all endpoints
 - [ ] Works in any JavaScript environment

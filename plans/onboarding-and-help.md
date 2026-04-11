@@ -1,6 +1,6 @@
 # Plan: Onboarding Experience & Integrated Help System
 
-## Status (audited 2026-04-07)
+## Status (updated 2026-04-07)
 
 ### Phase 1: First-Run Onboarding Wizard — DONE
 - [x] `src/ui/onboarding.ts` — multi-step onboarding dialog
@@ -12,11 +12,23 @@
 ### Phase 2: Help Content Files — DONE
 - [x] `docs/help/*.md` for all 10 views (chat, jobs, artifacts, channels, hooks, memory, messages, tasks, agent-settings, global-settings)
 
-### Phase 3: Help Button UI — TODO
-- [ ] ? button in every view's section header
-- [ ] Help panel component (slide-in or dialog)
-- [ ] Markdown rendering of help content
-- [ ] "Ask the agent" fallback button
+### Phase 3: Help UI Content Files — DONE
+- [x] All help content files expanded to 50-100 lines with What/Features/How/Tips structure
+- [x] `chat.md` — columns, @mentions, delegation (Ctrl+Enter), keyboard shortcuts, page context, voice
+- [x] `dashboard.md` — activity feed, pinned artifacts, suggestions, agent status (new file)
+- [x] `tasks.md` — creating tasks, timeline, managing, run now, example tasks
+- [x] `artifacts.md` — types, viewing, pinning, copying/downloading, deleting
+- [x] `channels.md` — relay server, Telegram/Discord/Email/webhook setup, allowlists
+- [x] `hooks.md` — trigger types table, prompts, refine, presets, context menu hooks
+- [x] `usage.md` — token tracking, cost estimation, per-agent breakdown, spending limits (new file)
+- [x] `files.md` — file browser, key files, CLAUDE.md, downloading/uploading (new file)
+- [x] `messages.md` — direction badges, delegation flow, searching
+- [x] `agent-settings.md` — visibility, tools, skills, CLAUDE.md editor, model config, danger zone
+- [x] `global-settings.md` — providers table, model selection, theme, permissions, debug panel
+- [ ] ? button in every view's section header (requires .ts changes)
+- [ ] Help panel component (slide-in or dialog) (requires .ts changes)
+- [ ] Markdown rendering of help content (requires .ts changes)
+- [ ] "Ask the agent" fallback button (requires .ts changes)
 
 ### Phase 4: Improved Empty States — PARTIAL
 - [x] Some views have contextual empty states (via `<chaos-empty-state>` design system component)

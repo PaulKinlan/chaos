@@ -1,27 +1,49 @@
 # Scheduled Tasks
 
-Scheduled tasks run your agent on a recurring schedule — like cron jobs for your AI agent.
+Run your agents on a recurring schedule -- like cron jobs for AI.
 
-### How They Work
-- Create a task with a prompt and a schedule (e.g. every hour, daily)
-- The agent executes the prompt automatically at each interval
-- Results appear in the task's run history
+## What This View Does
 
-### Creating Tasks
-- Click **+ Create Task** and fill in the prompt and schedule
-- Choose from common intervals or set a custom cron expression
-- The task starts running on the next scheduled time
+Scheduled Tasks let you automate agent work on a timer. Define a prompt and a schedule, and the agent executes it automatically at each interval. Results are tracked in run history so you can see what happened.
 
-### Run History
-- Each task shows its recent runs with timestamps
-- Click a run to see the agent's output and any artifacts created
-- Failed runs show error details
+## How Tasks Work
 
-### Managing Tasks
-- Pause or resume tasks without deleting them
-- Edit the prompt or schedule of existing tasks
-- Delete tasks you no longer need
+- Each task has a prompt (what to do) and a schedule (when to do it)
+- The agent runs the prompt with full tool access at each scheduled interval
+- Tasks execute even when the CHAOS sidebar is closed, using Chrome alarms
+- Results and artifacts from each run are recorded
 
-### Run Now
-- Click **Run Now** to trigger a task immediately
-- Useful for testing or running a task outside its normal schedule
+## Creating a Task
+
+1. Click **+ Create Task**
+2. Write a prompt describing what the agent should do
+3. Choose a schedule: every hour, daily, weekly, or a custom cron expression
+4. Select which agent should run it
+5. The task starts running at the next scheduled time
+
+## Task Timeline
+
+- Each task shows its recent runs with timestamps and status
+- Click a run to see the agent's output, tool calls, and any artifacts created
+- Failed runs show error details so you can fix the prompt or configuration
+
+## Managing Tasks
+
+- **Pause/Resume** -- temporarily stop a task without deleting it
+- **Edit** -- change the prompt or schedule of an existing task
+- **Delete** -- permanently remove a task
+- **Run Now** -- trigger a task immediately, outside its normal schedule
+
+## Example Tasks
+
+- "Check my GitHub notifications and summarize anything important" -- daily
+- "Read the top stories on Hacker News and save a summary" -- every 6 hours
+- "Review my open browser tabs and suggest which ones to close" -- weekly
+
+## Tips
+
+- Start with simple prompts and refine based on run results
+- Use **Run Now** to test a task before relying on its schedule
+- Check run history regularly to make sure tasks are producing useful output
+- Combine tasks with hooks for event-driven plus scheduled automation
+- Keep prompts specific -- vague prompts produce inconsistent results
