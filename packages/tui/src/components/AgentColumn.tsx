@@ -57,12 +57,38 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
   useInput((ch, key) => {
     if (!focused) return;
 
+    // ── Always-available controls (work even while busy) ──
+
+    // Toggle tool visibility
+    if (ch === 't' && key.ctrl) {
+      setShowTools(prev => !prev);
+      return;
+    }
+
+    // Abort
+    if (key.escape) {
+      if (busy && abortRef.current) {
+        abortRef.current.abort();
+      }
+      return;
+    }
+
+    // Scroll — Page Up/Down always, arrows when input is empty
+    if (key.pageUp || (key.upArrow && !input)) {
+      setScrollBack(prev => Math.min(prev + (key.pageUp ? 10 : 3), Math.max(messages.length - 2, 0)));
+      return;
+    }
+    if (key.pageDown || (key.downArrow && !input)) {
+      setScrollBack(prev => Math.max(prev - (key.pageDown ? 10 : 3), 0));
+      return;
+    }
+
+    // ── Input controls ──
+
     if (key.return && input.trim()) {
       const msg = input.trim();
       setInput('');
-
       if (busy) {
-        // Queue the message
         setQueue(prev => [...prev, msg]);
       } else {
         processMessage(msg);
@@ -72,28 +98,6 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
 
     if (key.backspace || key.delete) {
       setInput(prev => prev.slice(0, -1));
-      return;
-    }
-
-    if (key.escape) {
-      if (busy && abortRef.current) {
-        abortRef.current.abort();
-      }
-      return;
-    }
-
-    if (ch === 't' && key.ctrl) {
-      setShowTools(prev => !prev);
-      return;
-    }
-
-    // Scroll: Page Up/Down always work, Up/Down when input is empty
-    if (key.pageUp || (key.upArrow && !input)) {
-      setScrollBack(prev => Math.min(prev + (key.pageUp ? 10 : 3), Math.max(messages.length - 2, 0)));
-      return;
-    }
-    if (key.pageDown || (key.downArrow && !input)) {
-      setScrollBack(prev => Math.max(prev - (key.pageDown ? 10 : 3), 0));
       return;
     }
 
