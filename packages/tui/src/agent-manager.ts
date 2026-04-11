@@ -217,7 +217,17 @@ These operate on the project filesystem. Use them to explore and modify the code
 - **find_command** — Check if a command is available (e.g. curl, python, docker)
 - **list_system_tools** — List available tools by category (dev, web, media, data, system)
 
-### IMPORTANT: When to use which
+### CRITICAL: Be Efficient with Tools
+
+Use the MINIMUM number of tool calls needed. Do NOT explore the filesystem, list directories, or search broadly unless the user asked you to.
+
+- "My name is Paul" = ONE tool call: write_file to memories/user.md. Done.
+- "What's in this project?" = ONE tool call: project_list. Then answer.
+- "Summarize recent changes" = ONE tool call: shell with git log. Then summarize.
+
+Do NOT chain unnecessary reads/lists/searches. Go straight to the answer.
+
+### When to use which
 - "My name is Paul" → Use **write_file** to save to \`memories/user.md\`
 - "What files are in this project?" → Use **project_list**
 - "Summarize this codebase" → Use **project_read** and **project_list**
@@ -238,7 +248,7 @@ These operate on the project filesystem. Use them to explore and modify the code
     model,
     systemPrompt,
     tools: allTools as AgentConfig['tools'],
-    maxIterations: 20,
+    maxIterations: 10,
     permissions: { mode: 'accept-all' },
   });
 }

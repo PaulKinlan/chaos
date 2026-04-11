@@ -31,6 +31,12 @@ interface AgentColumnProps {
   role?: string;
 }
 
+/** Strip control characters that break terminal rendering */
+function clean(str: string): string {
+  // Remove all control chars except newline and tab, replace tab with spaces
+  return str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/\t/g, '  ');
+}
+
 export function AgentColumn({ agent, agentId, columnId, conversationId, focused, role }: AgentColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState('');
@@ -40,7 +46,7 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
   const [showTools, setShowTools] = useState(true);
   const [queue, setQueue] = useState<string[]>([]);
   const [scrollBack, setScrollBack] = useState(0);
-  const [tokenCount, setTokenCount] = useState(0); // rough token estimate
+  const [tokenCount, setTokenCount] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const convoIdRef = useRef<string>(conversationId);
   const processingRef = useRef(false);
@@ -57,23 +63,9 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
   useInput((ch, key) => {
     if (!focused) return;
 
-    // ── Always-available controls (work even while busy) ──
-
-    // Toggle tool visibility
-    if (ch === 't' && key.ctrl) {
-      setShowTools(prev => !prev);
-      return;
-    }
-
-    // Abort
-    if (key.escape) {
-      if (busy && abortRef.current) {
-        abortRef.current.abort();
-      }
-      return;
-    }
-
-    // Scroll — Page Up/Down always, arrows when input is empty
+    // ── Always-available controls ──
+    if (ch === 't' && key.ctrl) { setShowTools(prev => !prev); return; }
+    if (key.escape) { if (busy && abortRef.current) abortRef.current.abort(); return; }
     if (key.pageUp || (key.upArrow && !input)) {
       setScrollBack(prev => Math.min(prev + (key.pageUp ? 10 : 3), Math.max(messages.length - 2, 0)));
       return;
@@ -84,37 +76,20 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
     }
 
     // ── Input controls ──
-
     if (key.return && input.trim()) {
       const msg = input.trim();
       setInput('');
-      if (busy) {
-        setQueue(prev => [...prev, msg]);
-      } else {
-        processMessage(msg);
-      }
+      if (busy) { setQueue(prev => [...prev, msg]); } else { processMessage(msg); }
       return;
     }
-
-    if (key.backspace || key.delete) {
-      setInput(prev => prev.slice(0, -1));
-      return;
-    }
-
-    if (ch && !key.ctrl && !key.meta) {
-      setInput(prev => prev + ch);
-    }
+    if (key.backspace || key.delete) { setInput(prev => prev.slice(0, -1)); return; }
+    if (ch && !key.ctrl && !key.meta) { setInput(prev => prev + ch); }
   });
 
-  // Auto-scroll to bottom on new messages (only if already at bottom)
+  // Auto-scroll to bottom on new messages (only if at bottom)
   useEffect(() => {
-    if (scrollBack === 0) {
-      // Already at bottom, stay there
-    } else {
-      // User has scrolled up — don't force them back down,
-      // but bump the scroll position to account for the new message
-      setScrollBack(prev => prev + 1);
-    }
+    if (scrollBack <= 1) setScrollBack(0);
+    else setScrollBack(prev => prev + 1);
   }, [messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function persistConversation(msgs: Message[]) {
@@ -122,21 +97,15 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => {
         const msg: ConversationMessage = { role: m.role as 'user' | 'assistant', content: m.content, timestamp: m.timestamp };
-        if (m.toolCalls && m.toolCalls.length > 0) {
-          msg.toolCalls = m.toolCalls;
-        }
+        if (m.toolCalls && m.toolCalls.length > 0) msg.toolCalls = m.toolCalls;
         return msg;
       });
-
     const convo: ConversationEntry = {
-      id: convoIdRef.current,
-      agentId,
+      id: convoIdRef.current, agentId,
       timestamp: convoMessages[0]?.timestamp || new Date().toISOString(),
       messages: convoMessages,
     };
-    if (convo.messages.length > 0) {
-      saveConversation(agentId, convo);
-    }
+    if (convo.messages.length > 0) saveConversation(agentId, convo);
   }
 
   const processMessage = useCallback(async (message: string) => {
@@ -147,11 +116,7 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
 
     const ts = new Date().toISOString();
     const userMsg: Message = { role: 'user', content: message, timestamp: ts };
-
-    setMessages(prev => {
-      const updated = [...prev, userMsg];
-      return updated;
-    });
+    setMessages(prev => [...prev, userMsg]);
 
     const callsForThisTurn: ToolCall[] = [];
 
@@ -168,14 +133,15 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
             setStreaming('Thinking...');
             break;
           case 'tool-call': {
-            const tc: ToolCall = { name: event.toolName || '?', args: formatArgs(event.toolArgs) };
-            callsForThisTurn.push(tc);
+            const name = clean(event.toolName || '?');
+            const args = clean(formatArgs(event.toolArgs));
+            callsForThisTurn.push({ name, args });
             setActiveToolCalls([...callsForThisTurn]);
-            setStreaming(`Using ${tc.name}...`);
+            setStreaming(`[${name}]`);
             break;
           }
           case 'tool-result': {
-            const resultStr = formatResult(event.toolResult);
+            const resultStr = clean(formatResult(event.toolResult));
             if (callsForThisTurn.length > 0) {
               callsForThisTurn[callsForThisTurn.length - 1]!.result = resultStr;
               setActiveToolCalls([...callsForThisTurn]);
@@ -184,7 +150,7 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
           }
           case 'text':
             fullText += event.content;
-            setStreaming(fullText);
+            setStreaming(clean(fullText));
             break;
           case 'done':
             fullText = event.content || fullText;
@@ -197,7 +163,7 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
 
       const assistantMsg: Message = {
         role: 'assistant',
-        content: fullText || '(no response)',
+        content: clean(fullText || '(no response)'),
         timestamp: new Date().toISOString(),
         toolCalls: callsForThisTurn.length > 0 ? [...callsForThisTurn] : undefined,
       };
@@ -207,19 +173,13 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
         persistConversation(updated);
         return updated;
       });
-      // Rough token estimate: ~4 chars per token
       setTokenCount(prev => prev + Math.ceil((message.length + fullText.length) / 4));
       setStreaming('');
       setActiveToolCalls([]);
-
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       if (!errMsg.includes('aborted')) {
-        setMessages(prev => [...prev, {
-          role: 'system',
-          content: `Error: ${errMsg}`,
-          timestamp: new Date().toISOString(),
-        }]);
+        setMessages(prev => [...prev, { role: 'system', content: `Error: ${clean(errMsg)}`, timestamp: new Date().toISOString() }]);
       }
       setStreaming('');
       setActiveToolCalls([]);
@@ -237,15 +197,10 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
   const inputDisplay = focused ? `> ${input}\u2588` : '  (tab to focus)';
 
   return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      flexBasis={0}
-      borderStyle={focused ? 'bold' : 'single'}
-      borderColor={focused ? 'cyan' : 'gray'}
-      paddingX={1}
-      overflow="hidden"
-    >
+    <Box flexDirection="column" flexGrow={1} flexBasis={0}
+      borderStyle={focused ? 'bold' : 'single'} borderColor={focused ? 'cyan' : 'gray'}
+      paddingX={1} overflow="hidden">
+
       {/* Header */}
       <Box>
         <Text bold color={focused ? 'cyan' : 'white'}>{agent.name}</Text>
@@ -260,14 +215,12 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
         {visibleMessages.map((msg, i) => (
           <Box key={i} flexDirection="column">
-            <Text
-              color={msg.role === 'user' ? 'green' : msg.role === 'system' ? 'red' : 'white'}
-              wrap="wrap"
-            >
+            <Text color={msg.role === 'user' ? 'green' : msg.role === 'system' ? 'red' : 'white'} wrap="wrap">
               {msg.role === 'user' ? '> ' : msg.role === 'system' ? '! ' : ''}
               {msg.content}
             </Text>
 
+            {/* Tool history on completed messages */}
             {msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0 && (
               <Box flexDirection="column" marginLeft={1}>
                 <Text dimColor>
@@ -276,11 +229,11 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
                 {showTools && msg.toolCalls.map((tc, j) => (
                   <Box key={j} flexDirection="column" marginLeft={1}>
                     <Text color="magenta" wrap="wrap">
-                      {'\u2713'} {tc.name}({tc.args})
+                      {'* '}{tc.name}({tc.args})
                     </Text>
                     {tc.result && (
                       <Text dimColor wrap="wrap">
-                        {'  \u2192 '}{tc.result.length > 200 ? tc.result.slice(0, 200) + '...' : tc.result}
+                        {'  -> '}{tc.result.length > 200 ? tc.result.slice(0, 200) + '...' : tc.result}
                       </Text>
                     )}
                   </Box>
@@ -290,17 +243,17 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
           </Box>
         ))}
 
-        {/* Active tool calls */}
-        {busy && activeToolCalls.length > 0 && (
+        {/* Active tool calls during generation */}
+        {busy && activeToolCalls.length > 0 && showTools && (
           <Box flexDirection="column" marginLeft={1}>
             {activeToolCalls.map((tc, i) => (
               <Box key={i} flexDirection="column" marginLeft={1}>
                 <Text color="magenta" wrap="wrap">
-                  {tc.result !== undefined ? '\u2713' : '\u25b6'} {tc.name}({tc.args})
+                  {tc.result !== undefined ? '* ' : '> '}{tc.name}({tc.args})
                 </Text>
                 {tc.result !== undefined && (
                   <Text dimColor wrap="wrap">
-                    {'  \u2192 '}{tc.result.length > 200 ? tc.result.slice(0, 200) + '...' : tc.result}
+                    {'  -> '}{tc.result.length > 200 ? tc.result.slice(0, 200) + '...' : tc.result}
                   </Text>
                 )}
               </Box>
@@ -308,15 +261,14 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
           </Box>
         )}
 
-        {streaming && !streaming.startsWith('Using ') && streaming !== 'Thinking...' && (
-          <Text color="yellow" wrap="wrap">
-            {streaming.length > 500 ? '...' + streaming.slice(-500) : streaming}
-          </Text>
+        {streaming && !streaming.startsWith('[') && streaming !== 'Thinking...' && (
+          <Text color="yellow" wrap="wrap">{streaming.length > 500 ? '...' + streaming.slice(-500) : streaming}</Text>
         )}
         {streaming === 'Thinking...' && <Text color="yellow">Thinking...</Text>}
+        {streaming && streaming.startsWith('[') && <Text dimColor>{streaming}</Text>}
       </Box>
 
-      {/* Input — always accepting input, shows queue status */}
+      {/* Input */}
       <Box borderTop borderStyle="single" borderColor="gray" borderBottom={false} borderLeft={false} borderRight={false}>
         <Text color={focused ? 'cyan' : 'gray'} wrap="wrap">{inputDisplay}</Text>
       </Box>
@@ -326,14 +278,15 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
 
 function formatArgs(args: unknown): string {
   if (!args) return '';
-  if (typeof args === 'string') return args.slice(0, 80);
+  if (typeof args === 'string') return args.slice(0, 60);
   try {
     const str = JSON.stringify(args);
-    return str.length > 80 ? str.slice(0, 77) + '...' : str;
-  } catch { return String(args).slice(0, 80); }
+    return str.length > 60 ? str.slice(0, 57) + '...' : str;
+  } catch { return String(args).slice(0, 60); }
 }
 
 function formatResult(result: unknown): string {
   if (result === undefined || result === null) return '(empty)';
-  return typeof result === 'string' ? result : JSON.stringify(result);
+  const str = typeof result === 'string' ? result : JSON.stringify(result);
+  return str.length > 200 ? str.slice(0, 197) + '...' : str;
 }
