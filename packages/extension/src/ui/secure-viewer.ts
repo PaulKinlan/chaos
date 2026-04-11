@@ -10,7 +10,7 @@
  */
 
 export interface SecureViewerOptions {
-  type?: 'html' | 'markdown' | 'text' | 'json' | 'csv';
+  type?: 'html' | 'markdown' | 'text' | 'json' | 'csv' | 'image' | 'svg';
   title?: string;
   downloadFilename?: string;
   onClose?: () => void;
@@ -45,6 +45,14 @@ export function detectContentType(path: string): SecureViewerOptions['type'] {
       return 'json';
     case 'csv':
       return 'csv';
+    case 'svg':
+      return 'svg';
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'webp':
+      return 'image';
     case 'txt':
     default:
       return 'text';
@@ -144,6 +152,32 @@ function contentToHtml(content: string, type: string): string {
 
     case 'csv':
       return `<!DOCTYPE html><html><head><style>${baseStyle}</style></head><body>${csvToTable(content)}</body></html>`;
+
+    case 'svg':
+      // SVG content rendered directly — inner iframe sandbox="" prevents scripts
+      return `<!DOCTYPE html><html><head><style>${baseStyle} body { display:flex; align-items:center; justify-content:center; min-height:100vh; } svg { max-width:100%; height:auto; }</style></head><body>${content}</body></html>`;
+
+    case 'image': {
+      // If content looks like base64 data, render as data URI img
+      const trimmed = content.trim();
+      const isBase64 = /^[A-Za-z0-9+/\n\r]+=*$/.test(trimmed.replace(/\s/g, ''));
+      if (isBase64) {
+        // Try to detect MIME from magic bytes (first few base64 chars)
+        let mime = 'image/png';
+        if (trimmed.startsWith('iVBOR')) mime = 'image/png';
+        else if (trimmed.startsWith('/9j/')) mime = 'image/jpeg';
+        else if (trimmed.startsWith('R0lGOD')) mime = 'image/gif';
+        else if (trimmed.startsWith('UklGR')) mime = 'image/webp';
+        const src = `data:${mime};base64,${trimmed.replace(/\s/g, '')}`;
+        return `<!DOCTYPE html><html><head><style>${baseStyle} body { display:flex; align-items:center; justify-content:center; min-height:100vh; } img { max-width:100%; height:auto; }</style></head><body><img src="${escapeHtml(src)}" alt="Image"></body></html>`;
+      }
+      // If content starts with data: it's already a data URI
+      if (trimmed.startsWith('data:')) {
+        return `<!DOCTYPE html><html><head><style>${baseStyle} body { display:flex; align-items:center; justify-content:center; min-height:100vh; } img { max-width:100%; height:auto; }</style></head><body><img src="${escapeHtml(trimmed)}" alt="Image"></body></html>`;
+      }
+      // Otherwise show a placeholder with download prompt
+      return `<!DOCTYPE html><html><head><style>${baseStyle} body { display:flex; align-items:center; justify-content:center; min-height:100vh; } .placeholder { text-align:center; color:#8b949e; } .placeholder svg { margin-bottom:12px; }</style></head><body><div class="placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><p>Image file — use the download button to save</p></div></body></html>`;
+    }
 
     case 'text':
     default:

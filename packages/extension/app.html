@@ -2016,11 +2016,20 @@
     .dashboard-recent-item-time { font-size: var(--text-xs); color: var(--text-muted); }
 
     /* ── Files View ── */
+    chaos-files-view {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
     .files-container {
       display: flex;
       height: 100%;
+      width: 100%;
       gap: var(--sp-4);
       padding: var(--sp-6);
+      overflow: hidden;
     }
 
     .files-tree-panel {
@@ -2029,7 +2038,7 @@
       background: var(--bg-raised);
       border: 1px solid var(--border-subtle);
       border-radius: 8px;
-      overflow-y: auto;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
     }
@@ -2075,6 +2084,8 @@
 
     .files-viewer-panel {
       flex: 1;
+      min-width: 0;
+      min-height: 0;
       background: var(--bg-raised);
       border: 1px solid var(--border-subtle);
       border-radius: 8px;

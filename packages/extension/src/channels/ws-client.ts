@@ -30,19 +30,27 @@ function log(msg: string): void {
  */
 async function ensureOffscreen(): Promise<boolean> {
   try {
-    if (!chrome.offscreen) return false;
+    if (!chrome.offscreen) {
+      log('chrome.offscreen API not available — WebSocket disabled');
+      return false;
+    }
 
     const contexts = await (chrome.runtime as unknown as {
       getContexts(filter: { contextTypes: string[] }): Promise<{ documentUrl: string }[]>;
     }).getContexts?.({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
 
-    if (contexts && contexts.length > 0) return true;
+    if (contexts && contexts.length > 0) {
+      log(`Offscreen document already exists (${contexts.length} context(s))`);
+      return true;
+    }
 
+    log('Creating offscreen document for WebSocket...');
     await chrome.offscreen.createDocument({
       url: 'src/offscreen-parser.html',
       reasons: [chrome.offscreen.Reason.DOM_PARSER],
       justification: 'Parse HTML and maintain persistent WebSocket connection',
     });
+    log('Offscreen document created successfully');
     return true;
   } catch (err) {
     log(`Failed to create offscreen document: ${err}`);

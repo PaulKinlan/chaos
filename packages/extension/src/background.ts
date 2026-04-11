@@ -245,7 +245,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         await addScheduledTask({
           alarmId: alarmName,
           agentId: agent.id,
-          prompt: 'Periodic review: First gather browser context — use tab_list to see open tabs, history_search to see recent browsing, and bookmark_search for recent bookmarks. Then read your memories/, activity-log.jsonl, TODO.md, and pending messages. Look for patterns: what the user is currently working on (from tabs/history), stale TODOs, repeated topics, and opportunities to help. Write a brief review to memories/reviews/ with today\'s date and time. Then write a suggestions/latest.json file containing a JSON array of 3-5 suggestion objects. Each must have: id, title, description, action (object with type: "chat" and prompt: string), priority ("high"/"medium"/"low"), createdAt. Mix suggestions from: things the user is actively browsing (tabs/history), pending TODOs, patterns in their activity, and proactive ideas. Make suggestions specific and actionable — reference actual URLs, topics, or tasks by name.',
+          prompt: 'Periodic review: First gather browser context — use tab_list to see open tabs, history_search to see recent browsing, and bookmark_search for recent bookmarks. Then read your memories/, activity-log.jsonl, TODO.md, and pending messages. Look for patterns: what the user is currently working on (from tabs/history), stale TODOs, repeated topics, and opportunities to help. If this is one of the user\'s first sessions (check if memories/user.md is mostly empty or missing), pay special attention to learning about them — their role, interests, common topics, and preferred interaction style. Update memories/user.md and memories/preferences.md with what you learn. Write a brief review to memories/reviews/ with today\'s date and time. Then write a suggestions/latest.json file containing a JSON array of 3-5 suggestion objects. Each must have: id, title, description, action (object with type: "chat" and prompt: string), priority ("high"/"medium"/"low"), createdAt. Mix suggestions from: things the user is actively browsing (tabs/history), pending TODOs, patterns in their activity, and proactive ideas. Make suggestions specific and actionable — reference actual URLs, topics, or tasks by name.',
           description: 'Periodic review and suggestions (every hour)',
           createdAt: new Date().toISOString(),
           schedule: { type: 'recurring', periodInMinutes: 60 },
@@ -1171,7 +1171,7 @@ async function handleCreateAgent(
     await addScheduledTask({
       alarmId: alarmName,
       agentId: agent.id,
-      prompt: `Periodic review: First gather browser context — use tab_list to see open tabs, history_search to see recent browsing, and bookmark_search for recent bookmarks. Then read your memories/, activity-log.jsonl, TODO.md, and pending messages. Look for patterns: what the user is currently working on (from tabs/history), stale TODOs, repeated topics, and opportunities to help. Write a brief review to memories/reviews/ with today's date and time. Then write a suggestions/latest.json file containing a JSON array of 3-5 suggestion objects. Each must have: id, title, description, action (object with type: "chat" and prompt: string), priority ("high"/"medium"/"low"), createdAt. Mix suggestions from: things the user is actively browsing (tabs/history), pending TODOs, patterns in their activity, and proactive ideas. Make suggestions specific and actionable — reference actual URLs, topics, or tasks by name.`,
+      prompt: `Periodic review: First gather browser context — use tab_list to see open tabs, history_search to see recent browsing, and bookmark_search for recent bookmarks. Then read your memories/, activity-log.jsonl, TODO.md, and pending messages. Look for patterns: what the user is currently working on (from tabs/history), stale TODOs, repeated topics, and opportunities to help. If this is one of the user's first sessions (check if memories/user.md is mostly empty or missing), pay special attention to learning about them — their role, interests, common topics, and preferred interaction style. Update memories/user.md and memories/preferences.md with what you learn. Write a brief review to memories/reviews/ with today's date and time. Then write a suggestions/latest.json file containing a JSON array of 3-5 suggestion objects. Each must have: id, title, description, action (object with type: "chat" and prompt: string), priority ("high"/"medium"/"low"), createdAt. Mix suggestions from: things the user is actively browsing (tabs/history), pending TODOs, patterns in their activity, and proactive ideas. Make suggestions specific and actionable — reference actual URLs, topics, or tasks by name.`,
       description: 'Periodic review and suggestions (every hour)',
       createdAt: new Date().toISOString(),
       schedule: { type: 'recurring', periodInMinutes: 60 },
@@ -2410,11 +2410,18 @@ setMessageHandler(async (message) => {
 // Start polling and WebSocket if relay is configured
 getRelaySettings().then((settings) => {
   if (settings) {
+    console.log('[background] Relay settings found at SW startup, starting channel polling and WebSocket');
     startChannelPolling(settings.pollIntervalMinutes);
-    startWebSocket();
+    startWebSocket().then(() => {
+      console.log('[background] WebSocket startup completed');
+    }).catch((err) => {
+      console.error('[background] WebSocket startup failed:', err);
+    });
+  } else {
+    console.log('[background] No relay settings configured — skipping channel polling/WebSocket');
   }
 }).catch((err) => {
-  console.error('Failed to initialize channel polling:', err);
+  console.error('[background] Failed to initialize channel polling:', err);
 });
 
 // ── Bookmark watcher ──
