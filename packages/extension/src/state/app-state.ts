@@ -1,5 +1,6 @@
 import { signal, computed } from '@preact/signals-core';
 import type { AgentMeta, ArtifactMeta, Hook, AgentMessage, Task, TaskEvent, ScheduledTask, Settings, ApiKeys } from '../storage/types.js';
+import type { McpServerEntry } from '../mcp/config.js';
 
 // Core application state as signals
 export const activeView = signal<string>('chat');
@@ -49,6 +50,9 @@ export const messages = signal<AgentMessage[]>([]);
 // Settings signals
 export const settings = signal<Settings | null>(null);
 export const apiKeys = signal<ApiKeys | null>(null);
+
+// MCP signals
+export const mcpServers = signal<McpServerEntry[]>([]);
 
 // Derived state
 export const activeAgent = computed(() =>
@@ -175,5 +179,16 @@ export async function refreshSettings(): Promise<void> {
     apiKeys.value = keysResult?.keys || null;
   } catch {
     console.error('[app-state] Error refreshing settings');
+  }
+}
+
+// Helper to refresh MCP servers from the background
+export async function refreshMcpServers(): Promise<void> {
+  const { sendMsg } = await import('../services/messaging.js');
+  try {
+    const result = await sendMsg<{ servers: McpServerEntry[] }>({ type: 'getMcpServers' });
+    mcpServers.value = result.servers || [];
+  } catch {
+    console.error('[app-state] Error refreshing MCP servers');
   }
 }

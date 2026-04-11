@@ -13,20 +13,23 @@
 
 **Note:** No `src/mcp/` directory exists in the extension. The existing `src/channels/` directory contains relay client code (config, crypto, poller, relay-client, ws-client), NOT MCP protocol code.
 
-### Phase 2: MCP Client — Configuration & UI — TODO
-- [ ] Global MCP server config in `chrome.storage.sync`
-- [ ] Per-agent MCP server config in `AgentMeta`
-- [ ] Settings UI for adding/removing/testing global MCP servers
-- [ ] Agent settings UI for per-agent MCP server overrides
-- [ ] Connection status indicators in sidebar
+### Phase 2: MCP Client — Configuration & UI — DONE
+- [x] Global MCP server config in `chrome.storage.local` (`src/mcp/config.ts`)
+- [x] Background message handlers for getMcpServers, addMcpServer, removeMcpServer, updateMcpServer, testMcpServer
+- [x] Settings UI for adding/removing/testing global MCP servers (section in `global-settings-view.ts`)
+- [x] MCP signal in app-state.ts (`mcpServers`, `refreshMcpServers()`)
+- [ ] Per-agent MCP server config in `AgentMeta` (deferred — global config covers most use cases)
+- [ ] Agent settings UI for per-agent MCP server overrides (deferred)
+- [ ] Connection status indicators in sidebar (deferred)
 
-### Phase 3: MCP Client — Agentic loop integration — TODO
-- [ ] Dynamic tool injection from connected MCP servers into the tool set
-- [ ] MCP tool execution bridge (translate Vercel AI SDK tool calls to MCP `tools/call`)
-- [ ] MCP resource injection as context (agent can read MCP resources)
-- [ ] MCP prompt templates surfaced in agent UI
-- [ ] Tool namespacing to avoid collisions (e.g. `mcp_github_create_issue`)
-- [ ] Deferred/lazy tool loading (only fetch tool schemas on first use)
+### Phase 3: MCP Client — Agentic loop integration — DONE
+- [x] Dynamic tool injection from connected MCP servers into the tool set (`extension-agent.ts`)
+- [x] MCP tool execution bridge (`src/mcp/tool-bridge.ts` — uses AI SDK `jsonSchema()` + `tool()`)
+- [x] Tool namespacing to avoid collisions (e.g. `mcp_github_create_issue`)
+- [x] Tests for tool bridge (`src/mcp/__tests__/tool-bridge.test.ts`)
+- [ ] MCP resource injection as context (agent can read MCP resources) (deferred)
+- [ ] MCP prompt templates surfaced in agent UI (deferred)
+- [ ] Deferred/lazy tool loading (only fetch tool schemas on first use) (deferred)
 
 ### Phase 4: MCP Server — Expose agents via relay — TODO
 - [ ] MCP server endpoint on the relay (`/mcp/:agentId`)

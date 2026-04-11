@@ -15,7 +15,8 @@ import { getAllPermissions, setPermission, DEFAULT_PERMISSIONS, type PermissionL
 import { hasPermission, hasHostPermissions } from '../../permissions.js';
 import { getFallbackModels, listProviders } from '../../agents/provider-registry.js';
 import { showOnboarding, resetOnboarding } from '../../ui/onboarding.js';
-import { refreshSettings, refreshUsage, refreshHooks } from '../../state/app-state.js';
+import { refreshSettings, refreshUsage, refreshHooks, refreshMcpServers } from '../../state/app-state.js';
+import type { McpServerEntry } from '../../mcp/config.js';
 
 // ── Helpers ──
 
@@ -66,6 +67,14 @@ export class ChaosGlobalSettingsView extends LitElement {
   // Archived agents
   @state() private _archivedAgents: ArchivedAgent[] = [];
 
+  // MCP servers
+  @state() private _mcpServers: McpServerEntry[] = [];
+  @state() private _mcpAddingServer = false;
+  @state() private _mcpNewName = '';
+  @state() private _mcpNewUrl = '';
+  @state() private _mcpNewApiKey = '';
+  @state() private _mcpTestResults: Record<string, string> = {};
+
   // Debug
   @state() private _debugVisible = false;
   @state() private _debugClickCount = 0;
@@ -103,6 +112,7 @@ export class ChaosGlobalSettingsView extends LitElement {
       this._loadBrowserPermissions(),
       this._loadToolPermissions(),
       this._loadArchivedAgents(),
+      this._loadMcpServers(),
       this._checkDebugMode(),
     ]);
   }
@@ -305,6 +315,78 @@ export class ChaosGlobalSettingsView extends LitElement {
         this._debugVisible = newVal;
         console.log(`[CHAOS] Debug mode ${newVal ? 'enabled' : 'disabled'}`);
       });
+    }
+  }
+
+  // ── MCP Server actions ──
+
+  private async _loadMcpServers(): Promise<void> {
+    try {
+      const result = await sendMsg<{ servers: McpServerEntry[] }>({ type: 'getMcpServers' });
+      this._mcpServers = result.servers || [];
+    } catch {
+      this._mcpServers = [];
+    }
+  }
+
+  private async _addMcpServer(): Promise<void> {
+    const name = this._mcpNewName.trim();
+    const url = this._mcpNewUrl.trim();
+    if (!name || !url) return;
+
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const server: McpServerEntry = {
+      id,
+      name,
+      url,
+      apiKey: this._mcpNewApiKey.trim() || undefined,
+      enabled: true,
+      global: true,
+    };
+
+    await sendMsg({ type: 'addMcpServer', server });
+    this._mcpNewName = '';
+    this._mcpNewUrl = '';
+    this._mcpNewApiKey = '';
+    this._mcpAddingServer = false;
+    await this._loadMcpServers();
+    await refreshMcpServers();
+    console.log(`[global-settings] Added MCP server: ${name}`);
+  }
+
+  private async _removeMcpServer(id: string): Promise<void> {
+    await sendMsg({ type: 'removeMcpServer', id });
+    await this._loadMcpServers();
+    await refreshMcpServers();
+    console.log(`[global-settings] Removed MCP server: ${id}`);
+  }
+
+  private async _toggleMcpServer(id: string, enabled: boolean): Promise<void> {
+    await sendMsg({ type: 'updateMcpServer', id, updates: { enabled } });
+    await this._loadMcpServers();
+    await refreshMcpServers();
+  }
+
+  private async _testMcpServer(server: McpServerEntry): Promise<void> {
+    this._mcpTestResults = { ...this._mcpTestResults, [server.id]: 'Testing...' };
+    try {
+      const result = await sendMsg<{ success: boolean; tools?: number; resources?: number; prompts?: number; error?: string }>({
+        type: 'testMcpServer',
+        server: { url: server.url, name: server.name, apiKey: server.apiKey, headers: server.headers },
+      });
+      if (result.success) {
+        this._mcpTestResults = {
+          ...this._mcpTestResults,
+          [server.id]: `Connected — ${result.tools} tools, ${result.resources} resources, ${result.prompts} prompts`,
+        };
+      } else {
+        this._mcpTestResults = { ...this._mcpTestResults, [server.id]: `Failed: ${result.error}` };
+      }
+    } catch (err) {
+      this._mcpTestResults = {
+        ...this._mcpTestResults,
+        [server.id]: `Failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   }
 
@@ -523,6 +605,7 @@ export class ChaosGlobalSettingsView extends LitElement {
           ${this._renderVoiceInput()}
           ${this._renderBrowserPermissions()}
           ${this._renderToolPermissions()}
+          ${this._renderMcpServers()}
           ${this._renderArchivedAgents()}
           ${this._renderSetup()}
         </div>
@@ -688,6 +771,74 @@ export class ChaosGlobalSettingsView extends LitElement {
           <button class="btn btn-primary" @click=${this._saveToolPermissions}>Save Permissions</button>
         </div>
       </details>
+    `;
+  }
+
+  private _renderMcpServers() {
+    return html`
+      <div class="settings-card" style="grid-column: 1 / -1;">
+        <h3>MCP Servers</h3>
+        <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:12px;">Connect to external MCP servers to give agents additional tools, resources, and prompts.</p>
+
+        ${this._mcpServers.length === 0 && !this._mcpAddingServer
+          ? html`<p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:12px;">No MCP servers configured.</p>`
+          : nothing
+        }
+
+        ${this._mcpServers.map(server => {
+          const testResult = this._mcpTestResults[server.id];
+          const isSuccess = testResult?.startsWith('Connected');
+          const isTesting = testResult === 'Testing...';
+          return html`
+            <div style="display:flex;flex-direction:column;gap:6px;padding:10px;margin-bottom:8px;border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-raised);">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="width:8px;height:8px;border-radius:50%;background:${server.enabled ? 'var(--success)' : 'var(--text-muted)'};"></span>
+                  <strong style="font-size:var(--text-sm);">${escapeHtml(server.name)}</strong>
+                  <span style="font-size:var(--text-xs);color:var(--text-muted);font-family:var(--font-mono);">${escapeHtml(server.url)}</span>
+                </div>
+                <div style="display:flex;gap:4px;align-items:center;">
+                  <button class="btn btn-xs" @click=${() => this._testMcpServer(server)} ?disabled=${isTesting}>
+                    ${isTesting ? 'Testing...' : 'Test'}
+                  </button>
+                  <button class="btn btn-xs" @click=${() => this._toggleMcpServer(server.id, !server.enabled)}>
+                    ${server.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                  <button class="btn btn-danger btn-xs" @click=${() => this._removeMcpServer(server.id)}>Remove</button>
+                </div>
+              </div>
+              ${testResult ? html`
+                <span style="font-size:var(--text-xs);color:${isSuccess ? 'var(--success-text)' : isTesting ? 'var(--text-secondary)' : 'var(--danger)'};">
+                  ${testResult}
+                </span>
+              ` : nothing}
+            </div>
+          `;
+        })}
+
+        ${this._mcpAddingServer ? html`
+          <div style="display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--accent);border-radius:6px;background:var(--bg-base);margin-bottom:8px;">
+            <input type="text" placeholder="Server name (e.g. GitHub)" .value=${this._mcpNewName}
+              @input=${(e: Event) => { this._mcpNewName = (e.target as HTMLInputElement).value; }}
+              style="padding:6px 10px;border:1px solid var(--border-default);border-radius:4px;background:var(--bg-raised);color:var(--text-primary);font-size:var(--text-sm);">
+            <input type="text" placeholder="URL (e.g. https://mcp.example.com/sse)" .value=${this._mcpNewUrl}
+              @input=${(e: Event) => { this._mcpNewUrl = (e.target as HTMLInputElement).value; }}
+              style="padding:6px 10px;border:1px solid var(--border-default);border-radius:4px;background:var(--bg-raised);color:var(--text-primary);font-size:var(--text-sm);">
+            <input type="password" placeholder="API key (optional)" .value=${this._mcpNewApiKey}
+              @input=${(e: Event) => { this._mcpNewApiKey = (e.target as HTMLInputElement).value; }}
+              style="padding:6px 10px;border:1px solid var(--border-default);border-radius:4px;background:var(--bg-raised);color:var(--text-primary);font-size:var(--text-sm);">
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-primary btn-sm" @click=${this._addMcpServer}>Add</button>
+              <button class="btn btn-sm" @click=${() => { this._mcpAddingServer = false; }}>Cancel</button>
+            </div>
+          </div>
+        ` : html`
+          <button class="btn btn-ghost" @click=${() => { this._mcpAddingServer = true; }}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add MCP Server
+          </button>
+        `}
+      </div>
     `;
   }
 

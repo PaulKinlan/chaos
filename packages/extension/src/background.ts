@@ -77,6 +77,13 @@ import {
   getMessageHandler,
 } from './channels/poller.js';
 import { getRelaySettings } from './channels/config.js';
+import {
+  getMcpServers,
+  addMcpServer,
+  removeMcpServer,
+  updateMcpServer,
+} from './mcp/config.js';
+import { McpClient } from './mcp/client.js';
 
 import { ChaosSDK } from '@chaos/sdk';
 import {
@@ -2204,6 +2211,55 @@ Generate 3-5 actions and 2-3 hook suggestions. Make them specific to what the us
       } catch (err) {
         console.error('[smart-start] Analysis failed, returning fallback:', err);
         return fallbackSuggestions;
+      }
+    }
+
+    // ── MCP Server management ──
+
+    case 'getMcpServers': {
+      const servers = await getMcpServers();
+      return { servers };
+    }
+
+    case 'addMcpServer': {
+      await addMcpServer(msg.server as import('./mcp/config.js').McpServerEntry);
+      return { ok: true };
+    }
+
+    case 'removeMcpServer': {
+      await removeMcpServer(msg.id as string);
+      return { ok: true };
+    }
+
+    case 'updateMcpServer': {
+      await updateMcpServer(
+        msg.id as string,
+        msg.updates as Partial<import('./mcp/config.js').McpServerEntry>,
+      );
+      return { ok: true };
+    }
+
+    case 'testMcpServer': {
+      const serverConfig = msg.server as { url: string; name: string; apiKey?: string; headers?: Record<string, string> };
+      const client = new McpClient({
+        url: serverConfig.url,
+        name: serverConfig.name,
+        apiKey: serverConfig.apiKey,
+        headers: serverConfig.headers,
+      });
+      try {
+        await client.connect();
+        let toolCount = 0;
+        let resourceCount = 0;
+        let promptCount = 0;
+        try { const tools = await client.listTools(); toolCount = tools.length; } catch { /* capability may not be supported */ }
+        try { const resources = await client.listResources(); resourceCount = resources.length; } catch { /* capability may not be supported */ }
+        try { const prompts = await client.listPrompts(); promptCount = prompts.length; } catch { /* capability may not be supported */ }
+        await client.disconnect();
+        return { success: true, tools: toolCount, resources: resourceCount, prompts: promptCount };
+      } catch (err) {
+        try { await client.disconnect(); } catch { /* ignore */ }
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
       }
     }
 

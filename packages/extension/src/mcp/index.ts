@@ -29,3 +29,14 @@ export {
   type McpInitializeResult,
   McpClient,
 } from './client.js';
+
+export {
+  type McpServerEntry,
+  getMcpServers,
+  saveMcpServers,
+  addMcpServer,
+  removeMcpServer,
+  updateMcpServer,
+} from './config.js';
+
+export { mcpToolsToAiTools } from './tool-bridge.js';

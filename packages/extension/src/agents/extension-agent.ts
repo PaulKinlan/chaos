@@ -16,6 +16,9 @@ import { tool } from 'ai';
 
 import { opfs } from '../storage/opfs.js';
 import { getAgentList, getApiKeys } from '../storage/chrome-storage.js';
+import { getMcpServers } from '../mcp/config.js';
+import { McpClient } from '../mcp/client.js';
+import { mcpToolsToAiTools } from '../mcp/tool-bridge.js';
 import { createLanguageModel, getProviderSearchTools } from './provider-registry.js';
 import { getAgentModelConfig } from './model-config.js';
 import { getCommunicationTools } from '../tools/communication/index.js';
@@ -573,6 +576,30 @@ export async function createExtensionAgent(
     ...getSkillTools(agentId),
     ...providerSearchTools,
   };
+
+  // 5b. Load MCP tools from configured servers
+  try {
+    const mcpServerConfigs = await getMcpServers();
+    for (const server of mcpServerConfigs.filter(s => s.enabled && (s.global || s.agentId === agentId))) {
+      try {
+        const client = new McpClient({
+          url: server.url,
+          name: server.name,
+          apiKey: server.apiKey,
+          headers: server.headers,
+        });
+        await client.connect();
+        const mcpTools = await client.listTools();
+        const prefix = `mcp_${server.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}_`;
+        Object.assign(unfilteredTools, mcpToolsToAiTools(client, mcpTools, prefix));
+        console.log(`[extension-agent] Loaded ${mcpTools.length} MCP tools from ${server.name}`);
+      } catch (err) {
+        console.warn(`[extension-agent] Failed to load MCP tools from ${server.name}:`, err);
+      }
+    }
+  } catch (err) {
+    console.warn('[extension-agent] Failed to load MCP server configs:', err);
+  }
 
   // 6. Filter tools by agent config
   let filteredTools = filterToolsByConfig(unfilteredTools, selfMeta);
