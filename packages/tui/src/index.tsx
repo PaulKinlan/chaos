@@ -85,6 +85,21 @@ Environment:
   );
 
   await waitUntilExit();
+
+  // Exit summary
+  const { loadSession: loadSess } = await import('./agent-manager.js');
+  const session = loadSess();
+  const startTime = Date.now();
+
+  console.log('\n\x1b[36m--- CHAOS TUI Session Summary ---\x1b[0m');
+  console.log(`Provider: ${provider}${modelId ? ` / ${modelId}` : ''}`);
+  console.log(`Working directory: ${process.cwd()}`);
+  if (session) {
+    console.log(`Columns: ${session.columns.length}`);
+    console.log(`Agents: ${[...new Set(session.columns.map(c => c.agentId))].join(', ')}`);
+  }
+  console.log(`Session saved to .chaos/session.json`);
+  console.log('\x1b[2mRestart with ./chaos-tui to resume.\x1b[0m\n');
 }
 
 main().catch((err) => {
