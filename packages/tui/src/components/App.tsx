@@ -28,18 +28,9 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
   const { stdout } = useStdout();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [termWidth, setTermWidth] = useState(stdout.columns || 120);
   const [nameInput, setNameInput] = useState<string | null>(null);
   const [nameBuffer, setNameBuffer] = useState('');
 
-  // Track terminal resize
-  useEffect(() => {
-    const onResize = () => setTermWidth(stdout.columns || 120);
-    stdout.on('resize', onResize);
-    return () => { stdout.off('resize', onResize); };
-  }, [stdout]);
-
-  // Create initial agents on mount
   useEffect(() => {
     const specs = initialAgents && initialAgents.length > 0
       ? initialAgents
@@ -59,13 +50,10 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       systemPrompt: systemPrompt || DEFAULT_SYSTEM,
       tools: { ...osTools },
       maxIterations: 20,
-      permissions: {
-        mode: 'accept-all',
-      },
+      permissions: { mode: 'accept-all' },
     });
   }
 
-  // Global key handling (tab, ctrl+n, ctrl+d)
   useInput((ch, key) => {
     // Name input mode
     if (nameInput !== null) {
@@ -74,7 +62,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const newAgent = makeAgent(id, name);
         setAgents(prev => [...prev, newAgent]);
-        setActiveIdx(agents.length); // Focus new agent
+        setActiveIdx(agents.length);
         setNameInput(null);
         setNameBuffer('');
         return;
@@ -95,7 +83,6 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       return;
     }
 
-    // Tab / Shift+Tab to switch columns
     if (key.tab) {
       if (key.shift) {
         setActiveIdx(prev => (prev - 1 + agents.length) % agents.length);
@@ -105,16 +92,14 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       return;
     }
 
-    // Ctrl+N — new agent (enter name mode)
     if (ch === 'n' && key.ctrl) {
       setNameInput('');
       setNameBuffer('');
       return;
     }
 
-    // Ctrl+D — delete focused agent
     if (ch === 'd' && key.ctrl) {
-      if (agents.length <= 1) return; // Keep at least one
+      if (agents.length <= 1) return;
       const idxToRemove = activeIdx;
       agents[idxToRemove]?.abort();
       setAgents(prev => prev.filter((_, i) => i !== idxToRemove));
@@ -123,11 +108,9 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     }
   });
 
-  // Calculate column widths
-  const colCount = agents.length;
-  const colWidth = colCount > 0 ? Math.floor(termWidth / Math.min(colCount, 3)) : termWidth;
-  // Show at most 3 columns, scrolling around active
+  // Show at most 3 columns at a time, scroll around active
   const maxVisible = 3;
+  const colCount = agents.length;
   let startIdx = 0;
   if (colCount > maxVisible) {
     startIdx = Math.max(0, Math.min(activeIdx - 1, colCount - maxVisible));
@@ -146,12 +129,12 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       {nameInput !== null && (
         <Box paddingX={1}>
           <Text color="yellow">New agent name: </Text>
-          <Text>{nameBuffer}<Text backgroundColor="yellow"> </Text></Text>
+          <Text>{nameBuffer}{'\u2588'}</Text>
           <Text dimColor> (Enter to create, Esc to cancel)</Text>
         </Box>
       )}
 
-      {/* Agent columns */}
+      {/* Agent columns — flexGrow + flexBasis=0 for equal width */}
       <Box flexGrow={1} flexDirection="row">
         {visibleAgents.length === 0 ? (
           <Box justifyContent="center" alignItems="center" flexGrow={1}>
@@ -163,7 +146,6 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
               key={agent.id}
               agent={agent}
               focused={startIdx + i === activeIdx}
-              width={colWidth}
             />
           ))
         )}

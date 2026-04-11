@@ -3,48 +3,40 @@
  * Shows agent name, conversation history, streaming output, and input.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Agent, ProgressEvent } from '@chaos/agent-loop';
+import type { Agent } from '@chaos/agent-loop';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
-  timestamp: Date;
 }
 
 interface AgentColumnProps {
   agent: Agent;
   focused: boolean;
-  width: number;
   onSubmit?: (agentId: string, message: string) => void;
 }
 
-export function AgentColumn({ agent, focused, width, onSubmit }: AgentColumnProps) {
+export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState('');
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [cursorPos, setCursorPos] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Handle keyboard input when focused
   useInput((ch, key) => {
     if (!focused) return;
 
     if (key.return && input.trim() && !busy) {
       const msg = input.trim();
       setInput('');
-      setCursorPos(0);
       handleSubmit(msg);
       return;
     }
 
     if (key.backspace || key.delete) {
-      if (cursorPos > 0) {
-        setInput(prev => prev.slice(0, cursorPos - 1) + prev.slice(cursorPos));
-        setCursorPos(prev => prev - 1);
-      }
+      setInput(prev => prev.slice(0, -1));
       return;
     }
 
@@ -55,10 +47,8 @@ export function AgentColumn({ agent, focused, width, onSubmit }: AgentColumnProp
       return;
     }
 
-    // Regular character input
     if (ch && !key.ctrl && !key.meta) {
-      setInput(prev => prev.slice(0, cursorPos) + ch + prev.slice(cursorPos));
-      setCursorPos(prev => prev + 1);
+      setInput(prev => prev + ch);
     }
   });
 
@@ -66,12 +56,7 @@ export function AgentColumn({ agent, focused, width, onSubmit }: AgentColumnProp
     setBusy(true);
     setStreaming('');
 
-    setMessages(prev => [...prev, {
-      role: 'user',
-      content: message,
-      timestamp: new Date(),
-    }]);
-
+    setMessages(prev => [...prev, { role: 'user', content: message }]);
     onSubmit?.(agent.id, message);
 
     try {
@@ -90,10 +75,10 @@ export function AgentColumn({ agent, focused, width, onSubmit }: AgentColumnProp
             break;
           case 'tool-call':
             currentTool = event.toolName || '';
-            setStreaming(`Using: ${currentTool}(${JSON.stringify(event.toolArgs).slice(0, 60)}...)`);
+            setStreaming(`[${currentTool}] ...`);
             break;
           case 'tool-result':
-            setStreaming(`${currentTool} done`);
+            setStreaming(`[${currentTool}] done`);
             break;
           case 'text':
             fullText += event.content;
@@ -111,7 +96,6 @@ export function AgentColumn({ agent, focused, width, onSubmit }: AgentColumnProp
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: fullText || '(no response)',
-        timestamp: new Date(),
       }]);
       setStreaming('');
     } catch (err) {
@@ -120,7 +104,6 @@ export function AgentColumn({ agent, focused, width, onSubmit }: AgentColumnProp
         setMessages(prev => [...prev, {
           role: 'system',
           content: `Error: ${errMsg}`,
-          timestamp: new Date(),
         }]);
       }
       setStreaming('');
@@ -130,66 +113,60 @@ export function AgentColumn({ agent, focused, width, onSubmit }: AgentColumnProp
     }
   }
 
-  // Truncate messages to fit visible area (keep last N)
-  const visibleMessages = messages.slice(-20);
+  const visibleMessages = messages.slice(-15);
+
+  // Build the input display string with a block cursor
+  const inputDisplay = focused
+    ? `> ${input}\u2588`
+    : '  (tab to focus)';
 
   return (
     <Box
       flexDirection="column"
-      width={width}
+      flexGrow={1}
+      flexBasis={0}
       borderStyle={focused ? 'bold' : 'single'}
       borderColor={focused ? 'cyan' : 'gray'}
       paddingX={1}
     >
       {/* Header */}
-      <Box justifyContent="space-between">
+      <Box>
         <Text bold color={focused ? 'cyan' : 'white'}>
           {agent.name}
         </Text>
+        <Text> </Text>
         <Text dimColor>
-          {busy ? 'working...' : 'idle'}
+          {busy ? '(working...)' : ''}
         </Text>
-      </Box>
-
-      <Box marginY={0}>
-        <Text dimColor>{'─'.repeat(Math.max(width - 4, 10))}</Text>
       </Box>
 
       {/* Messages */}
       <Box flexDirection="column" flexGrow={1}>
         {visibleMessages.map((msg, i) => (
-          <Box key={i} marginBottom={0}>
+          <Box key={i}>
             <Text
               color={msg.role === 'user' ? 'green' : msg.role === 'system' ? 'red' : 'white'}
-              wrap="wrap"
+              wrap="truncate-end"
             >
               {msg.role === 'user' ? '> ' : msg.role === 'system' ? '! ' : ''}
-              {msg.content.length > 200 ? msg.content.slice(0, 200) + '...' : msg.content}
+              {msg.content.length > 300 ? msg.content.slice(0, 300) + '...' : msg.content}
             </Text>
           </Box>
         ))}
 
-        {/* Streaming output */}
         {streaming && (
           <Box>
-            <Text color="yellow" wrap="wrap">
-              {streaming.length > 300 ? '...' + streaming.slice(-300) : streaming}
+            <Text color="yellow" wrap="truncate-end">
+              {streaming.length > 400 ? '...' + streaming.slice(-400) : streaming}
             </Text>
           </Box>
         )}
       </Box>
 
-      {/* Input */}
-      <Box marginTop={0}>
-        <Text dimColor>{'─'.repeat(Math.max(width - 4, 10))}</Text>
-      </Box>
-      <Box>
+      {/* Input — single static Text to avoid layout bounce */}
+      <Box borderTop borderStyle="single" borderColor="gray" borderBottom={false} borderLeft={false} borderRight={false}>
         <Text color={focused ? 'cyan' : 'gray'}>
-          {focused ? '> ' : '  '}
-        </Text>
-        <Text>
-          {input || (focused ? '' : '(tab to focus)')}
-          {focused && <Text backgroundColor="cyan"> </Text>}
+          {inputDisplay}
         </Text>
       </Box>
     </Box>
