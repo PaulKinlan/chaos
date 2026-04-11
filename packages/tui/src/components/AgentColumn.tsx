@@ -85,13 +85,13 @@ export function AgentColumn({ agent, agentId, columnId, focused, role }: AgentCo
       return;
     }
 
-    // Scroll: up/down arrows when input is empty
-    if (key.upArrow && !input) {
-      setScrollBack(prev => Math.min(prev + 3, Math.max(messages.length - 5, 0)));
+    // Scroll: Page Up/Down always work, Up/Down when input is empty
+    if (key.pageUp || (key.upArrow && !input)) {
+      setScrollBack(prev => Math.min(prev + (key.pageUp ? 10 : 3), Math.max(messages.length - 2, 0)));
       return;
     }
-    if (key.downArrow && !input) {
-      setScrollBack(prev => Math.max(prev - 3, 0));
+    if (key.pageDown || (key.downArrow && !input)) {
+      setScrollBack(prev => Math.max(prev - (key.pageDown ? 10 : 3), 0));
       return;
     }
 
@@ -100,10 +100,16 @@ export function AgentColumn({ agent, agentId, columnId, focused, role }: AgentCo
     }
   });
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages (only if already at bottom)
   useEffect(() => {
-    setScrollBack(0);
-  }, [messages.length]);
+    if (scrollBack === 0) {
+      // Already at bottom, stay there
+    } else {
+      // User has scrolled up — don't force them back down,
+      // but bump the scroll position to account for the new message
+      setScrollBack(prev => prev + 1);
+    }
+  }, [messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function persistConversation(msgs: Message[]) {
     const convoMessages: ConversationMessage[] = msgs

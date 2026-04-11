@@ -24,6 +24,7 @@ export function StatusBar({ agentCount, columnCount, activeIndex, provider, mode
         <Text dimColor>^W:close</Text>
         <Text dimColor>^E:edit</Text>
         <Text dimColor>^T:tools</Text>
+        <Text dimColor>PgUp/Dn:scroll</Text>
         <Text dimColor>Esc:abort</Text>
       </Box>
       <Box gap={1}>
