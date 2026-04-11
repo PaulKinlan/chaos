@@ -231,12 +231,12 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
                 </Text>
                 {showTools && msg.toolCalls.map((tc, j) => (
                   <Box key={j} flexDirection="column" marginLeft={1}>
-                    <Text color="magenta" wrap="wrap">
+                    <Text color="magenta" wrap="truncate-end">
                       {'* '}{tc.name}({tc.args})
                     </Text>
                     {tc.result && (
-                      <Text dimColor wrap="wrap">
-                        {'  -> '}{tc.result.length > 200 ? tc.result.slice(0, 200) + '...' : tc.result}
+                      <Text dimColor wrap="truncate-end">
+                        {'  -> '}{tc.result}
                       </Text>
                     )}
                   </Box>
@@ -251,12 +251,12 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
           <Box flexDirection="column" marginLeft={1}>
             {activeToolCalls.map((tc, i) => (
               <Box key={i} flexDirection="column" marginLeft={1}>
-                <Text color="magenta" wrap="wrap">
+                <Text color="magenta" wrap="truncate-end">
                   {tc.result !== undefined ? '* ' : '> '}{tc.name}({tc.args})
                 </Text>
                 {tc.result !== undefined && (
-                  <Text dimColor wrap="wrap">
-                    {'  -> '}{tc.result.length > 200 ? tc.result.slice(0, 200) + '...' : tc.result}
+                  <Text dimColor wrap="truncate-end">
+                    {'  -> '}{tc.result}
                   </Text>
                 )}
               </Box>
@@ -279,29 +279,36 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
   );
 }
 
+/** Format tool args as single-line key=value. No newlines allowed. */
 function formatArgs(args: unknown): string {
   if (!args) return '';
   try {
     if (typeof args === 'object') {
-      // Show key=value pairs instead of raw JSON
       const entries = Object.entries(args as Record<string, unknown>);
       const parts = entries.map(([k, v]) => {
-        const val = typeof v === 'string'
-          ? (v.length > 40 ? `"${v.slice(0, 37)}..."` : `"${v}"`)
-          : String(v);
+        let val: string;
+        if (typeof v === 'string') {
+          // Collapse to single line, truncate
+          const oneLine = v.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+          val = oneLine.length > 30 ? `"${oneLine.slice(0, 27)}..."` : `"${oneLine}"`;
+        } else {
+          val = String(v);
+        }
         return `${k}=${val}`;
       });
-      return parts.join(', ');
+      const result = parts.join(', ');
+      return result.length > 80 ? result.slice(0, 77) + '...' : result;
     }
-    return String(args).slice(0, 80);
-  } catch { return String(args).slice(0, 80); }
+    const s = String(args).replace(/\n/g, ' ').trim();
+    return s.length > 80 ? s.slice(0, 77) + '...' : s;
+  } catch { return '(...)'; }
 }
 
+/** Format tool result as single line. No newlines allowed. */
 function formatResult(result: unknown): string {
   if (result === undefined || result === null) return '(empty)';
   const str = typeof result === 'string' ? result : JSON.stringify(result, null, 0);
-  // Show first line or first 300 chars, whichever is shorter
-  const firstLine = str.split('\n')[0] || str;
-  if (firstLine.length > 300) return firstLine.slice(0, 297) + '...';
-  return firstLine;
+  // Collapse to single line
+  const oneLine = str.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+  return oneLine.length > 120 ? oneLine.slice(0, 117) + '...' : oneLine;
 }
