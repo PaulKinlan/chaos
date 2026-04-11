@@ -10,16 +10,8 @@ export interface SettingsStore {
   getMultiple<T>(keys: string[]): Promise<Record<string, T>>;
 }
 
-export interface MemoryStore {
-  read(agentId: string, path: string): Promise<string>;
-  write(agentId: string, path: string, content: string): Promise<void>;
-  append(agentId: string, path: string, content: string): Promise<void>;
-  delete(agentId: string, path: string): Promise<void>;
-  list(agentId: string, path?: string): Promise<FileEntry[]>;
-  mkdir(agentId: string, path: string): Promise<void>;
-  exists(agentId: string, path: string): Promise<boolean>;
-  search(agentId: string, pattern: string, path?: string): Promise<Array<{ path: string; line: string }>>;
-}
+// Re-exported from @chaos/agent-loop (canonical source)
+export type { MemoryStore } from '@chaos/agent-loop';
 
 export interface ConversationStore {
   get(agentId: string, conversationId: string): Promise<Conversation | undefined>;

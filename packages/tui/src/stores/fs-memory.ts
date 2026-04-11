@@ -6,7 +6,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { MemoryStore } from '@chaos/sdk/stores';
+import type { MemoryStore } from '@chaos/agent-loop';
 
 export function createFsMemoryStore(baseDir: string): MemoryStore {
   fs.mkdirSync(baseDir, { recursive: true });

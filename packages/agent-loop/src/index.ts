@@ -50,3 +50,6 @@ export type {
   OrchestratorConfig,
   Orchestrator,
 } from './orchestrator.js';
+
+// Store interfaces
+export type { MemoryStore, FileEntry } from './stores.js';

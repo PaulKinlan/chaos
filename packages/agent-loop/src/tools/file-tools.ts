@@ -8,7 +8,7 @@
 import { tool } from 'ai';
 import type { ToolSet } from 'ai';
 import { z } from 'zod';
-import type { MemoryStore } from '@chaos/sdk/stores';
+import type { MemoryStore } from '../stores.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const s = (schema: z.ZodType): any => schema;

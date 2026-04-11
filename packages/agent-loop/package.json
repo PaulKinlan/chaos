@@ -15,7 +15,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@chaos/sdk": "*",
     "ai": "^6.0.0",
     "zod": "^3.23.0"
   },
