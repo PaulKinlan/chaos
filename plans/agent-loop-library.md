@@ -26,14 +26,16 @@
 - [x] `src/usage.ts` — token tracking and cost estimation
 - [x] Tests: `tests/usage.test.ts`
 
-### Phase 6: Multi-Agent Orchestration — TODO
-- [ ] `createOrchestrator()` with master + worker agents
-- [ ] Delegation tools
-- [ ] Pluggable messaging interface
+### Phase 6: Multi-Agent Orchestration — DONE
+- [x] `createOrchestrator()` with master + worker agents
+- [x] Delegation tools (`delegate_task`, `list_agents`, `get_agent_status`)
+- [x] Pluggable messaging interface (with in-memory fallback)
+- [x] Tests: `tests/orchestrator.test.ts`
 
-### Phase 7: Migrate Extension — TODO
-- [ ] Extension replaces `agentic-loop.ts` / `loop.ts` with `@chaos/agent-loop` calls
-- [ ] Chrome-specific tools passed as custom tools
+### Phase 7: Migrate Extension — DONE
+- [x] Extension imports `createAgent` and types from `@chaos/agent-loop`
+- [x] Chrome-specific tools passed as custom tools
+- [x] Verified in `packages/extension/src/agents/extension-agent.ts`
 
 ### Phase 8: Tests + Documentation — PARTIAL
 - [x] Test suite for core modules (loop, file-tools, skills, hooks, permissions, usage)

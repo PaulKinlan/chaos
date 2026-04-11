@@ -19,6 +19,9 @@ export { createFileTools } from './tools/file-tools.js';
 // Usage
 export { UsageTracker, estimateCost, DEFAULT_PRICING } from './usage.js';
 
+// Orchestrator
+export { createOrchestrator } from './orchestrator.js';
+
 // Types
 export type {
   ProgressEvent,
@@ -41,3 +44,8 @@ export type {
   Agent,
   RunResult,
 } from './types.js';
+
+export type {
+  OrchestratorConfig,
+  Orchestrator,
+} from './orchestrator.js';
