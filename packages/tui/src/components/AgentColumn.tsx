@@ -238,15 +238,12 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
                   {showTools ? '[-]' : '[+]'} {msg.toolCalls.length} tool{msg.toolCalls.length !== 1 ? 's' : ''} (^T)
                 </Text>
                 {showTools && msg.toolCalls.map((tc, j) => (
-                  <Box key={j} flexDirection="column" marginLeft={1}>
-                    <Text color="magenta" wrap="truncate-end">
-                      {'* '}{tc.name}({tc.args})
+                  <Box key={j} marginLeft={1}>
+                    <Text wrap="truncate-end">
+                      <Text color="magenta">{'* '}{tc.name}</Text>
+                      <Text dimColor>({tc.args})</Text>
+                      {tc.result ? <Text dimColor>{' -> '}{tc.result}</Text> : null}
                     </Text>
-                    {tc.result && (
-                      <Text dimColor wrap="truncate-end">
-                        {'  -> '}{tc.result}
-                      </Text>
-                    )}
                   </Box>
                 ))}
               </Box>
@@ -258,15 +255,12 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
         {busy && activeToolCalls.length > 0 && showTools && (
           <Box flexDirection="column" marginLeft={1}>
             {activeToolCalls.map((tc, i) => (
-              <Box key={i} flexDirection="column" marginLeft={1}>
-                <Text color="magenta" wrap="truncate-end">
-                  {tc.result !== undefined ? '* ' : '> '}{tc.name}({tc.args})
+              <Box key={i} marginLeft={1}>
+                <Text wrap="truncate-end">
+                  <Text color="magenta">{tc.result !== undefined ? '* ' : '> '}{tc.name}</Text>
+                  <Text dimColor>({tc.args})</Text>
+                  {tc.result !== undefined ? <Text dimColor>{' -> '}{tc.result}</Text> : null}
                 </Text>
-                {tc.result !== undefined && (
-                  <Text dimColor wrap="truncate-end">
-                    {'  -> '}{tc.result}
-                  </Text>
-                )}
               </Box>
             ))}
           </Box>
