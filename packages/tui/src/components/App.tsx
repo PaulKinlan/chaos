@@ -23,6 +23,8 @@ import {
   createAgentInstance,
   deleteAgentMeta,
   listRoles,
+  saveSession,
+  loadSession,
   type AgentMeta,
 } from '../agent-manager.js';
 
@@ -34,10 +36,11 @@ interface AppProps {
 }
 
 interface Column {
-  id: string;          // unique column ID
-  agentId: string;     // which agent this column talks to
-  agent: Agent;        // agent instance
-  meta: AgentMeta;     // agent metadata
+  id: string;             // unique column ID
+  agentId: string;        // which agent this column talks to
+  conversationId: string; // conversation ID for persistence
+  agent: Agent;           // agent instance
+  meta: AgentMeta;        // agent metadata
 }
 
 type InputMode =
@@ -60,7 +63,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
 
   const roles = listRoles();
 
-  // Load agents and create one column per agent on startup
+  // Load agents and restore session on startup
   useEffect(() => {
     let registry = loadAgentRegistry();
 
@@ -79,23 +82,69 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     }
 
     const agentMap = new Map<string, { meta: AgentMeta; agent: Agent }>();
-    const cols: Column[] = [];
-
     for (const meta of registry) {
       const agent = createAgentInstance(meta, model);
       agentMap.set(meta.id, { meta, agent });
-      cols.push({ id: nextColId(), agentId: meta.id, agent, meta });
+    }
+
+    // Try to restore previous session layout
+    const session = loadSession();
+    const cols: Column[] = [];
+
+    if (session && session.columns.length > 0) {
+      for (const sc of session.columns) {
+        const entry = agentMap.get(sc.agentId);
+        if (entry) {
+          // Create a fresh agent instance per column (independent conversations)
+          const colAgent = createAgentInstance(entry.meta, model);
+          cols.push({
+            id: nextColId(),
+            agentId: sc.agentId,
+            conversationId: sc.conversationId,
+            agent: colAgent,
+            meta: entry.meta,
+          });
+        }
+      }
+      setActiveIdx(Math.min(session.activeIndex, cols.length - 1));
+    }
+
+    // If session restore produced no columns, create one per agent
+    if (cols.length === 0) {
+      for (const meta of registry) {
+        const entry = agentMap.get(meta.id);
+        if (entry) {
+          cols.push({
+            id: nextColId(),
+            agentId: meta.id,
+            conversationId: `convo-${Date.now()}-${meta.id}`,
+            agent: entry.agent,
+            meta,
+          });
+        }
+      }
     }
 
     setAgents(agentMap);
     setColumns(cols);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-save session whenever columns or active index change
+  useEffect(() => {
+    if (columns.length === 0) return;
+    saveSession({
+      columns: columns.map(c => ({ agentId: c.agentId, conversationId: c.conversationId })),
+      activeIndex: activeIdx,
+      savedAt: new Date().toISOString(),
+    });
+  }, [columns, activeIdx]);
+
   function addAgent(name: string, role: string): void {
     const meta = createAgentMeta(name, role);
     const agent = createAgentInstance(meta, model);
+    const convoId = `convo-${Date.now()}-${meta.id}`;
     setAgents(prev => new Map(prev).set(meta.id, { meta, agent }));
-    setColumns(prev => [...prev, { id: nextColId(), agentId: meta.id, agent, meta }]);
+    setColumns(prev => [...prev, { id: nextColId(), agentId: meta.id, conversationId: convoId, agent, meta }]);
     setActiveIdx(columns.length);
   }
 
@@ -111,6 +160,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     const newCol: Column = {
       id: nextColId(),
       agentId: current.agentId,
+      conversationId: `convo-${Date.now()}-${current.agentId}`,
       agent: newAgent,
       meta: entry.meta,
     };
@@ -281,6 +331,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
               agent={col.agent}
               agentId={col.agentId}
               columnId={col.id}
+              conversationId={col.conversationId}
               focused={mode.type === 'chat' && startIdx + i === activeIdx}
               role={col.meta.role}
             />

@@ -26,11 +26,12 @@ interface AgentColumnProps {
   agent: Agent;
   agentId: string;
   columnId: string;
+  conversationId: string;
   focused: boolean;
   role?: string;
 }
 
-export function AgentColumn({ agent, agentId, columnId, focused, role }: AgentColumnProps) {
+export function AgentColumn({ agent, agentId, columnId, conversationId, focused, role }: AgentColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState('');
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
@@ -38,9 +39,10 @@ export function AgentColumn({ agent, agentId, columnId, focused, role }: AgentCo
   const [busy, setBusy] = useState(false);
   const [showTools, setShowTools] = useState(true);
   const [queue, setQueue] = useState<string[]>([]);
-  const [scrollBack, setScrollBack] = useState(0); // 0 = at bottom (auto-scroll)
+  const [scrollBack, setScrollBack] = useState(0);
+  const [tokenCount, setTokenCount] = useState(0); // rough token estimate
   const abortRef = useRef<AbortController | null>(null);
-  const convoIdRef = useRef<string>(`convo-${Date.now()}-${columnId}`);
+  const convoIdRef = useRef<string>(conversationId);
   const processingRef = useRef(false);
 
   // Process queue when not busy
@@ -201,6 +203,8 @@ export function AgentColumn({ agent, agentId, columnId, focused, role }: AgentCo
         persistConversation(updated);
         return updated;
       });
+      // Rough token estimate: ~4 chars per token
+      setTokenCount(prev => prev + Math.ceil((message.length + fullText.length) / 4));
       setStreaming('');
       setActiveToolCalls([]);
 
@@ -243,8 +247,9 @@ export function AgentColumn({ agent, agentId, columnId, focused, role }: AgentCo
         <Text bold color={focused ? 'cyan' : 'white'}>{agent.name}</Text>
         {role && <Text dimColor> [{role}]</Text>}
         {busy && <Text color="yellow"> working</Text>}
-        {queue.length > 0 && <Text color="magenta"> +{queue.length} queued</Text>}
-        {scrollBack > 0 && <Text dimColor> [{scrollBack} up]</Text>}
+        {queue.length > 0 && <Text color="magenta"> +{queue.length}q</Text>}
+        {scrollBack > 0 && <Text dimColor> [{scrollBack}up]</Text>}
+        {tokenCount > 0 && <Text dimColor> ~{tokenCount > 1000 ? `${(tokenCount / 1000).toFixed(1)}k` : tokenCount}tok</Text>}
       </Box>
 
       {/* Messages */}

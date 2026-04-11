@@ -18,6 +18,7 @@ import { createFsMemoryStore } from './stores/fs-memory.js';
 
 const BASE_DIR = path.resolve(process.cwd(), '.chaos');
 const AGENTS_FILE = path.join(BASE_DIR, 'agents.json');
+const SESSION_FILE = path.join(BASE_DIR, 'session.json');
 
 export interface AgentMeta {
   id: string;
@@ -240,6 +241,43 @@ These operate on the project filesystem. Use them to explore and modify the code
     maxIterations: 20,
     permissions: { mode: 'accept-all' },
   });
+}
+
+// ── Session State ──
+
+export interface SessionColumn {
+  agentId: string;
+  conversationId: string;
+}
+
+export interface SessionState {
+  columns: SessionColumn[];
+  activeIndex: number;
+  savedAt: string;
+}
+
+export function saveSession(state: SessionState): void {
+  ensureDir(BASE_DIR);
+  fs.writeFileSync(SESSION_FILE, JSON.stringify(state, null, 2), 'utf-8');
+}
+
+export function loadSession(): SessionState | null {
+  if (!fs.existsSync(SESSION_FILE)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+export function loadConversation(agentId: string, conversationId: string): ConversationEntry | null {
+  const filePath = path.join(BASE_DIR, agentId, 'conversations', `${conversationId}.json`);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
 }
 
 export { listRoles };
