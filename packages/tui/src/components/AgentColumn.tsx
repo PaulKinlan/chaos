@@ -1,15 +1,22 @@
 /**
  * Agent Column — one vertical panel in the TUI.
- * Shows agent name, conversation history, streaming output, and input.
+ * Shows agent name, conversation history, streaming tool calls, and input.
  */
 
 import React, { useState, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Agent } from '@chaos/agent-loop';
+import type { Agent, ProgressEvent } from '@chaos/agent-loop';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
+}
+
+interface ToolCall {
+  name: string;
+  args: string;
+  result?: string;
+  expanded: boolean;
 }
 
 interface AgentColumnProps {
@@ -21,8 +28,10 @@ interface AgentColumnProps {
 export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState('');
+  const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showTools, setShowTools] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
   useInput((ch, key) => {
@@ -47,6 +56,12 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
       return;
     }
 
+    // Ctrl+T toggles tool call visibility
+    if (ch === 't' && key.ctrl) {
+      setShowTools(prev => !prev);
+      return;
+    }
+
     if (ch && !key.ctrl && !key.meta) {
       setInput(prev => prev + ch);
     }
@@ -55,6 +70,7 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
   async function handleSubmit(message: string) {
     setBusy(true);
     setStreaming('');
+    setToolCalls([]);
 
     setMessages(prev => [...prev, { role: 'user', content: message }]);
     onSubmit?.(agent.id, message);
@@ -64,7 +80,6 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
       abortRef.current = controller;
 
       let fullText = '';
-      let currentTool = '';
 
       for await (const event of agent.stream(message)) {
         if (controller.signal.aborted) break;
@@ -73,13 +88,27 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
           case 'thinking':
             setStreaming('Thinking...');
             break;
-          case 'tool-call':
-            currentTool = event.toolName || '';
-            setStreaming(`[${currentTool}] ...`);
+          case 'tool-call': {
+            const name = event.toolName || '?';
+            const argsStr = formatArgs(event.toolArgs);
+            setToolCalls(prev => [...prev, { name, args: argsStr, expanded: true }]);
+            setStreaming(`Using ${name}...`);
             break;
-          case 'tool-result':
-            setStreaming(`[${currentTool}] done`);
+          }
+          case 'tool-result': {
+            const resultStr = formatResult(event.toolResult);
+            setToolCalls(prev => {
+              const updated = [...prev];
+              if (updated.length > 0) {
+                updated[updated.length - 1] = {
+                  ...updated[updated.length - 1]!,
+                  result: resultStr,
+                };
+              }
+              return updated;
+            });
             break;
+          }
           case 'text':
             fullText += event.content;
             setStreaming(fullText);
@@ -113,9 +142,7 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
     }
   }
 
-  const visibleMessages = messages.slice(-15);
-
-  // Build the input display string with a block cursor
+  const visibleMessages = messages.slice(-10);
   const inputDisplay = focused
     ? `> ${input}\u2588`
     : '  (tab to focus)';
@@ -143,7 +170,7 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
       {/* Messages */}
       <Box flexDirection="column" flexGrow={1}>
         {visibleMessages.map((msg, i) => (
-          <Box key={i}>
+          <Box key={i} flexDirection="column">
             <Text
               color={msg.role === 'user' ? 'green' : msg.role === 'system' ? 'red' : 'white'}
               wrap="truncate-end"
@@ -154,16 +181,46 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
           </Box>
         ))}
 
-        {streaming && (
+        {/* Active tool calls — always visible during generation */}
+        {busy && toolCalls.length > 0 && (
+          <Box flexDirection="column" marginTop={0}>
+            <Box>
+              <Text dimColor>
+                {showTools ? '[-]' : '[+]'} {toolCalls.length} tool call{toolCalls.length !== 1 ? 's' : ''} (Ctrl+T toggle)
+              </Text>
+            </Box>
+            {showTools && toolCalls.map((tc, i) => (
+              <Box key={i} flexDirection="column" marginLeft={1}>
+                <Text color="magenta" wrap="truncate-end">
+                  {tc.result !== undefined ? '\u2713' : '\u25b6'} {tc.name}({tc.args})
+                </Text>
+                {tc.result !== undefined && (
+                  <Text dimColor wrap="truncate-end">
+                    {'  \u2192 '}{tc.result.length > 120 ? tc.result.slice(0, 120) + '...' : tc.result}
+                  </Text>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        {/* Streaming text */}
+        {streaming && !streaming.startsWith('Using ') && streaming !== 'Thinking...' && (
           <Box>
             <Text color="yellow" wrap="truncate-end">
               {streaming.length > 400 ? '...' + streaming.slice(-400) : streaming}
             </Text>
           </Box>
         )}
+
+        {streaming === 'Thinking...' && (
+          <Box>
+            <Text color="yellow">Thinking...</Text>
+          </Box>
+        )}
       </Box>
 
-      {/* Input — single static Text to avoid layout bounce */}
+      {/* Input */}
       <Box borderTop borderStyle="single" borderColor="gray" borderBottom={false} borderLeft={false} borderRight={false}>
         <Text color={focused ? 'cyan' : 'gray'}>
           {inputDisplay}
@@ -171,4 +228,22 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
       </Box>
     </Box>
   );
+}
+
+function formatArgs(args: unknown): string {
+  if (!args) return '';
+  if (typeof args === 'string') return args.slice(0, 80);
+  try {
+    const str = JSON.stringify(args);
+    if (str.length > 80) return str.slice(0, 77) + '...';
+    return str;
+  } catch {
+    return String(args).slice(0, 80);
+  }
+}
+
+function formatResult(result: unknown): string {
+  if (result === undefined || result === null) return '(empty)';
+  const str = typeof result === 'string' ? result : JSON.stringify(result);
+  return str;
 }
