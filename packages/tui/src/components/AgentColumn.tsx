@@ -7,7 +7,7 @@
 import React, { useState, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Agent } from '@chaos/agent-loop';
-import { saveConversation, type ConversationEntry } from '../agent-manager.js';
+import { saveConversation, type ConversationEntry, type ConversationMessage, type ConversationToolCall } from '../agent-manager.js';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -71,14 +71,28 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
     }
   });
 
-  function persistConversation(msgs: Message[]) {
+  function persistConversation(msgs: Message[], lastToolCalls?: ToolCall[]) {
+    const convoMessages: ConversationMessage[] = [];
+    for (const m of msgs) {
+      if (m.role === 'user' || m.role === 'assistant') {
+        const msg: ConversationMessage = { role: m.role, content: m.content, timestamp: m.timestamp };
+        // Attach tool calls to the last assistant message
+        if (m.role === 'assistant' && lastToolCalls && lastToolCalls.length > 0 && m === msgs[msgs.length - 1]) {
+          msg.toolCalls = lastToolCalls.map(tc => ({
+            name: tc.name,
+            args: tc.args,
+            result: tc.result,
+          }));
+        }
+        convoMessages.push(msg);
+      }
+    }
+
     const convo: ConversationEntry = {
       id: convoIdRef.current,
       agentId,
-      timestamp: msgs[0]?.timestamp || new Date().toISOString(),
-      messages: msgs
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content, timestamp: m.timestamp })),
+      timestamp: convoMessages[0]?.timestamp || new Date().toISOString(),
+      messages: convoMessages,
     };
     if (convo.messages.length > 0) {
       saveConversation(agentId, convo);
@@ -148,8 +162,8 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
       setMessages(updatedMessages);
       setStreaming('');
 
-      // Persist conversation after each exchange
-      persistConversation(updatedMessages);
+      // Persist conversation with tool calls
+      persistConversation(updatedMessages, toolCalls);
 
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

@@ -10,10 +10,11 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createAgent } from '@chaos/agent-loop';
+import { createAgent, createFileTools } from '@chaos/agent-loop';
 import type { Agent, AgentConfig } from '@chaos/agent-loop';
 import { getTemplate, listRoles } from './templates/index.js';
-import { createOsTools } from './tools.js';
+import { createProjectTools } from './tools.js';
+import { createFsMemoryStore } from './stores/fs-memory.js';
 
 const BASE_DIR = path.resolve(process.cwd(), '.chaos');
 const AGENTS_FILE = path.join(BASE_DIR, 'agents.json');
@@ -25,11 +26,24 @@ export interface AgentMeta {
   createdAt: string;
 }
 
+export interface ConversationToolCall {
+  name: string;
+  args: string;
+  result?: string;
+}
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  toolCalls?: ConversationToolCall[];
+}
+
 export interface ConversationEntry {
   id: string;
   agentId: string;
   timestamp: string;
-  messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: string }>;
+  messages: ConversationMessage[];
 }
 
 // ── Registry ──
@@ -140,31 +154,58 @@ export function listConversations(agentId: string): Array<{ id: string; timestam
 
 export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']): Agent {
   const claudeMd = readClaudeMd(meta.id);
-  const osTools = createOsTools();
-  const agentDir = path.resolve(BASE_DIR, meta.id);
 
-  // Append context about the agent's private storage location
-  const storageContext = `
+  // Memory tools — scoped to .chaos/{agentId}/ via MemoryStore
+  const memoryStore = createFsMemoryStore(BASE_DIR);
+  const memoryTools = createFileTools(memoryStore, meta.id);
+
+  // Project tools — read/write/search the working directory
+  const projectTools = createProjectTools();
+
+  const runtimeContext = `
 
 ## Runtime Context
 
-- **Working directory:** ${process.cwd()}
-- **Your private storage:** ${agentDir}/
-  - To read/write your own memory files, use paths like \`.chaos/${meta.id}/memories/user.md\`
-  - To read/write project files, use paths relative to the working directory
-- **Your CLAUDE.md:** \`.chaos/${meta.id}/CLAUDE.md\`
+You have TWO separate sets of file tools:
+
+### Memory Tools (your private storage)
+These operate on your private directory. Use them for your memories, TODO, people, ideas:
+- **read_file** — Read from your private storage (e.g. \`memories/user.md\`, \`TODO.md\`)
+- **write_file** — Write to your private storage
+- **edit_file** — Edit a file in your private storage
+- **list_directory** — List your private files
+- **delete_file** — Delete a file from your private storage
+- **grep_file** — Search your private files
+- **find_files** — Find files by pattern in your private storage
+
+### Project Tools (the working directory: ${process.cwd()})
+These operate on the project filesystem. Use them to explore and modify the codebase:
+- **project_read** — Read a project file
+- **project_list** — List project directory contents
+- **project_write** — Write a project file (ONLY when asked)
+- **project_edit** — Edit a project file (ONLY when asked)
+- **project_search** — Grep project files
+- **project_info** — Get project file metadata
+- **shell** — Run a shell command
+
+### IMPORTANT: When to use which
+- "My name is Paul" → Use **write_file** to save to \`memories/user.md\`
+- "What files are in this project?" → Use **project_list**
+- "Summarize this codebase" → Use **project_read** and **project_list**
+- "Remember that I prefer TypeScript" → Use **write_file** or **edit_file** on your CLAUDE.md
+- "Create a new file called app.ts" → Use **project_write** (only because the user asked)
 `;
 
   const systemPrompt = claudeMd
-    ? claudeMd + storageContext
-    : `You are ${meta.name}, a helpful assistant.${storageContext}`;
+    ? claudeMd + runtimeContext
+    : `You are ${meta.name}, a helpful assistant.${runtimeContext}`;
 
   return createAgent({
     id: meta.id,
     name: meta.name,
     model,
     systemPrompt,
-    tools: { ...osTools },
+    tools: { ...memoryTools, ...projectTools },
     maxIterations: 20,
     permissions: { mode: 'accept-all' },
   });

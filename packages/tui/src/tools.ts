@@ -1,7 +1,10 @@
 /**
- * OS-level tools for the TUI agent.
- * Provides filesystem access, shell execution, and directory browsing
- * scoped to the current working directory.
+ * Project-level tools for the TUI agent.
+ *
+ * These tools access the PROJECT filesystem (CWD) and shell.
+ * They are intentionally named with "project_" prefix to distinguish
+ * from the agent's private memory tools (read_file, write_file, etc.)
+ * which are provided by @chaos/agent-loop's createFileTools.
  */
 
 import { tool } from 'ai';
@@ -22,12 +25,16 @@ function safePath(p: string): string {
   return resolved;
 }
 
-export function createOsTools(): ToolSet {
+/**
+ * Create project-level tools — filesystem and shell access scoped to CWD.
+ * These are separate from the agent's private memory tools.
+ */
+export function createProjectTools(): ToolSet {
   return {
-    read_file: tool({
-      description: 'Read a file from the current directory.',
+    project_read: tool({
+      description: 'Read a file from the PROJECT directory (the working directory). Use this to read source code, configs, etc. — NOT for your own memory files.',
       inputSchema: s(z.object({
-        path: z.string().describe('File path relative to cwd'),
+        path: z.string().describe('File path relative to project root'),
       })),
       execute: async ({ path: filePath }: { path: string }) => {
         try {
@@ -44,28 +51,10 @@ export function createOsTools(): ToolSet {
       },
     }),
 
-    write_file: tool({
-      description: 'Write content to a file in the current directory.',
+    project_list: tool({
+      description: 'List files and directories in the PROJECT directory. Use this to explore the codebase.',
       inputSchema: s(z.object({
-        path: z.string().describe('File path relative to cwd'),
-        content: z.string().describe('File content'),
-      })),
-      execute: async ({ path: filePath, content }: { path: string; content: string }) => {
-        try {
-          const full = safePath(filePath);
-          fs.mkdirSync(path.dirname(full), { recursive: true });
-          fs.writeFileSync(full, content, 'utf-8');
-          return `Written ${content.length} bytes to ${filePath}`;
-        } catch (err) {
-          return `Error: ${err instanceof Error ? err.message : String(err)}`;
-        }
-      },
-    }),
-
-    list_directory: tool({
-      description: 'List files and directories in a path.',
-      inputSchema: s(z.object({
-        path: z.string().optional().describe('Directory path relative to cwd (default: ".")'),
+        path: z.string().optional().describe('Directory path relative to project root (default: ".")'),
       })),
       execute: async ({ path: dirPath }: { path?: string }) => {
         try {
@@ -80,8 +69,49 @@ export function createOsTools(): ToolSet {
       },
     }),
 
-    run_command: tool({
-      description: 'Run a shell command in the current directory. Use for git, npm, grep, etc.',
+    project_write: tool({
+      description: 'Write content to a file in the PROJECT directory. ONLY use when the user explicitly asks you to create or modify project files.',
+      inputSchema: s(z.object({
+        path: z.string().describe('File path relative to project root'),
+        content: z.string().describe('File content'),
+      })),
+      execute: async ({ path: filePath, content }: { path: string; content: string }) => {
+        try {
+          const full = safePath(filePath);
+          fs.mkdirSync(path.dirname(full), { recursive: true });
+          fs.writeFileSync(full, content, 'utf-8');
+          return `Written ${content.length} bytes to ${filePath}`;
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+    }),
+
+    project_edit: tool({
+      description: 'Edit a file in the PROJECT directory by replacing an exact string match. ONLY use when the user explicitly asks you to modify a file.',
+      inputSchema: s(z.object({
+        path: z.string().describe('File path relative to project root'),
+        old_string: z.string().describe('Exact text to find and replace'),
+        new_string: z.string().describe('Replacement text'),
+      })),
+      execute: async ({ path: filePath, old_string, new_string }: { path: string; old_string: string; new_string: string }) => {
+        try {
+          const full = safePath(filePath);
+          const content = fs.readFileSync(full, 'utf-8');
+          if (!content.includes(old_string)) {
+            return 'Error: old_string not found in file';
+          }
+          const updated = content.replace(old_string, new_string);
+          fs.writeFileSync(full, updated, 'utf-8');
+          return `Replaced ${old_string.length} chars in ${filePath}`;
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+    }),
+
+    shell: tool({
+      description: 'Run a shell command in the project directory. Use for git, npm, grep, find, etc. Prefer read-only commands unless the user asks for changes.',
       inputSchema: s(z.object({
         command: z.string().describe('Shell command to execute'),
         timeout: z.number().optional().describe('Timeout in ms (default 30000)'),
@@ -107,11 +137,11 @@ export function createOsTools(): ToolSet {
       },
     }),
 
-    search_files: tool({
-      description: 'Search file contents for a pattern using grep.',
+    project_search: tool({
+      description: 'Search file contents in the PROJECT directory for a pattern using grep.',
       inputSchema: s(z.object({
         pattern: z.string().describe('Search pattern (regex)'),
-        glob: z.string().optional().describe('File glob to search in (e.g. "**/*.ts")'),
+        glob: z.string().optional().describe('File glob to filter (e.g. "*.ts")'),
       })),
       execute: async ({ pattern, glob }: { pattern: string; glob?: string }) => {
         try {
@@ -127,10 +157,10 @@ export function createOsTools(): ToolSet {
       },
     }),
 
-    file_info: tool({
-      description: 'Get metadata about a file: size, modified time, type.',
+    project_info: tool({
+      description: 'Get metadata about a file in the PROJECT directory: size, modified time, type.',
       inputSchema: s(z.object({
-        path: z.string().describe('File path relative to cwd'),
+        path: z.string().describe('File path relative to project root'),
       })),
       execute: async ({ path: filePath }: { path: string }) => {
         try {
@@ -141,54 +171,7 @@ export function createOsTools(): ToolSet {
             size: stat.size,
             isDirectory: stat.isDirectory(),
             modified: stat.mtime.toISOString(),
-            created: stat.birthtime.toISOString(),
           }, null, 2);
-        } catch (err) {
-          return `Error: ${err instanceof Error ? err.message : String(err)}`;
-        }
-      },
-    }),
-
-    edit_file: tool({
-      description: 'Edit a file by replacing an exact string match.',
-      inputSchema: s(z.object({
-        path: z.string().describe('File path relative to cwd'),
-        old_string: z.string().describe('Exact text to find and replace'),
-        new_string: z.string().describe('Replacement text'),
-      })),
-      execute: async ({ path: filePath, old_string, new_string }: { path: string; old_string: string; new_string: string }) => {
-        try {
-          const full = safePath(filePath);
-          const content = fs.readFileSync(full, 'utf-8');
-          if (!content.includes(old_string)) {
-            return 'Error: old_string not found in file';
-          }
-          const updated = content.replace(old_string, new_string);
-          fs.writeFileSync(full, updated, 'utf-8');
-          return `Replaced ${old_string.length} chars in ${filePath}`;
-        } catch (err) {
-          return `Error: ${err instanceof Error ? err.message : String(err)}`;
-        }
-      },
-    }),
-
-    watch_directory: tool({
-      description: 'Get a snapshot of recent file changes in the current directory (last modified files).',
-      inputSchema: s(z.object({
-        count: z.number().optional().describe('Number of recent files to show (default 10)'),
-      })),
-      execute: async ({ count }: { count?: number }) => {
-        try {
-          const result = child_process.execSync(
-            `find . -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -printf '%T@ %p\\n' | sort -rn | head -${count || 10}`,
-            { cwd: CWD, encoding: 'utf-8', timeout: 10_000 },
-          );
-          const lines = result.trim().split('\n').map((line) => {
-            const [ts, ...pathParts] = line.split(' ');
-            const date = new Date(parseFloat(ts!) * 1000);
-            return `${date.toISOString().slice(0, 19)} ${pathParts.join(' ')}`;
-          });
-          return lines.join('\n') || '(no files)';
         } catch (err) {
           return `Error: ${err instanceof Error ? err.message : String(err)}`;
         }
