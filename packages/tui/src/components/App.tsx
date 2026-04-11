@@ -1,5 +1,14 @@
 /**
  * Main App — TweetDeck-style multi-agent TUI.
+ *
+ * Key concepts:
+ * - Agents persist in .chaos/agents.json and survive restarts
+ * - Columns are views into agents — multiple columns can use the same agent
+ * - Ctrl+N creates a new agent (name + role picker)
+ * - Ctrl+O opens a new column for the focused agent (new conversation)
+ * - Ctrl+W closes the focused column (agent stays)
+ * - Ctrl+D deletes the focused agent entirely
+ * - Messages queue when the agent is busy
  */
 
 import React, { useState, useEffect } from 'react';
@@ -24,27 +33,41 @@ interface AppProps {
   initialAgents?: Array<{ id: string; name: string; role?: string }>;
 }
 
+interface Column {
+  id: string;          // unique column ID
+  agentId: string;     // which agent this column talks to
+  agent: Agent;        // agent instance
+  meta: AgentMeta;     // agent metadata
+}
+
 type InputMode =
   | { type: 'chat' }
   | { type: 'new-name'; buffer: string }
   | { type: 'new-role'; name: string; roleIdx: number }
   | { type: 'editor'; agentId: string };
 
+let colCounter = 0;
+function nextColId(): string {
+  return `col-${++colCounter}`;
+}
+
 export function App({ model, provider, modelId, initialAgents }: AppProps) {
   const { stdout } = useStdout();
-  const [agents, setAgents] = useState<Array<{ meta: AgentMeta; agent: Agent }>>([]);
+  const [agents, setAgents] = useState<Map<string, { meta: AgentMeta; agent: Agent }>>(new Map());
+  const [columns, setColumns] = useState<Column[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [mode, setMode] = useState<InputMode>({ type: 'chat' });
 
   const roles = listRoles();
 
+  // Load agents and create one column per agent on startup
   useEffect(() => {
     let registry = loadAgentRegistry();
 
     if (initialAgents && initialAgents.length > 0) {
       for (const spec of initialAgents) {
         if (!registry.find(a => a.id === spec.id)) {
-          createAgentMeta(spec.name, spec.role || 'assistant');
+          createAgentMeta(spec.name, spec.role || 'master');
         }
       }
       registry = loadAgentRegistry();
@@ -55,43 +78,89 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       registry = loadAgentRegistry();
     }
 
-    const loaded = registry.map(meta => ({
-      meta,
-      agent: createAgentInstance(meta, model),
-    }));
-    setAgents(loaded);
+    const agentMap = new Map<string, { meta: AgentMeta; agent: Agent }>();
+    const cols: Column[] = [];
+
+    for (const meta of registry) {
+      const agent = createAgentInstance(meta, model);
+      agentMap.set(meta.id, { meta, agent });
+      cols.push({ id: nextColId(), agentId: meta.id, agent, meta });
+    }
+
+    setAgents(agentMap);
+    setColumns(cols);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addAgent(name: string, role: string): void {
     const meta = createAgentMeta(name, role);
     const agent = createAgentInstance(meta, model);
-    setAgents(prev => [...prev, { meta, agent }]);
-    setActiveIdx(agents.length);
+    setAgents(prev => new Map(prev).set(meta.id, { meta, agent }));
+    setColumns(prev => [...prev, { id: nextColId(), agentId: meta.id, agent, meta }]);
+    setActiveIdx(columns.length);
   }
 
-  function removeAgent(idx: number): void {
-    if (agents.length <= 1) return;
-    const entry = agents[idx];
-    if (entry) {
-      entry.agent.abort();
-      deleteAgentMeta(entry.meta.id);
-    }
-    setAgents(prev => prev.filter((_, i) => i !== idx));
-    setActiveIdx(prev => Math.min(prev, agents.length - 2));
+  function openNewColumn(): void {
+    // Open a new column for the currently focused agent
+    const current = columns[activeIdx];
+    if (!current) return;
+    const entry = agents.get(current.agentId);
+    if (!entry) return;
+
+    // Create a fresh agent instance for a new conversation
+    const newAgent = createAgentInstance(entry.meta, model);
+    const newCol: Column = {
+      id: nextColId(),
+      agentId: current.agentId,
+      agent: newAgent,
+      meta: entry.meta,
+    };
+
+    // Insert after the current column
+    setColumns(prev => {
+      const next = [...prev];
+      next.splice(activeIdx + 1, 0, newCol);
+      return next;
+    });
+    setActiveIdx(activeIdx + 1);
+  }
+
+  function closeColumn(): void {
+    if (columns.length <= 1) return;
+    setColumns(prev => prev.filter((_, i) => i !== activeIdx));
+    setActiveIdx(prev => Math.min(prev, columns.length - 2));
+  }
+
+  function deleteAgent(): void {
+    const current = columns[activeIdx];
+    if (!current) return;
+
+    // Close all columns for this agent
+    current.agent.abort();
+    deleteAgentMeta(current.agentId);
+    setAgents(prev => {
+      const next = new Map(prev);
+      next.delete(current.agentId);
+      return next;
+    });
+    setColumns(prev => {
+      const filtered = prev.filter(c => c.agentId !== current.agentId);
+      return filtered.length > 0 ? filtered : prev; // Keep at least one
+    });
+    setActiveIdx(prev => Math.min(prev, Math.max(columns.length - 2, 0)));
   }
 
   function reloadAgent(agentId: string): void {
-    setAgents(prev => prev.map(entry => {
-      if (entry.meta.id === agentId) {
-        entry.agent.abort();
-        return { meta: entry.meta, agent: createAgentInstance(entry.meta, model) };
-      }
-      return entry;
-    }));
+    const entry = agents.get(agentId);
+    if (!entry) return;
+    const newAgent = createAgentInstance(entry.meta, model);
+    setAgents(prev => new Map(prev).set(agentId, { meta: entry.meta, agent: newAgent }));
+    // Update all columns using this agent
+    setColumns(prev => prev.map(col =>
+      col.agentId === agentId ? { ...col, agent: newAgent } : col
+    ));
   }
 
   useInput((ch, key) => {
-    // Editor mode — Escape to close
     if (mode.type === 'editor') {
       if (key.escape) {
         reloadAgent(mode.agentId);
@@ -100,10 +169,9 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       return;
     }
 
-    // New agent — name entry
     if (mode.type === 'new-name') {
       if (key.return) {
-        const name = mode.buffer.trim() || `Agent ${agents.length + 1}`;
+        const name = mode.buffer.trim() || `Agent ${agents.size + 1}`;
         setMode({ type: 'new-role', name, roleIdx: 0 });
         return;
       }
@@ -118,7 +186,6 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       return;
     }
 
-    // New agent — role selection
     if (mode.type === 'new-role') {
       if (key.return) {
         addAgent(mode.name, roles[mode.roleIdx]!);
@@ -136,30 +203,33 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       return;
     }
 
-    // Chat mode keybindings
+    // Chat mode
     if (key.tab) {
       setActiveIdx(prev => key.shift
-        ? (prev - 1 + agents.length) % agents.length
-        : (prev + 1) % agents.length
+        ? (prev - 1 + columns.length) % columns.length
+        : (prev + 1) % columns.length
       );
       return;
     }
     if (ch === 'n' && key.ctrl) { setMode({ type: 'new-name', buffer: '' }); return; }
+    if (ch === 'o' && key.ctrl) { openNewColumn(); return; }
+    if (ch === 'w' && key.ctrl) { closeColumn(); return; }
     if (ch === 'e' && key.ctrl) {
-      const current = agents[activeIdx];
-      if (current) setMode({ type: 'editor', agentId: current.meta.id });
+      const current = columns[activeIdx];
+      if (current) setMode({ type: 'editor', agentId: current.agentId });
       return;
     }
-    if (ch === 'd' && key.ctrl) { removeAgent(activeIdx); return; }
+    if (ch === 'd' && key.ctrl) { deleteAgent(); return; }
   });
 
+  // Visible columns (max 3)
   const maxVisible = 3;
-  const colCount = agents.length;
+  const colCount = columns.length;
   let startIdx = 0;
   if (colCount > maxVisible) {
     startIdx = Math.max(0, Math.min(activeIdx - 1, colCount - maxVisible));
   }
-  const visibleAgents = agents.slice(startIdx, startIdx + maxVisible);
+  const visibleColumns = columns.slice(startIdx, startIdx + maxVisible);
 
   return (
     <Box flexDirection="column" height={stdout.rows || 40}>
@@ -198,18 +268,19 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
 
       {mode.type !== 'editor' && (
         <Box flexGrow={1} flexDirection="row">
-          {visibleAgents.length === 0 ? (
+          {visibleColumns.length === 0 ? (
             <Box justifyContent="center" alignItems="center" flexGrow={1}>
-              <Text dimColor>No agents. Press Ctrl+N to create one.</Text>
+              <Text dimColor>No columns. Press Ctrl+N to create an agent.</Text>
             </Box>
           ) : (
-            visibleAgents.map((entry, i) => (
+            visibleColumns.map((col, i) => (
               <AgentColumn
-                key={entry.meta.id}
-                agent={entry.agent}
-                agentId={entry.meta.id}
+                key={col.id}
+                agent={col.agent}
+                agentId={col.agentId}
+                columnId={col.id}
                 focused={mode.type === 'chat' && startIdx + i === activeIdx}
-                role={entry.meta.role}
+                role={col.meta.role}
               />
             ))
           )}
@@ -217,8 +288,9 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       )}
 
       <StatusBar
-        agentCount={colCount}
+        agentCount={agents.size}
         activeIndex={activeIdx}
+        columnCount={colCount}
         provider={provider}
         model={modelId}
         cwd={process.cwd()}

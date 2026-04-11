@@ -1,9 +1,10 @@
 /**
- * Agent Column — one vertical panel in the TUI.
- * Shows agent name, conversation with tool call history, and input.
+ * Agent Column — one conversation panel in the TUI.
+ * Multiple columns can share the same agent (different conversations).
+ * Supports message queuing — type while busy, messages execute in order.
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Agent } from '@chaos/agent-loop';
 import { saveConversation, type ConversationEntry, type ConversationMessage, type ConversationToolCall } from '../agent-manager.js';
@@ -24,28 +25,46 @@ interface Message {
 interface AgentColumnProps {
   agent: Agent;
   agentId: string;
+  columnId: string;
   focused: boolean;
   role?: string;
-  onSubmit?: (agentId: string, message: string) => void;
 }
 
-export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentColumnProps) {
+export function AgentColumn({ agent, agentId, columnId, focused, role }: AgentColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState('');
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [showTools, setShowTools] = useState(true);
+  const [queue, setQueue] = useState<string[]>([]);
+  const [scrollBack, setScrollBack] = useState(0); // 0 = at bottom (auto-scroll)
   const abortRef = useRef<AbortController | null>(null);
-  const convoIdRef = useRef<string>(`convo-${Date.now()}`);
+  const convoIdRef = useRef<string>(`convo-${Date.now()}-${columnId}`);
+  const processingRef = useRef(false);
+
+  // Process queue when not busy
+  useEffect(() => {
+    if (!busy && queue.length > 0 && !processingRef.current) {
+      const next = queue[0]!;
+      setQueue(prev => prev.slice(1));
+      processMessage(next);
+    }
+  }, [busy, queue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((ch, key) => {
     if (!focused) return;
 
-    if (key.return && input.trim() && !busy) {
+    if (key.return && input.trim()) {
       const msg = input.trim();
       setInput('');
-      handleSubmit(msg);
+
+      if (busy) {
+        // Queue the message
+        setQueue(prev => [...prev, msg]);
+      } else {
+        processMessage(msg);
+      }
       return;
     }
 
@@ -66,10 +85,25 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
       return;
     }
 
+    // Scroll: up/down arrows when input is empty
+    if (key.upArrow && !input) {
+      setScrollBack(prev => Math.min(prev + 3, Math.max(messages.length - 5, 0)));
+      return;
+    }
+    if (key.downArrow && !input) {
+      setScrollBack(prev => Math.max(prev - 3, 0));
+      return;
+    }
+
     if (ch && !key.ctrl && !key.meta) {
       setInput(prev => prev + ch);
     }
   });
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    setScrollBack(0);
+  }, [messages.length]);
 
   function persistConversation(msgs: Message[]) {
     const convoMessages: ConversationMessage[] = msgs
@@ -93,22 +127,25 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
     }
   }
 
-  async function handleSubmit(message: string) {
+  const processMessage = useCallback(async (message: string) => {
+    processingRef.current = true;
     setBusy(true);
     setStreaming('');
     setActiveToolCalls([]);
 
     const ts = new Date().toISOString();
     const userMsg: Message = { role: 'user', content: message, timestamp: ts };
-    setMessages(prev => [...prev, userMsg]);
-    onSubmit?.(agentId, message);
+
+    setMessages(prev => {
+      const updated = [...prev, userMsg];
+      return updated;
+    });
 
     const callsForThisTurn: ToolCall[] = [];
 
     try {
       const controller = new AbortController();
       abortRef.current = controller;
-
       let fullText = '';
 
       for await (const event of agent.stream(message)) {
@@ -146,19 +183,20 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
         }
       }
 
-      const responseTs = new Date().toISOString();
       const assistantMsg: Message = {
         role: 'assistant',
         content: fullText || '(no response)',
-        timestamp: responseTs,
+        timestamp: new Date().toISOString(),
         toolCalls: callsForThisTurn.length > 0 ? [...callsForThisTurn] : undefined,
       };
 
-      const updated = [...messages, userMsg, assistantMsg];
-      setMessages(updated);
+      setMessages(prev => {
+        const updated = [...prev, assistantMsg];
+        persistConversation(updated);
+        return updated;
+      });
       setStreaming('');
       setActiveToolCalls([]);
-      persistConversation(updated);
 
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -173,11 +211,15 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
       setActiveToolCalls([]);
     } finally {
       setBusy(false);
+      processingRef.current = false;
       abortRef.current = null;
     }
-  }
+  }, [agent, agentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visibleMessages = messages.slice(-10);
+  const maxVisible = 15;
+  const endIdx = messages.length - scrollBack;
+  const startMsgIdx = Math.max(0, endIdx - maxVisible);
+  const visibleMessages = messages.slice(startMsgIdx, endIdx);
   const inputDisplay = focused ? `> ${input}\u2588` : '  (tab to focus)';
 
   return (
@@ -194,11 +236,12 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
       <Box>
         <Text bold color={focused ? 'cyan' : 'white'}>{agent.name}</Text>
         {role && <Text dimColor> [{role}]</Text>}
-        <Text> </Text>
-        <Text dimColor>{busy ? '(working...)' : ''}</Text>
+        {busy && <Text color="yellow"> working</Text>}
+        {queue.length > 0 && <Text color="magenta"> +{queue.length} queued</Text>}
+        {scrollBack > 0 && <Text dimColor> [{scrollBack} up]</Text>}
       </Box>
 
-      {/* Messages with inline tool history */}
+      {/* Messages */}
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
         {visibleMessages.map((msg, i) => (
           <Box key={i} flexDirection="column">
@@ -210,11 +253,10 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
               {msg.content}
             </Text>
 
-            {/* Tool call history attached to assistant messages — toggleable with Ctrl+T */}
             {msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0 && (
               <Box flexDirection="column" marginLeft={1}>
                 <Text dimColor>
-                  {showTools ? '[-]' : '[+]'} {msg.toolCalls.length} tool{msg.toolCalls.length !== 1 ? 's' : ''} used
+                  {showTools ? '[-]' : '[+]'} {msg.toolCalls.length} tool{msg.toolCalls.length !== 1 ? 's' : ''} (^T)
                 </Text>
                 {showTools && msg.toolCalls.map((tc, j) => (
                   <Box key={j} flexDirection="column" marginLeft={1}>
@@ -233,7 +275,7 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
           </Box>
         ))}
 
-        {/* Active tool calls during generation */}
+        {/* Active tool calls */}
         {busy && activeToolCalls.length > 0 && (
           <Box flexDirection="column" marginLeft={1}>
             {activeToolCalls.map((tc, i) => (
@@ -251,18 +293,15 @@ export function AgentColumn({ agent, agentId, focused, role, onSubmit }: AgentCo
           </Box>
         )}
 
-        {/* Streaming text */}
         {streaming && !streaming.startsWith('Using ') && streaming !== 'Thinking...' && (
           <Text color="yellow" wrap="wrap">
             {streaming.length > 500 ? '...' + streaming.slice(-500) : streaming}
           </Text>
         )}
-        {streaming === 'Thinking...' && (
-          <Text color="yellow">Thinking...</Text>
-        )}
+        {streaming === 'Thinking...' && <Text color="yellow">Thinking...</Text>}
       </Box>
 
-      {/* Input */}
+      {/* Input — always accepting input, shows queue status */}
       <Box borderTop borderStyle="single" borderColor="gray" borderBottom={false} borderLeft={false} borderRight={false}>
         <Text color={focused ? 'cyan' : 'gray'} wrap="wrap">{inputDisplay}</Text>
       </Box>

@@ -1,5 +1,5 @@
 /**
- * Status Bar — bottom bar showing keybindings and agent count.
+ * Status Bar — bottom bar showing keybindings, agent/column count.
  */
 
 import React from 'react';
@@ -7,30 +7,28 @@ import { Box, Text } from 'ink';
 
 interface StatusBarProps {
   agentCount: number;
+  columnCount: number;
   activeIndex: number;
   provider: string;
   model: string;
   cwd: string;
 }
 
-export function StatusBar({ agentCount, activeIndex, provider, model, cwd }: StatusBarProps) {
+export function StatusBar({ agentCount, columnCount, activeIndex, provider, model }: StatusBarProps) {
   return (
     <Box justifyContent="space-between" paddingX={1}>
-      <Box gap={2}>
-        <Text dimColor>Tab: switch</Text>
-        <Text dimColor>^N: new</Text>
-        <Text dimColor>^D: del</Text>
-        <Text dimColor>^E: edit</Text>
-        <Text dimColor>^T: tools</Text>
-        <Text dimColor>Esc: abort</Text>
-        <Text dimColor>^C: quit</Text>
+      <Box gap={1}>
+        <Text dimColor>Tab:switch</Text>
+        <Text dimColor>^N:agent</Text>
+        <Text dimColor>^O:column</Text>
+        <Text dimColor>^W:close</Text>
+        <Text dimColor>^E:edit</Text>
+        <Text dimColor>^T:tools</Text>
+        <Text dimColor>Esc:abort</Text>
       </Box>
-      <Box gap={2}>
-        <Text dimColor>{cwd}</Text>
+      <Box gap={1}>
         <Text color="cyan">{provider}/{model}</Text>
-        <Text dimColor>
-          [{activeIndex + 1}/{agentCount}]
-        </Text>
+        <Text dimColor>[{activeIndex + 1}/{columnCount}col {agentCount}agt]</Text>
       </Box>
     </Box>
   );
