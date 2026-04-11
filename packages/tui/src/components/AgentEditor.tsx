@@ -14,6 +14,7 @@ import {
 } from '../agent-manager.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { PROVIDERS, type ProviderId } from '../model.js';
 
 interface AgentEditorProps {
   agentId: string;
@@ -21,13 +22,7 @@ interface AgentEditorProps {
 
 type Tab = 'claude' | 'memory' | 'conversations' | 'settings';
 
-const PROVIDERS = ['anthropic', 'google', 'openai', 'ollama'];
-const MODELS: Record<string, string[]> = {
-  anthropic: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
-  google: ['gemini-2.5-flash', 'gemini-2.5-pro'],
-  openai: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-5.4-mini'],
-  ollama: ['llama3.2', 'mistral', 'codellama'],
-};
+const PROVIDER_IDS = Object.keys(PROVIDERS) as ProviderId[];
 
 export function AgentEditor({ agentId }: AgentEditorProps) {
   const { stdout } = useStdout();
@@ -86,21 +81,24 @@ export function AgentEditor({ agentId }: AgentEditorProps) {
       if (key.leftArrow || key.rightArrow) {
         if (settingsCursor === 0) {
           // Cycle provider
-          const idx = PROVIDERS.indexOf(meta.provider || 'anthropic');
+          const idx = PROVIDER_IDS.indexOf((meta.provider || 'anthropic') as ProviderId);
           const next = key.rightArrow
-            ? PROVIDERS[(idx + 1) % PROVIDERS.length]!
-            : PROVIDERS[(idx - 1 + PROVIDERS.length) % PROVIDERS.length]!;
-          const updated = { ...meta, provider: next, model: MODELS[next]?.[0] || '' };
+            ? PROVIDER_IDS[(idx + 1) % PROVIDER_IDS.length]!
+            : PROVIDER_IDS[(idx - 1 + PROVIDER_IDS.length) % PROVIDER_IDS.length]!;
+          const providerConfig = PROVIDERS[next];
+          const updated = { ...meta, provider: next, model: providerConfig.defaultModel };
           updateAgentMeta(agentId, { provider: next, model: updated.model });
           setMeta(updated);
         } else if (settingsCursor === 1) {
           // Cycle model within current provider
-          const provider = meta.provider || 'anthropic';
-          const models = MODELS[provider] || [];
-          const idx = models.indexOf(meta.model || '');
-          const next = key.rightArrow
-            ? models[(idx + 1) % models.length]!
-            : models[(idx - 1 + models.length) % models.length]!;
+          const pid = (meta.provider || 'anthropic') as ProviderId;
+          const providerConfig = PROVIDERS[pid];
+          const models = providerConfig?.models || [];
+          const idx = models.findIndex(m => m.id === (meta.model || ''));
+          const nextIdx = key.rightArrow
+            ? (idx + 1) % models.length
+            : (idx - 1 + models.length) % models.length;
+          const next = models[nextIdx]?.id || providerConfig.defaultModel;
           updateAgentMeta(agentId, { model: next });
           setMeta({ ...meta, model: next });
         }
@@ -204,18 +202,25 @@ export function AgentEditor({ agentId }: AgentEditorProps) {
           <Text bold>Agent Settings</Text>
           <Text dimColor>Use left/right arrows to change, up/down to select</Text>
           <Box marginTop={1} flexDirection="column">
-            <Box>
-              <Text color={settingsCursor === 0 ? 'cyan' : 'white'}>
-                {settingsCursor === 0 ? '> ' : '  '}Provider: </Text>
-              <Text bold color="yellow">{meta.provider || '(default)'}</Text>
-              <Text dimColor>  {'<-  ->'}</Text>
-            </Box>
-            <Box>
-              <Text color={settingsCursor === 1 ? 'cyan' : 'white'}>
-                {settingsCursor === 1 ? '> ' : '  '}Model:    </Text>
-              <Text bold color="yellow">{meta.model || '(default)'}</Text>
-              <Text dimColor>  {'<-  ->'}</Text>
-            </Box>
+            {(() => {
+              const pid = (meta.provider || 'anthropic') as ProviderId;
+              const pc = PROVIDERS[pid];
+              const modelDisplay = pc?.models.find(m => m.id === meta.model)?.displayName || meta.model || pc?.defaultModel;
+              return (<>
+                <Box>
+                  <Text color={settingsCursor === 0 ? 'cyan' : 'white'}>
+                    {settingsCursor === 0 ? '> ' : '  '}Provider: </Text>
+                  <Text bold color="yellow">{pc?.displayName || pid}</Text>
+                  <Text dimColor>  {'<-  ->'}</Text>
+                </Box>
+                <Box>
+                  <Text color={settingsCursor === 1 ? 'cyan' : 'white'}>
+                    {settingsCursor === 1 ? '> ' : '  '}Model:    </Text>
+                  <Text bold color="yellow">{modelDisplay}</Text>
+                  <Text dimColor>  {'<-  ->'}</Text>
+                </Box>
+              </>);
+            })()}
           </Box>
           <Box marginTop={1} flexDirection="column">
             <Text dimColor>Name: {meta.name}</Text>
