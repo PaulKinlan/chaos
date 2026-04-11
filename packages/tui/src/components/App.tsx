@@ -17,6 +17,7 @@ import type { Agent, AgentConfig } from '@chaos/agent-loop';
 import { AgentColumn } from './AgentColumn.js';
 import { StatusBar } from './StatusBar.js';
 import { AgentEditor } from './AgentEditor.js';
+import { HooksPanel } from './HooksPanel.js';
 import {
   loadAgentRegistry,
   createAgentMeta,
@@ -52,7 +53,8 @@ type InputMode =
   | { type: 'chat' }
   | { type: 'new-name'; buffer: string }
   | { type: 'new-role'; name: string; roleIdx: number }
-  | { type: 'editor'; agentId: string };
+  | { type: 'editor'; agentId: string }
+  | { type: 'hooks' };
 
 let colCounter = 0;
 function nextColId(): string {
@@ -301,6 +303,12 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       return;
     }
 
+    if (mode.type === 'hooks') {
+      if (key.escape) { setMode({ type: 'chat' }); }
+      // All other input handled by HooksPanel
+      return;
+    }
+
     if (mode.type === 'new-name') {
       if (key.return) {
         const name = mode.buffer.trim() || `Agent ${agents.size + 1}`;
@@ -351,6 +359,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       if (current) setMode({ type: 'editor', agentId: current.agentId });
       return;
     }
+    if (ch === 'h' && key.ctrl) { setMode({ type: 'hooks' }); return; }
     if (ch === 'd' && key.ctrl) { deleteAgent(); return; }
   });
 
@@ -399,9 +408,15 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         </Box>
       )}
 
+      {mode.type === 'hooks' && (
+        <Box flexGrow={1} paddingX={1}>
+          <HooksPanel defaultAgentId={columns[activeIdx]?.agentId || 'assistant'} />
+        </Box>
+      )}
+
       {/* Columns — always rendered, hidden when editor is open */}
-      <Box flexGrow={mode.type === 'editor' ? 0 : 1} flexDirection="row"
-        display={mode.type === 'editor' ? 'none' : 'flex'}>
+      <Box flexGrow={mode.type === 'editor' || mode.type === 'hooks' ? 0 : 1} flexDirection="row"
+        display={mode.type === 'editor' || mode.type === 'hooks' ? 'none' : 'flex'}>
         {visibleColumns.length === 0 ? (
           <Box justifyContent="center" alignItems="center" flexGrow={1}>
             <Text dimColor>No columns. Press Ctrl+N to create an agent.</Text>
