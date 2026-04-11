@@ -260,32 +260,33 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         </Box>
       )}
 
+      {/* Editor overlays columns — columns stay mounted to preserve state */}
       {mode.type === 'editor' && (
         <Box flexGrow={1} paddingX={1}>
           <AgentEditor agentId={mode.agentId} />
         </Box>
       )}
 
-      {mode.type !== 'editor' && (
-        <Box flexGrow={1} flexDirection="row">
-          {visibleColumns.length === 0 ? (
-            <Box justifyContent="center" alignItems="center" flexGrow={1}>
-              <Text dimColor>No columns. Press Ctrl+N to create an agent.</Text>
-            </Box>
-          ) : (
-            visibleColumns.map((col, i) => (
-              <AgentColumn
-                key={col.id}
-                agent={col.agent}
-                agentId={col.agentId}
-                columnId={col.id}
-                focused={mode.type === 'chat' && startIdx + i === activeIdx}
-                role={col.meta.role}
-              />
-            ))
-          )}
-        </Box>
-      )}
+      {/* Columns — always rendered, hidden when editor is open */}
+      <Box flexGrow={mode.type === 'editor' ? 0 : 1} flexDirection="row"
+        display={mode.type === 'editor' ? 'none' : 'flex'}>
+        {visibleColumns.length === 0 ? (
+          <Box justifyContent="center" alignItems="center" flexGrow={1}>
+            <Text dimColor>No columns. Press Ctrl+N to create an agent.</Text>
+          </Box>
+        ) : (
+          visibleColumns.map((col, i) => (
+            <AgentColumn
+              key={col.id}
+              agent={col.agent}
+              agentId={col.agentId}
+              columnId={col.id}
+              focused={mode.type === 'chat' && startIdx + i === activeIdx}
+              role={col.meta.role}
+            />
+          ))
+        )}
+      </Box>
 
       <StatusBar
         agentCount={agents.size}
