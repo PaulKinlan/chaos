@@ -54,6 +54,17 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
   const convoIdRef = useRef<string>(conversationId);
   const processingRef = useRef(false);
   const historyRef = useRef<AgentHistoryMessage[]>([]);
+  const startupDoneRef = useRef(false);
+
+  // On first mount, run startup check (review TODO.md for pending items)
+  useEffect(() => {
+    if (!startupDoneRef.current) {
+      startupDoneRef.current = true;
+      setQueue(prev => [...prev,
+        'Read my TODO.md file. If there are active tasks (unchecked items), briefly list them and ask if I want you to work on any. If TODO.md is empty or all tasks are done, just say "No pending tasks." Keep it very short.'
+      ]);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Process queue when not busy
   useEffect(() => {
