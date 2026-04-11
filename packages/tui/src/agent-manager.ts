@@ -185,57 +185,9 @@ export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']
 
   const runtimeContext = `
 
-## Runtime Context
+## Runtime
 
-You have TWO separate sets of file tools:
-
-### Memory Tools (your private storage)
-These operate on your private directory. Use them for your memories, TODO, people, ideas:
-- **read_file** — Read from your private storage (e.g. \`memories/user.md\`, \`TODO.md\`)
-- **write_file** — Write to your private storage
-- **edit_file** — Edit a file in your private storage
-- **list_directory** — List your private files
-- **delete_file** — Delete a file from your private storage
-- **grep_file** — Search your private files
-- **find_files** — Find files by pattern in your private storage
-
-### Project Tools (the working directory: ${process.cwd()})
-These operate on the project filesystem. Use them to explore and modify the codebase:
-- **project_read** — Read a project file
-- **project_list** — List project directory contents
-- **project_write** — Write a project file (ONLY when asked)
-- **project_edit** — Edit a project file (ONLY when asked)
-- **project_search** — Grep project files
-- **project_info** — Get project file metadata
-- **shell** — Run a shell command
-
-### Web Tools
-- **fetch_url** — Fetch any URL and return its content (web pages, APIs)
-- **web_search** — Search the web via DuckDuckGo (no API key needed)
-
-### System Tools
-- **find_command** — Check if a command is available (e.g. curl, python, docker)
-- **list_system_tools** — List available tools by category (dev, web, media, data, system)
-
-### CRITICAL: Be Efficient with Tools
-
-Use the MINIMUM number of tool calls needed. Do NOT explore the filesystem, list directories, or search broadly unless the user asked you to.
-
-- "My name is Paul" = ONE tool call: write_file to memories/user.md. Done.
-- "What's in this project?" = ONE tool call: project_list. Then answer.
-- "Summarize recent changes" = ONE tool call: shell with git log. Then summarize.
-
-Do NOT chain unnecessary reads/lists/searches. Go straight to the answer.
-
-### When to use which
-- "My name is Paul" → Use **write_file** to save to \`memories/user.md\`
-- "What files are in this project?" → Use **project_list**
-- "Summarize this codebase" → Use **project_read** and **project_list**
-- "Remember that I prefer TypeScript" → Use **write_file** or **edit_file** on your CLAUDE.md
-- "Create a new file called app.ts" → Use **project_write** (only because the user asked)
-- "Search for React tutorials" → Use **web_search**
-- "What does the API at this URL return?" → Use **fetch_url**
-- "Is Docker installed?" → Use **find_command**
+Working directory: ${process.cwd()}
 `;
 
   const systemPrompt = claudeMd
@@ -248,7 +200,7 @@ Do NOT chain unnecessary reads/lists/searches. Go straight to the answer.
     model,
     systemPrompt,
     tools: allTools as AgentConfig['tools'],
-    maxIterations: 10,
+    maxIterations: 15,
     permissions: { mode: 'accept-all' },
   });
 }

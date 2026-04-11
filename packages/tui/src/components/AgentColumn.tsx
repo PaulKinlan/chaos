@@ -31,10 +31,13 @@ interface AgentColumnProps {
   role?: string;
 }
 
-/** Strip control characters that break terminal rendering */
+/** Strip control characters that break terminal rendering, keep printable text */
 function clean(str: string): string {
-  // Remove all control chars except newline and tab, replace tab with spaces
-  return str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').replace(/\t/g, '  ');
+  return str
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // remove control chars (keep \n \t \r)
+    .replace(/\t/g, '  ') // tabs to spaces
+    .replace(/\r\n/g, '\n') // normalize line endings
+    .replace(/\r/g, '\n');
 }
 
 export function AgentColumn({ agent, agentId, columnId, conversationId, focused, role }: AgentColumnProps) {
@@ -278,15 +281,27 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
 
 function formatArgs(args: unknown): string {
   if (!args) return '';
-  if (typeof args === 'string') return args.slice(0, 60);
   try {
-    const str = JSON.stringify(args);
-    return str.length > 60 ? str.slice(0, 57) + '...' : str;
-  } catch { return String(args).slice(0, 60); }
+    if (typeof args === 'object') {
+      // Show key=value pairs instead of raw JSON
+      const entries = Object.entries(args as Record<string, unknown>);
+      const parts = entries.map(([k, v]) => {
+        const val = typeof v === 'string'
+          ? (v.length > 40 ? `"${v.slice(0, 37)}..."` : `"${v}"`)
+          : String(v);
+        return `${k}=${val}`;
+      });
+      return parts.join(', ');
+    }
+    return String(args).slice(0, 80);
+  } catch { return String(args).slice(0, 80); }
 }
 
 function formatResult(result: unknown): string {
   if (result === undefined || result === null) return '(empty)';
-  const str = typeof result === 'string' ? result : JSON.stringify(result);
-  return str.length > 200 ? str.slice(0, 197) + '...' : str;
+  const str = typeof result === 'string' ? result : JSON.stringify(result, null, 0);
+  // Show first line or first 300 chars, whichever is shorter
+  const firstLine = str.split('\n')[0] || str;
+  if (firstLine.length > 300) return firstLine.slice(0, 297) + '...';
+  return firstLine;
 }
