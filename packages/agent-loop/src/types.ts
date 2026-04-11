@@ -156,12 +156,18 @@ export interface AgentConfig {
   signal?: AbortSignal;
 }
 
+// A message in conversation history
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 // Agent instance
 export interface Agent {
   readonly id: string;
   readonly name: string;
-  run(task: string, context?: string): Promise<string>;
-  stream(task: string, context?: string): AsyncIterable<ProgressEvent>;
+  run(task: string, context?: string, history?: ConversationMessage[]): Promise<string>;
+  stream(task: string, context?: string, history?: ConversationMessage[]): AsyncIterable<ProgressEvent>;
   abort(): void;
 }
 

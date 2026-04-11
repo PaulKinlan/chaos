@@ -6,7 +6,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Agent } from '@chaos/agent-loop';
+import type { Agent, ConversationMessage as AgentHistoryMessage } from '@chaos/agent-loop';
 import { saveConversation, type ConversationEntry, type ConversationMessage, type ConversationToolCall } from '../agent-manager.js';
 
 interface ToolCall {
@@ -53,6 +53,7 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
   const abortRef = useRef<AbortController | null>(null);
   const convoIdRef = useRef<string>(conversationId);
   const processingRef = useRef(false);
+  const historyRef = useRef<AgentHistoryMessage[]>([]);
 
   // Process queue when not busy
   useEffect(() => {
@@ -121,6 +122,9 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
     const userMsg: Message = { role: 'user', content: message, timestamp: ts };
     setMessages(prev => [...prev, userMsg]);
 
+    // Build conversation history for the agent (previous turns only)
+    const history = [...historyRef.current];
+
     const callsForThisTurn: ToolCall[] = [];
 
     try {
@@ -128,7 +132,7 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
       abortRef.current = controller;
       let fullText = '';
 
-      for await (const event of agent.stream(message)) {
+      for await (const event of agent.stream(message, undefined, history)) {
         if (controller.signal.aborted) break;
 
         switch (event.type) {
@@ -170,6 +174,10 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
         timestamp: new Date().toISOString(),
         toolCalls: callsForThisTurn.length > 0 ? [...callsForThisTurn] : undefined,
       };
+
+      // Update conversation history for future turns
+      historyRef.current.push({ role: 'user', content: message });
+      historyRef.current.push({ role: 'assistant', content: fullText || '(no response)' });
 
       setMessages(prev => {
         const updated = [...prev, assistantMsg];

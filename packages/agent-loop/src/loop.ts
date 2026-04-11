@@ -9,6 +9,7 @@
 import { streamText, stepCountIs, type ToolSet, type ModelMessage } from 'ai';
 import type {
   AgentConfig,
+  ConversationMessage,
   ProgressEvent,
   RunResult,
   RunUsage,
@@ -166,8 +167,9 @@ export async function runAgentLoop(
   config: AgentConfig,
   task: string,
   context?: string,
+  history?: ConversationMessage[],
 ): Promise<RunResult> {
-  return runAgentLoopDirect(config, task, context);
+  return runAgentLoopDirect(config, task, context, history);
 }
 
 /**
@@ -177,6 +179,7 @@ async function runAgentLoopDirect(
   config: AgentConfig,
   task: string,
   context?: string,
+  history?: ConversationMessage[],
 ): Promise<RunResult> {
   const maxIterations = config.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const innerStepLimit = config.innerStepLimit ?? DEFAULT_INNER_STEP_LIMIT;
@@ -193,8 +196,14 @@ async function runAgentLoopDirect(
   // Build system prompt
   const systemPrompt = await buildSystemPrompt(config, context);
 
-  // Message history
-  const messages: ModelMessage[] = [{ role: 'user', content: task }];
+  // Message history — prepend conversation history if provided
+  const messages: ModelMessage[] = [];
+  if (history) {
+    for (const msg of history) {
+      messages.push({ role: msg.role, content: msg.content } as ModelMessage);
+    }
+  }
+  messages.push({ role: 'user', content: task });
 
   let lastText = '';
   let aborted = false;
@@ -339,6 +348,7 @@ export async function* streamAgentLoop(
   config: AgentConfig,
   task: string,
   context?: string,
+  history?: ConversationMessage[],
 ): AsyncGenerator<ProgressEvent> {
   const maxIterations = config.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const innerStepLimit = config.innerStepLimit ?? DEFAULT_INNER_STEP_LIMIT;
@@ -355,8 +365,14 @@ export async function* streamAgentLoop(
   // Build system prompt
   const systemPrompt = await buildSystemPrompt(config, context);
 
-  // Message history
-  const messages: ModelMessage[] = [{ role: 'user', content: task }];
+  // Message history — prepend conversation history if provided
+  const messages: ModelMessage[] = [];
+  if (history) {
+    for (const msg of history) {
+      messages.push({ role: msg.role, content: msg.content } as ModelMessage);
+    }
+  }
+  messages.push({ role: 'user', content: task });
 
   let lastText = '';
   let aborted = false;

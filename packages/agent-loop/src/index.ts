@@ -43,6 +43,7 @@ export type {
   AgentConfig,
   Agent,
   RunResult,
+  ConversationMessage,
 } from './types.js';
 
 export type {
