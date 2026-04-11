@@ -27,6 +27,7 @@ import {
   loadSession,
   type AgentMeta,
 } from '../agent-manager.js';
+import { resolveModelFor } from '../model.js';
 
 interface AppProps {
   model: AgentConfig['model'];
@@ -199,14 +200,27 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     setActiveIdx(prev => Math.min(prev, Math.max(columns.length - 2, 0)));
   }
 
-  function reloadAgent(agentId: string): void {
-    const entry = agents.get(agentId);
-    if (!entry) return;
-    const newAgent = createAgentInstance(entry.meta, model);
-    setAgents(prev => new Map(prev).set(agentId, { meta: entry.meta, agent: newAgent }));
-    // Update all columns using this agent
+  async function reloadAgent(agentId: string): Promise<void> {
+    // Re-read meta from disk (may have changed in editor)
+    const registry = loadAgentRegistry();
+    const freshMeta = registry.find(a => a.id === agentId);
+    if (!freshMeta) return;
+
+    // Resolve per-agent model if configured, otherwise use default
+    let agentModel = model;
+    if (freshMeta.provider) {
+      try {
+        agentModel = await resolveModelFor(freshMeta.provider, freshMeta.model);
+      } catch (err) {
+        console.error(`Failed to resolve model for ${agentId}:`, err);
+        // Fall back to default model
+      }
+    }
+
+    const newAgent = createAgentInstance(freshMeta, agentModel);
+    setAgents(prev => new Map(prev).set(agentId, { meta: freshMeta, agent: newAgent }));
     setColumns(prev => prev.map(col =>
-      col.agentId === agentId ? { ...col, agent: newAgent } : col
+      col.agentId === agentId ? { ...col, agent: newAgent, meta: freshMeta } : col
     ));
   }
 

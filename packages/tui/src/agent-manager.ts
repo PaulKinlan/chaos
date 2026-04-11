@@ -25,6 +25,8 @@ export interface AgentMeta {
   name: string;
   role: string;
   createdAt: string;
+  provider?: string;            // per-agent model provider override
+  model?: string;               // per-agent model ID override
   enabledToolSets?: string[];   // which tool sets to enable: 'memory', 'project', 'web', 'system'
   disabledTools?: string[];     // specific tools to disable
 }
@@ -109,6 +111,14 @@ export function deleteAgentMeta(agentId: string): void {
   const registry = loadAgentRegistry().filter(a => a.id !== agentId);
   saveAgentRegistry(registry);
   // Don't delete files — preserve history
+}
+
+export function updateAgentMeta(agentId: string, updates: Partial<AgentMeta>): void {
+  const registry = loadAgentRegistry();
+  const idx = registry.findIndex(a => a.id === agentId);
+  if (idx === -1) return;
+  registry[idx] = { ...registry[idx]!, ...updates };
+  saveAgentRegistry(registry);
 }
 
 // ── CLAUDE.md ──
