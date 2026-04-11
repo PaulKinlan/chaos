@@ -214,13 +214,13 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
         {tokenCount > 0 && <Text dimColor> ~{tokenCount > 1000 ? `${(tokenCount / 1000).toFixed(1)}k` : tokenCount}tok</Text>}
       </Box>
 
-      {/* Messages */}
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+      {/* Messages — flexGrow fills available space, flexShrink allows compression, overflow clips */}
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} overflow="hidden">
         {visibleMessages.map((msg, i) => (
           <Box key={i} flexDirection="column">
             <Text color={msg.role === 'user' ? 'green' : msg.role === 'system' ? 'red' : 'white'} wrap="wrap">
               {msg.role === 'user' ? '> ' : msg.role === 'system' ? '! ' : ''}
-              {msg.content}
+              {msg.content.length > 1000 ? msg.content.slice(0, 1000) + '\n...(truncated, scroll up for full)' : msg.content}
             </Text>
 
             {/* Tool history on completed messages */}
@@ -271,9 +271,9 @@ export function AgentColumn({ agent, agentId, columnId, conversationId, focused,
         {streaming && streaming.startsWith('[') && <Text dimColor>{streaming}</Text>}
       </Box>
 
-      {/* Input */}
-      <Box borderTop borderStyle="single" borderColor="gray" borderBottom={false} borderLeft={false} borderRight={false}>
-        <Text color={focused ? 'cyan' : 'gray'} wrap="wrap">{inputDisplay}</Text>
+      {/* Input — flexShrink=0 ensures it's ALWAYS visible at the bottom */}
+      <Box flexShrink={0} borderTop borderStyle="single" borderColor="gray" borderBottom={false} borderLeft={false} borderRight={false}>
+        <Text color={focused ? 'cyan' : 'gray'} wrap="truncate-end">{inputDisplay}</Text>
       </Box>
     </Box>
   );
