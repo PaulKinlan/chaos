@@ -18,11 +18,12 @@ export function StatusBar({ agentCount, activeIndex, provider, model, cwd }: Sta
     <Box justifyContent="space-between" paddingX={1}>
       <Box gap={2}>
         <Text dimColor>Tab: switch</Text>
-        <Text dimColor>Ctrl+N: new</Text>
-        <Text dimColor>Ctrl+D: del</Text>
-        <Text dimColor>Ctrl+T: tools</Text>
+        <Text dimColor>^N: new</Text>
+        <Text dimColor>^D: del</Text>
+        <Text dimColor>^E: edit</Text>
+        <Text dimColor>^T: tools</Text>
         <Text dimColor>Esc: abort</Text>
-        <Text dimColor>Ctrl+C: quit</Text>
+        <Text dimColor>^C: quit</Text>
       </Box>
       <Box gap={2}>
         <Text dimColor>{cwd}</Text>

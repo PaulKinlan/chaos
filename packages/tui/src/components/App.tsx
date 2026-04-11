@@ -1,95 +1,156 @@
 /**
  * Main App — TweetDeck-style multi-agent TUI.
- * Manages agent columns, keyboard navigation, and agent lifecycle.
+ * Manages agent columns, keyboard navigation, agent lifecycle, and editing.
  */
 
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
-import { createAgent } from '@chaos/agent-loop';
 import type { Agent, AgentConfig } from '@chaos/agent-loop';
 import { AgentColumn } from './AgentColumn.js';
 import { StatusBar } from './StatusBar.js';
-import { createOsTools } from '../tools.js';
+import { AgentEditor } from './AgentEditor.js';
+import {
+  loadAgentRegistry,
+  createAgentMeta,
+  createAgentInstance,
+  deleteAgentMeta,
+  listRoles,
+  type AgentMeta,
+} from '../agent-manager.js';
 
 interface AppProps {
   model: AgentConfig['model'];
   provider: string;
   modelId: string;
-  initialAgents?: Array<{ id: string; name: string; systemPrompt?: string }>;
+  initialAgents?: Array<{ id: string; name: string; role?: string }>;
 }
 
-const DEFAULT_SYSTEM = `You are a helpful coding assistant running in a terminal.
-You have access to the local filesystem and can run shell commands.
-The current working directory is: ${process.cwd()}
-
-IMPORTANT RULES:
-- Be concise in your responses.
-- Use read-only tools (read_file, list_directory, search_files, file_info) freely to understand the codebase.
-- NEVER write, edit, or delete files unless the user explicitly asks you to.
-- NEVER run destructive commands (rm, git reset, etc.) unless explicitly asked.
-- When asked to make changes, explain what you'll do first, then do it.
-- For run_command, prefer read-only commands (git status, grep, find, cat) unless asked otherwise.`;
+type InputMode =
+  | { type: 'chat' }
+  | { type: 'new-name'; buffer: string }
+  | { type: 'new-role'; name: string; roleIdx: number }
+  | { type: 'editor'; agentId: string };
 
 export function App({ model, provider, modelId, initialAgents }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents] = useState<Array<{ meta: AgentMeta; agent: Agent }>>([]);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [nameInput, setNameInput] = useState<string | null>(null);
-  const [nameBuffer, setNameBuffer] = useState('');
+  const [mode, setMode] = useState<InputMode>({ type: 'chat' });
 
+  const roles = listRoles();
+
+  // Load or create initial agents
   useEffect(() => {
-    const specs = initialAgents && initialAgents.length > 0
-      ? initialAgents
-      : [{ id: 'assistant', name: 'Assistant' }];
+    let registry = loadAgentRegistry();
 
-    const created = specs.map((spec) => makeAgent(spec.id, spec.name, spec.systemPrompt));
-    setAgents(created);
+    // Create initial agents from --agent flags if they don't exist
+    if (initialAgents && initialAgents.length > 0) {
+      for (const spec of initialAgents) {
+        if (!registry.find(a => a.id === spec.id)) {
+          createAgentMeta(spec.name, spec.role || 'assistant');
+        }
+      }
+      registry = loadAgentRegistry();
+    }
+
+    // If no agents at all, create a default assistant
+    if (registry.length === 0) {
+      createAgentMeta('Assistant', 'assistant');
+      registry = loadAgentRegistry();
+    }
+
+    const loaded = registry.map(meta => ({
+      meta,
+      agent: createAgentInstance(meta, model),
+    }));
+    setAgents(loaded);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function makeAgent(id: string, name: string, systemPrompt?: string): Agent {
-    const osTools = createOsTools();
+  function addAgent(name: string, role: string): void {
+    const meta = createAgentMeta(name, role);
+    const agent = createAgentInstance(meta, model);
+    setAgents(prev => [...prev, { meta, agent }]);
+    setActiveIdx(agents.length);
+  }
 
-    return createAgent({
-      id,
-      name,
-      model,
-      systemPrompt: systemPrompt || DEFAULT_SYSTEM,
-      tools: { ...osTools },
-      maxIterations: 20,
-      permissions: { mode: 'accept-all' },
-    });
+  function removeAgent(idx: number): void {
+    if (agents.length <= 1) return;
+    const entry = agents[idx];
+    if (entry) {
+      entry.agent.abort();
+      deleteAgentMeta(entry.meta.id);
+    }
+    setAgents(prev => prev.filter((_, i) => i !== idx));
+    setActiveIdx(prev => Math.min(prev, agents.length - 2));
+  }
+
+  function reloadAgent(agentId: string): void {
+    setAgents(prev => prev.map(entry => {
+      if (entry.meta.id === agentId) {
+        entry.agent.abort();
+        return { meta: entry.meta, agent: createAgentInstance(entry.meta, model) };
+      }
+      return entry;
+    }));
   }
 
   useInput((ch, key) => {
-    // Name input mode
-    if (nameInput !== null) {
+    // Editor mode — Ctrl+E to close, all other input handled by editor
+    if (mode.type === 'editor') {
+      if (ch === 'e' && key.ctrl) {
+        // Reload agent with updated CLAUDE.md
+        reloadAgent(mode.agentId);
+        setMode({ type: 'chat' });
+      }
+      return;
+    }
+
+    // New agent — name entry
+    if (mode.type === 'new-name') {
       if (key.return) {
-        const name = nameBuffer.trim() || `Agent ${agents.length + 1}`;
-        const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        const newAgent = makeAgent(id, name);
-        setAgents(prev => [...prev, newAgent]);
-        setActiveIdx(agents.length);
-        setNameInput(null);
-        setNameBuffer('');
+        const name = mode.buffer.trim() || `Agent ${agents.length + 1}`;
+        setMode({ type: 'new-role', name, roleIdx: 0 });
         return;
       }
       if (key.escape) {
-        setNameInput(null);
-        setNameBuffer('');
+        setMode({ type: 'chat' });
         return;
       }
       if (key.backspace || key.delete) {
-        setNameBuffer(prev => prev.slice(0, -1));
+        setMode({ type: 'new-name', buffer: mode.buffer.slice(0, -1) });
         return;
       }
       if (ch && !key.ctrl && !key.meta) {
-        setNameBuffer(prev => prev + ch);
+        setMode({ type: 'new-name', buffer: mode.buffer + ch });
         return;
       }
       return;
     }
 
+    // New agent — role selection
+    if (mode.type === 'new-role') {
+      if (key.return) {
+        addAgent(mode.name, roles[mode.roleIdx]!);
+        setMode({ type: 'chat' });
+        return;
+      }
+      if (key.escape) {
+        setMode({ type: 'chat' });
+        return;
+      }
+      if (key.upArrow) {
+        setMode({ type: 'new-role', name: mode.name, roleIdx: (mode.roleIdx - 1 + roles.length) % roles.length });
+        return;
+      }
+      if (key.downArrow || key.tab) {
+        setMode({ type: 'new-role', name: mode.name, roleIdx: (mode.roleIdx + 1) % roles.length });
+        return;
+      }
+      return;
+    }
+
+    // Chat mode — global keybindings
     if (key.tab) {
       if (key.shift) {
         setActiveIdx(prev => (prev - 1 + agents.length) % agents.length);
@@ -100,22 +161,25 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     }
 
     if (ch === 'n' && key.ctrl) {
-      setNameInput('');
-      setNameBuffer('');
+      setMode({ type: 'new-name', buffer: '' });
+      return;
+    }
+
+    if (ch === 'e' && key.ctrl) {
+      const current = agents[activeIdx];
+      if (current) {
+        setMode({ type: 'editor', agentId: current.meta.id });
+      }
       return;
     }
 
     if (ch === 'd' && key.ctrl) {
-      if (agents.length <= 1) return;
-      const idxToRemove = activeIdx;
-      agents[idxToRemove]?.abort();
-      setAgents(prev => prev.filter((_, i) => i !== idxToRemove));
-      setActiveIdx(prev => Math.min(prev, agents.length - 2));
+      removeAgent(activeIdx);
       return;
     }
   });
 
-  // Show at most 3 columns at a time, scroll around active
+  // Visible columns
   const maxVisible = 3;
   const colCount = agents.length;
   let startIdx = 0;
@@ -132,31 +196,54 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         <Text dimColor>{process.cwd()}</Text>
       </Box>
 
-      {/* Name input overlay */}
-      {nameInput !== null && (
+      {/* Modal overlays */}
+      {mode.type === 'new-name' && (
         <Box paddingX={1}>
           <Text color="yellow">New agent name: </Text>
-          <Text>{nameBuffer}{'\u2588'}</Text>
-          <Text dimColor> (Enter to create, Esc to cancel)</Text>
+          <Text>{mode.buffer}{'\u2588'}</Text>
+          <Text dimColor> (Enter for role, Esc cancel)</Text>
         </Box>
       )}
 
-      {/* Agent columns — flexGrow + flexBasis=0 for equal width */}
-      <Box flexGrow={1} flexDirection="row">
-        {visibleAgents.length === 0 ? (
-          <Box justifyContent="center" alignItems="center" flexGrow={1}>
-            <Text dimColor>No agents. Press Ctrl+N to create one.</Text>
-          </Box>
-        ) : (
-          visibleAgents.map((agent, i) => (
-            <AgentColumn
-              key={agent.id}
-              agent={agent}
-              focused={startIdx + i === activeIdx}
-            />
-          ))
-        )}
-      </Box>
+      {mode.type === 'new-role' && (
+        <Box paddingX={1} flexDirection="column">
+          <Text color="yellow">Select role for "{mode.name}":</Text>
+          {roles.map((role, i) => (
+            <Box key={role} paddingLeft={2}>
+              <Text color={i === mode.roleIdx ? 'cyan' : 'white'}>
+                {i === mode.roleIdx ? '> ' : '  '}{role}
+              </Text>
+            </Box>
+          ))}
+          <Text dimColor>  (arrows to select, Enter to create)</Text>
+        </Box>
+      )}
+
+      {mode.type === 'editor' && (
+        <Box flexGrow={1} paddingX={1}>
+          <AgentEditor agentId={mode.agentId} />
+        </Box>
+      )}
+
+      {/* Agent columns */}
+      {mode.type !== 'editor' && (
+        <Box flexGrow={1} flexDirection="row">
+          {visibleAgents.length === 0 ? (
+            <Box justifyContent="center" alignItems="center" flexGrow={1}>
+              <Text dimColor>No agents. Press Ctrl+N to create one.</Text>
+            </Box>
+          ) : (
+            visibleAgents.map((entry, i) => (
+              <AgentColumn
+                key={entry.meta.id}
+                agent={entry.agent}
+                focused={mode.type === 'chat' && startIdx + i === activeIdx}
+                role={entry.meta.role}
+              />
+            ))
+          )}
+        </Box>
+      )}
 
       {/* Status bar */}
       <StatusBar

@@ -22,10 +22,11 @@ interface ToolCall {
 interface AgentColumnProps {
   agent: Agent;
   focused: boolean;
+  role?: string;
   onSubmit?: (agentId: string, message: string) => void;
 }
 
-export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
+export function AgentColumn({ agent, focused, role, onSubmit }: AgentColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState('');
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
@@ -161,6 +162,9 @@ export function AgentColumn({ agent, focused, onSubmit }: AgentColumnProps) {
         <Text bold color={focused ? 'cyan' : 'white'}>
           {agent.name}
         </Text>
+        {role && (
+          <Text dimColor> [{role}]</Text>
+        )}
         <Text> </Text>
         <Text dimColor>
           {busy ? '(working...)' : ''}
