@@ -99,6 +99,18 @@ These tools access the PROJECT filesystem — the codebase, config files, etc. U
 - **list_schedules** — List your scheduled tasks
 - **cancel_schedule** — Cancel a scheduled task by ID
 
+### Hook Tools (OS event triggers)
+- **hook_create** — Create a hook that triggers when an OS event occurs
+  - file-changed: watch a specific file for modifications
+  - directory-changed: watch a directory tree (with optional glob filter)
+  - git-commit: fires on new commits
+  - git-branch-switch: fires when branch changes
+  - env-changed: watch .env file
+  - url-changed: poll a URL for content changes
+  - cron: time-based trigger
+- **hook_list** — List all your hooks
+- **hook_delete** — Delete a hook by ID
+
 ### CRITICAL: Be Efficient
 
 Use the MINIMUM number of tool calls to get the job done. Do not explore, list, or search unless the task requires it.

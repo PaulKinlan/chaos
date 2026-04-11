@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import { createAgent, createFileTools } from '@chaos/agent-loop';
 import type { Agent, AgentConfig } from '@chaos/agent-loop';
 import { getTemplate, listRoles } from './templates/index.js';
-import { createProjectTools, createWebTools, createSystemTools, createScheduleTools } from './tools.js';
+import { createProjectTools, createWebTools, createSystemTools, createScheduleTools, createHookTools } from './tools.js';
 import { createFsMemoryStore } from './stores/fs-memory.js';
 
 const BASE_DIR = path.resolve(process.cwd(), '.chaos');
@@ -188,8 +188,9 @@ export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']
     Object.assign(allTools, createSystemTools());
   }
 
-  // Schedule tools always available
+  // Schedule and hook tools always available
   Object.assign(allTools, createScheduleTools(meta.id));
+  Object.assign(allTools, createHookTools(meta.id));
 
   // Provider-native tools (web search, bash, text editor, code execution, etc.)
   // Provider tools take priority — they're server-side and more capable.

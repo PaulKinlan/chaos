@@ -29,6 +29,7 @@ import {
 } from '../agent-manager.js';
 import { resolveModelFor, parseFlag, type ProviderId } from '../model.js';
 import { startScheduler, stopScheduler, type ScheduledTask } from '../scheduler.js';
+import { startHooks, stopHooks, type Hook } from '../hooks.js';
 import { getProviderTools } from '../provider-tools.js';
 
 interface AppProps {
@@ -163,6 +164,30 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     });
 
     return () => stopScheduler();
+  }, [model]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Start hooks for OS-level events
+  useEffect(() => {
+    startHooks((hook: Hook, context: string) => {
+      const registry = loadAgentRegistry();
+      const meta = registry.find(a => a.id === hook.agentId);
+      if (!meta) return;
+
+      const hookAgent = createAgentInstance(meta, model, nativeTools);
+      const convoId = `hook-${hook.id}-${Date.now()}`;
+      const prompt = `[Hook triggered: ${hook.description}]\n\nContext: ${context}\n\nInstructions: ${hook.prompt}`;
+
+      setColumns(prev => [...prev, {
+        id: nextColId(),
+        agentId: hook.agentId,
+        conversationId: convoId,
+        agent: hookAgent,
+        meta,
+        initialPrompt: prompt,
+      }]);
+    });
+
+    return () => stopHooks();
   }, [model]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save session whenever columns or active index change

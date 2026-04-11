@@ -340,6 +340,65 @@ export function createSystemTools(): ToolSet {
 /**
  * Schedule tools — agents can create recurring tasks.
  */
+/**
+ * Hook tools — agents can create OS-level event hooks.
+ */
+export function createHookTools(agentId: string): ToolSet {
+  return {
+    hook_create: tool({
+      description: 'Create a hook that triggers this agent when an OS event occurs. Supports: file-changed, directory-changed, git-commit, git-branch-switch, env-changed, url-changed, cron.',
+      inputSchema: s(z.object({
+        triggerType: z.enum(['file-changed', 'directory-changed', 'git-commit', 'git-branch-switch', 'env-changed', 'url-changed', 'cron']),
+        path: z.string().optional().describe('File or directory path (for file/directory/env triggers)'),
+        url: z.string().optional().describe('URL to monitor (for url-changed)'),
+        intervalMinutes: z.number().optional().describe('Poll interval in minutes (for url-changed and cron)'),
+        glob: z.string().optional().describe('File pattern filter (for directory-changed, e.g. "*.ts")'),
+        prompt: z.string().describe('What to do when the hook fires'),
+        description: z.string().describe('Human-readable description'),
+      })),
+      execute: async ({ triggerType, path: triggerPath, url, intervalMinutes, glob, prompt, description }: {
+        triggerType: string; path?: string; url?: string; intervalMinutes?: number; glob?: string; prompt: string; description: string;
+      }) => {
+        const { addHook: addH, startSingleHook } = await import('./hooks.js');
+        const hook = addH({
+          agentId,
+          trigger: { type: triggerType as import('./hooks.js').HookTriggerType, path: triggerPath, url, intervalMinutes, glob },
+          prompt,
+          description,
+        });
+        // Note: startSingleHook needs the callback which is set up in App.tsx
+        // The hook will start on next TUI restart, or when the engine picks it up
+        return `Hook created: "${description}" (trigger: ${triggerType}, id: ${hook.id})`;
+      },
+    }),
+
+    hook_list: tool({
+      description: 'List all hooks for this agent.',
+      inputSchema: s(z.object({})),
+      execute: async () => {
+        const { loadHooks: loadH } = await import('./hooks.js');
+        const all = loadH().filter((h: { agentId: string }) => h.agentId === agentId);
+        if (all.length === 0) return 'No hooks configured.';
+        return all.map((h: { enabled: boolean; description: string; trigger: { type: string }; id: string; triggerCount: number; lastTriggeredAt?: string }) =>
+          `[${h.enabled ? 'ON' : 'OFF'}] ${h.description} (${h.trigger.type}, id: ${h.id}, fired: ${h.triggerCount}x, last: ${h.lastTriggeredAt || 'never'})`
+        ).join('\n');
+      },
+    }),
+
+    hook_delete: tool({
+      description: 'Delete a hook by its ID.',
+      inputSchema: s(z.object({
+        id: z.string().describe('Hook ID to delete'),
+      })),
+      execute: async ({ id }: { id: string }) => {
+        const { removeHook: removeH } = await import('./hooks.js');
+        removeH(id);
+        return `Deleted hook ${id}`;
+      },
+    }),
+  };
+}
+
 export function createScheduleTools(agentId: string): ToolSet {
   return {
     schedule_task: tool({
