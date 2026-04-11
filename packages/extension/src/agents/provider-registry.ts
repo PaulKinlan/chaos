@@ -241,29 +241,33 @@ export function getProviderSearchTools(
         const google = createGoogleGenerativeAI({ apiKey });
         return {
           google_search: google.tools.googleSearch({}),
+          code_execution: google.tools.codeExecution({}),
+          url_context: google.tools.urlContext({}),
         } as ToolSet;
       }
       case 'openai': {
         const openai = createOpenAI({ apiKey });
         return {
-          web_search: openai.tools.webSearchPreview({}),
+          web_search: openai.tools.webSearch(),
         } as ToolSet;
       }
       case 'anthropic': {
-        const anthropic = createAnthropic({ apiKey });
+        const anthropic = createAnthropic({
+          apiKey,
+          headers: { 'anthropic-dangerous-direct-browser-access': 'true' },
+        });
         return {
-          web_search: anthropic.tools.webSearch_20260209({}),
+          web_search: anthropic.tools.webSearch_20260209(),
+          web_fetch: anthropic.tools.webFetch_20260209(),
+          code_execution: anthropic.tools.codeExecution_20260120(),
         } as ToolSet;
       }
       case 'openrouter':
-        // OpenRouter uses an OpenAI-compatible API but provider-specific
-        // tools may not be supported through the proxy. Skip gracefully.
         return {};
       default:
         return {};
     }
   } catch {
-    // If the provider doesn't support search tools, return empty
     return {};
   }
 }

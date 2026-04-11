@@ -165,7 +165,7 @@ export function listConversations(agentId: string): Array<{ id: string; timestam
 
 // ── Create Agent Instance ──
 
-export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']): Agent {
+export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model'], providerTools?: Record<string, unknown>): Agent {
   const claudeMd = readClaudeMd(meta.id);
 
   // Build tool sets based on agent config
@@ -190,6 +190,11 @@ export function createAgentInstance(meta: AgentMeta, model: AgentConfig['model']
 
   // Schedule tools always available
   Object.assign(allTools, createScheduleTools(meta.id));
+
+  // Provider-native tools (web search, code execution, etc.)
+  if (providerTools) {
+    Object.assign(allTools, providerTools);
+  }
 
   // Remove individually disabled tools
   for (const name of disabledTools) {

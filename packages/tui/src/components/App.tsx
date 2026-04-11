@@ -27,8 +27,9 @@ import {
   loadSession,
   type AgentMeta,
 } from '../agent-manager.js';
-import { resolveModelFor } from '../model.js';
+import { resolveModelFor, parseFlag, type ProviderId } from '../model.js';
 import { startScheduler, stopScheduler, type ScheduledTask } from '../scheduler.js';
+import { getProviderTools } from '../provider-tools.js';
 
 interface AppProps {
   model: AgentConfig['model'];
@@ -63,11 +64,18 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
   const [columns, setColumns] = useState<Column[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [mode, setMode] = useState<InputMode>({ type: 'chat' });
+  const [nativeTools, setNativeTools] = useState<Record<string, unknown>>({});
 
   const roles = listRoles();
 
-  // Load agents and restore session on startup
+  // Load provider tools and agents on startup
   useEffect(() => {
+    (async () => {
+    // Load native provider tools (web search, code execution, etc.)
+    const pid = (parseFlag('provider') || process.env.CHAOS_PROVIDER || 'anthropic') as ProviderId;
+    const tools = await getProviderTools(pid);
+    setNativeTools(tools);
+
     let registry = loadAgentRegistry();
 
     if (initialAgents && initialAgents.length > 0) {
@@ -86,7 +94,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
 
     const agentMap = new Map<string, { meta: AgentMeta; agent: Agent }>();
     for (const meta of registry) {
-      const agent = createAgentInstance(meta, model);
+      const agent = createAgentInstance(meta, model, tools);
       agentMap.set(meta.id, { meta, agent });
     }
 
@@ -98,8 +106,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       for (const sc of session.columns) {
         const entry = agentMap.get(sc.agentId);
         if (entry) {
-          // Create a fresh agent instance per column (independent conversations)
-          const colAgent = createAgentInstance(entry.meta, model);
+          const colAgent = createAgentInstance(entry.meta, model, tools);
           cols.push({
             id: nextColId(),
             agentId: sc.agentId,
@@ -130,6 +137,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
 
     setAgents(agentMap);
     setColumns(cols);
+    })(); // end async IIFE
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start scheduler for recurring tasks
@@ -140,7 +148,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       const meta = registry.find(a => a.id === task.agentId);
       if (!meta) return;
 
-      const taskAgent = createAgentInstance(meta, model);
+      const taskAgent = createAgentInstance(meta, model, nativeTools);
       const convoId = `sched-${task.id}-${Date.now()}`;
       const col: Column = {
         id: nextColId(),
@@ -169,7 +177,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
 
   function addAgent(name: string, role: string): void {
     const meta = createAgentMeta(name, role);
-    const agent = createAgentInstance(meta, model);
+    const agent = createAgentInstance(meta, model, nativeTools);
     const convoId = `convo-${Date.now()}-${meta.id}`;
     setAgents(prev => new Map(prev).set(meta.id, { meta, agent }));
     setColumns(prev => [...prev, { id: nextColId(), agentId: meta.id, conversationId: convoId, agent, meta }]);
@@ -184,7 +192,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     if (!entry) return;
 
     // Create a fresh agent instance for a new conversation
-    const newAgent = createAgentInstance(entry.meta, model);
+    const newAgent = createAgentInstance(entry.meta, model, nativeTools);
     const newCol: Column = {
       id: nextColId(),
       agentId: current.agentId,
@@ -244,7 +252,15 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       }
     }
 
-    const newAgent = createAgentInstance(freshMeta, agentModel);
+    // Load provider tools for this agent's provider
+    let agentNativeTools = nativeTools;
+    if (freshMeta.provider && freshMeta.provider !== (parseFlag('provider') || 'anthropic')) {
+      try {
+        agentNativeTools = await getProviderTools(freshMeta.provider as ProviderId);
+      } catch { /* fall back to default */ }
+    }
+
+    const newAgent = createAgentInstance(freshMeta, agentModel, agentNativeTools);
     setAgents(prev => new Map(prev).set(agentId, { meta: freshMeta, agent: newAgent }));
     setColumns(prev => prev.map(col =>
       col.agentId === agentId ? { ...col, agent: newAgent, meta: freshMeta } : col
