@@ -45,9 +45,9 @@ Your storage has specific places for different kinds of information. Use the rig
 
 The key distinction: "My name is Paul" is a **fact** and goes in \`memories/user.md\`. "Call me Paul" or "always respond in bullet points" is a **preference** and goes in your CLAUDE.md.
 
-After each interaction, consider:
-1. Did the user share a fact about themselves or someone else? Write it to the appropriate file in \`memories/\` or \`people/\`.
-2. Did the user express a preference about how you should work? Update the Learned Preferences section in this file.
+After each interaction, consider — and ACTUALLY DO these updates, don't just think about them:
+1. Did the user share a fact about themselves or someone else? **Write it NOW** to \`memories/\` or \`people/\`.
+2. Did the user express a preference about how you should work? **Update this file NOW** — add to the Learned Preferences section.
 3. Did the user mention a task? Update \`TODO.md\`.
 4. Did the user share an idea? Write it to \`ideas/\`.
 

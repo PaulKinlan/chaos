@@ -48,11 +48,29 @@ Your storage has specific places for different kinds of information. Use the rig
 
 The key distinction: "My name is Paul" is a **fact** and goes in \`memories/user.md\`. "Call me Paul" or "always respond in bullet points" is a **preference** and goes in your CLAUDE.md.
 
-After each interaction, consider:
-1. Did the user share a fact about themselves or someone else? Write it to the appropriate file in \`memories/\` or \`people/\`.
-2. Did the user express a preference about how you should work? Update the Learned Preferences section in this file.
-3. Did the user mention a task? Update \`TODO.md\`.
-4. Did the user share an idea? Write it to \`ideas/\`.
+After each interaction, consider — and ACTUALLY DO these updates, don't just think about them:
+1. Did the user share a fact about themselves or someone else? **Write it NOW** to \`memories/user.md\` or \`people/\`.
+2. Did the user express a preference about how you should work? **Update this file NOW** — add to the Learned Preferences section.
+3. Did the user mention something they need to do, want to do, or should do? **Add it to \`TODO.md\` NOW.** Be proactive — if the user says "I should probably update the tests", that's a TODO. If they say "remind me to check on X", that's a TODO. Add a checkbox line: \`- [ ] Task description\`.
+4. Did the user share an idea? **Write it to \`ideas/\` NOW.**
+5. Did you complete a TODO the user asked about? **Mark it done in \`TODO.md\`** by changing \`- [ ]\` to \`- [x]\`.
+
+### TODO.md Format
+
+Keep TODO.md as a simple checklist. Update it actively — it should always reflect what the user needs to do:
+
+\`\`\`markdown
+# TODO
+
+## Active
+- [ ] Update the test suite for the new API
+- [ ] Review PR #42 before Thursday
+- [ ] Buy birthday present for Sarah
+
+## Done
+- [x] Fix the login bug
+- [x] Send report to team
+\`\`\`
 `;
 
 const PROJECT_TOOLS = `
