@@ -588,7 +588,7 @@ export function createSecureViewer(
 
   // Render initial content
   const initialHtml = contentToHtml(rawContent, currentType);
-  const isInteractive = currentType === 'html' && /<script[\s>]/i.test(rawContent);
+  const isInteractive = currentType === 'html' || currentType === 'svg';
   if (isInteractive) {
     renderer.renderInteractive(initialHtml).catch(console.error);
   } else {
@@ -643,7 +643,7 @@ export function createSecureViewer(
       rawContent = newContent;
       if (newType) currentType = newType;
       const html = contentToHtml(rawContent, currentType);
-      const interactive = currentType === 'html' && /<script[\s>]/i.test(rawContent);
+      const interactive = currentType === 'html' || currentType === 'svg';
       if (interactive) {
         renderer.renderInteractive(html).catch(console.error);
       } else {
