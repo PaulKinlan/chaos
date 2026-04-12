@@ -1131,7 +1131,7 @@ function handlePortMessage(msg: Record<string, unknown>): void {
 
           const summary = document.createElement('summary');
           summary.className = 'step-summary';
-          summary.innerHTML = `<span class="step-badge">Step ${iteration}${totalIterations ? ' of ' + totalIterations : ''}</span><span class="step-status">working...</span>`;
+          summary.innerHTML = `<span class="step-badge">Step ${iteration}</span><span class="step-status">working...</span>`;
           details.appendChild(summary);
 
           const content = document.createElement('div');
@@ -1288,7 +1288,34 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         // Subtle separator - finalize step
         finalizeStepSummary(col);
       } else if (progressType === 'error') {
-        addChatErrorMessageToColumn(col, progressContent);
+        if (progressContent.includes('maximum') && progressContent.includes('iteration')) {
+          // Max iterations hit — show continue prompt instead of error
+          const continueEl = document.createElement('div');
+          continueEl.className = 'chat-message system-message';
+          continueEl.style.cssText = 'display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2);';
+          continueEl.innerHTML = `
+            <span style="color:var(--text-muted);font-size:var(--text-xs);">Agent paused at step limit.</span>
+            <button class="btn btn-primary btn-xs continue-btn">Continue</button>
+          `;
+          continueEl.querySelector('.continue-btn')!.addEventListener('click', () => {
+            continueEl.remove();
+            const textarea = col.columnEl.querySelector('.chat-input-area textarea') as HTMLTextAreaElement;
+            if (textarea) {
+              textarea.value = 'Continue working on the task from where you left off.';
+              textarea.dispatchEvent(new Event('input'));
+              // Auto-submit
+              textarea.form?.dispatchEvent(new Event('submit'));
+              if (!textarea.form) {
+                const submitBtn = col.columnEl.querySelector('.chat-submit-btn, .send-btn') as HTMLButtonElement;
+                submitBtn?.click();
+              }
+            }
+          });
+          col.messagesEl.appendChild(continueEl);
+          columnScrollToBottom(col);
+        } else {
+          addChatErrorMessageToColumn(col, progressContent);
+        }
       }
 
       // Feature: Show sub-agent activity in master's chat column
