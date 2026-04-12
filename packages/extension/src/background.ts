@@ -1526,10 +1526,12 @@ chrome.runtime.onMessage.addListener(
           channelType: 'agent',
           channelId: msg.agentId as string,
         });
-        // Refresh agent list so sidebar updates
-        listAgents().then(agents => {
-          try { uiPort.postMessage({ type: 'agentList', agents }); } catch { /* */ }
-        });
+        // Refresh agent list so sidebar updates (small delay for storage write to settle)
+        setTimeout(() => {
+          listAgents().then(agentsList => {
+            try { uiPort.postMessage({ type: 'agentList', agents: agentsList }); } catch { /* */ }
+          });
+        }, 500);
       } catch { /* */ }
       return false;
     }

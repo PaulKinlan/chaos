@@ -22,7 +22,10 @@ export class ChaosSidebar extends SignalWatcher(LitElement) {
 
   render() {
     const view = activeView.value;
-    const agentList = agents.value.filter(a => a.role !== 'archived');
+    const allAgents = agents.value.filter(a => a.role !== 'archived');
+    // Separate main agents from sub-agents
+    const mainAgents = allAgents.filter(a => !a.createdBy);
+    const subAgents = allAgents.filter(a => a.createdBy);
     const currentAgentId = activeAgentId.value;
 
     return html`
@@ -46,7 +49,15 @@ export class ChaosSidebar extends SignalWatcher(LitElement) {
             </button>
           </div>
           <div id="sidebar-agent-list">
-            ${agentList.map(agent => this._renderAgent(agent, currentAgentId))}
+            ${mainAgents.map(agent => html`
+              ${this._renderAgent(agent, currentAgentId)}
+              ${subAgents.filter(s => s.createdBy === agent.id).length > 0 ? html`
+                <div style="padding-left:12px;border-left:2px solid var(--border-subtle);margin-left:8px;">
+                  ${subAgents.filter(s => s.createdBy === agent.id).map(sub => this._renderAgent(sub, currentAgentId))}
+                </div>
+              ` : ''}
+            `)}
+            ${subAgents.filter(s => !mainAgents.find(m => m.id === s.createdBy)).map(orphan => this._renderAgent(orphan, currentAgentId))}
           </div>
         </div>
         <div class="sidebar-bottom">
