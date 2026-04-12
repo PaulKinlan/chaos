@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createFileTools } from '../src/tools/file-tools.js';
-import { InMemoryMemoryStore } from '@chaos/sdk/stores/in-memory';
+import { InMemoryMemoryStore } from '../src/stores/in-memory.js';
 
 describe('createFileTools', () => {
   let store: InMemoryMemoryStore;
