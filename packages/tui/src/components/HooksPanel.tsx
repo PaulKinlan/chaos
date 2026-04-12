@@ -163,14 +163,20 @@ export function HooksPanel({ defaultAgentId }: HooksPanelProps) {
         // Enter description
         if (key.return && createDesc.trim()) {
           const type = TRIGGER_TYPES[createType]!;
+          let trigger: import('../hooks.js').HookTrigger;
+          switch (type) {
+            case 'file-changed': trigger = { type, path: createPath }; break;
+            case 'directory-changed': trigger = { type, path: createPath || undefined }; break;
+            case 'env-changed': trigger = { type, path: createPath || undefined }; break;
+            case 'git-commit': trigger = { type }; break;
+            case 'git-branch-switch': trigger = { type }; break;
+            case 'url-changed': trigger = { type, url: createPath, intervalMinutes: parseInt(createInterval) || 5 }; break;
+            case 'cron': trigger = { type, intervalMinutes: parseInt(createInterval) || 60 }; break;
+            default: trigger = { type: 'cron', intervalMinutes: 60 };
+          }
           addHook({
             agentId: defaultAgentId,
-            trigger: {
-              type,
-              path: ['file-changed', 'directory-changed', 'env-changed'].includes(type) ? createPath : undefined,
-              url: type === 'url-changed' ? createPath : undefined,
-              intervalMinutes: type === 'cron' ? parseInt(createInterval) || 60 : type === 'url-changed' ? parseInt(createInterval) || 5 : undefined,
-            },
+            trigger,
             prompt: createPrompt,
             description: createDesc,
           });
@@ -209,7 +215,7 @@ export function HooksPanel({ defaultAgentId }: HooksPanelProps) {
                   {i === cursor ? '> ' : '  '}
                   <Text color={h.enabled ? 'green' : 'red'}>[{h.enabled ? 'ON' : 'OFF'}]</Text>
                   {' '}{h.description}
-                  <Text dimColor> ({h.trigger.type}{h.trigger.path ? `: ${h.trigger.path}` : ''}, fired: {h.triggerCount}x)</Text>
+                  <Text dimColor> ({h.trigger.type}{'path' in h.trigger && h.trigger.path ? `: ${h.trigger.path}` : ''}, fired: {h.triggerCount}x)</Text>
                 </Text>
               </Box>
             ))

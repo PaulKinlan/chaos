@@ -28,6 +28,10 @@ const HOOKS_FILE = path.join(BASE_DIR, 'hooks.json');
 
 // ── Types ──
 
+import type { Hook, HookTrigger } from '@chaos/sdk';
+
+export type { Hook, HookTrigger };
+
 export type HookTriggerType =
   | 'file-changed'
   | 'directory-changed'
@@ -37,27 +41,6 @@ export type HookTriggerType =
   | 'url-changed'
   | 'cron'
   | 'command-exit';
-
-export interface HookTrigger {
-  type: HookTriggerType;
-  path?: string;          // For file/directory triggers
-  url?: string;           // For url-changed
-  intervalMinutes?: number; // For cron
-  command?: string;       // For command-exit
-  glob?: string;          // Filter for directory-changed
-}
-
-export interface Hook {
-  id: string;
-  agentId: string;
-  trigger: HookTrigger;
-  prompt: string;         // What the agent should do when triggered
-  description: string;
-  enabled: boolean;
-  createdAt: string;
-  triggerCount: number;
-  lastTriggeredAt?: string;
-}
 
 // ── Persistence ──
 

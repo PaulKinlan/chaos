@@ -20,36 +20,21 @@ const BASE_DIR = path.resolve(process.cwd(), '.chaos');
 const AGENTS_FILE = path.join(BASE_DIR, 'agents.json');
 const SESSION_FILE = path.join(BASE_DIR, 'session.json');
 
-export interface AgentMeta {
-  id: string;
-  name: string;
-  role: string;
-  createdAt: string;
-  provider?: string;            // per-agent model provider override
-  model?: string;               // per-agent model ID override
-  enabledToolSets?: string[];   // which tool sets to enable: 'memory', 'project', 'web', 'system'
-  disabledTools?: string[];     // specific tools to disable
+import type {
+  AgentMeta as SdkAgentMeta,
+  Conversation,
+  ConversationMessage,
+} from '@chaos/sdk';
+
+// Extend SDK AgentMeta with TUI-specific fields
+export interface AgentMeta extends SdkAgentMeta {
+  enabledToolSets?: string[];
 }
 
-export interface ConversationToolCall {
-  name: string;
-  args: string;
-  result?: string;
-}
-
-export interface ConversationMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-  toolCalls?: ConversationToolCall[];
-}
-
-export interface ConversationEntry {
-  id: string;
-  agentId: string;
-  timestamp: string;
-  messages: ConversationMessage[];
-}
+// Re-export SDK types
+export type { ConversationMessage };
+export type ConversationToolCall = NonNullable<ConversationMessage['toolCalls']>[number];
+export type ConversationEntry = Conversation;
 
 // ── Registry ──
 
@@ -80,6 +65,7 @@ export function createAgentMeta(name: string, role: string): AgentMeta {
     id,
     name,
     role,
+    visibility: 'visible',
     createdAt: new Date().toISOString(),
   };
 

@@ -62,7 +62,16 @@ export type HookTrigger =
   | { type: 'window-closed' }
   | { type: 'context-menu'; label: string }
   | { type: 'clipboard-changed' }
-  | { type: 'filesystem-changed'; path?: string };
+  | { type: 'filesystem-changed'; path?: string }
+  // OS-level triggers (TUI / CLI)
+  | { type: 'file-changed'; path: string }
+  | { type: 'directory-changed'; path?: string; glob?: string }
+  | { type: 'git-commit' }
+  | { type: 'git-branch-switch' }
+  | { type: 'env-changed'; path?: string }
+  | { type: 'url-changed'; url: string; intervalMinutes?: number }
+  | { type: 'cron'; intervalMinutes: number }
+  | { type: 'command-exit'; command?: string };
 
 // Channels
 export type ChannelDirection = 'inbound' | 'bidirectional';
@@ -130,6 +139,7 @@ export interface ConversationMessage {
   content: string;
   timestamp: string;
   progress?: ProgressEntry[];
+  toolCalls?: Array<{ name: string; args: string; result?: string }>;
 }
 
 export interface ProgressEntry {

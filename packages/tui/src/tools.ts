@@ -407,13 +407,19 @@ export function createHookTools(agentId: string): ToolSet {
       execute: async ({ triggerType, path: triggerPath, url, intervalMinutes, glob, prompt, description }: {
         triggerType: string; path?: string; url?: string; intervalMinutes?: number; glob?: string; prompt: string; description: string;
       }) => {
-        const { addHook: addH, startSingleHook } = await import('./hooks.js');
-        const hook = addH({
-          agentId,
-          trigger: { type: triggerType as import('./hooks.js').HookTriggerType, path: triggerPath, url, intervalMinutes, glob },
-          prompt,
-          description,
-        });
+        const { addHook: addH } = await import('./hooks.js');
+        let trigger: import('@chaos/sdk').HookTrigger;
+        switch (triggerType) {
+          case 'file-changed': trigger = { type: 'file-changed', path: triggerPath || '.' }; break;
+          case 'directory-changed': trigger = { type: 'directory-changed', path: triggerPath, glob }; break;
+          case 'env-changed': trigger = { type: 'env-changed', path: triggerPath }; break;
+          case 'git-commit': trigger = { type: 'git-commit' }; break;
+          case 'git-branch-switch': trigger = { type: 'git-branch-switch' }; break;
+          case 'url-changed': trigger = { type: 'url-changed', url: url || '', intervalMinutes }; break;
+          case 'cron': trigger = { type: 'cron', intervalMinutes: intervalMinutes || 60 }; break;
+          default: trigger = { type: 'cron', intervalMinutes: 60 };
+        }
+        const hook = addH({ agentId, trigger, prompt, description });
         // Note: startSingleHook needs the callback which is set up in App.tsx
         // The hook will start on next TUI restart, or when the engine picks it up
         return `Hook created: "${description}" (trigger: ${triggerType}, id: ${hook.id})`;
