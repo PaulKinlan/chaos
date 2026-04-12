@@ -112,6 +112,19 @@ export const sdk = new ChaosSDK({
 
 const DEFAULT_MAX_ITERATIONS_BG = 20;
 
+// ── Data change notification ──
+// Push data changes to the UI so signals update reactively.
+// The UI listens for 'dataChanged' and refreshes the relevant signal.
+
+type DataDomain = 'agents' | 'tasks' | 'messages' | 'artifacts' | 'hooks' | 'usage' | 'settings';
+
+function notifyDataChanged(...domains: DataDomain[]): void {
+  if (!activeUiPort) return;
+  try {
+    activeUiPort.postMessage({ type: 'dataChanged', domains });
+  } catch { /* port may be disconnected */ }
+}
+
 // ── OPFS directory listing helper ──
 
 interface OPFSFileEntry {
@@ -1065,6 +1078,8 @@ async function handleAgenticChat(
     if (!abortController.signal.aborted) {
       try { activeUiPort?.postMessage({ type: 'agenticDone', result, agentId: msg.agentId, columnId: msg.columnId }); } catch { /* */ }
     }
+    // Push data changes — agent may have created tasks, messages, artifacts, sub-agents
+    notifyDataChanged('tasks', 'messages', 'artifacts', 'agents', 'hooks', 'usage');
   } catch (err) {
     console.error(`[background] handleAgenticChat error for ${msg.agentId}:`, err);
     if (!abortController.signal.aborted) {
@@ -1201,6 +1216,7 @@ async function handleCreateAgent(
 
   await refreshContextMenus();
   port.postMessage({ type: 'agentCreated', agent });
+  notifyDataChanged('agents');
 }
 
 async function handleDeleteAgent(
@@ -1210,6 +1226,7 @@ async function handleDeleteAgent(
   await deleteAgent(msg.agentId);
   await refreshContextMenus();
   port.postMessage({ type: 'agentDeleted', agentId: msg.agentId });
+  notifyDataChanged('agents');
 }
 
 async function handleGetApiKeys(port: chrome.runtime.Port): Promise<void> {

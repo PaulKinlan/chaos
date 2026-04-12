@@ -1516,9 +1516,25 @@ function handlePortMessage(msg: Record<string, unknown>): void {
     case 'hookAdded':
     case 'hookUpdated':
     case 'hookRemoved':
-      // Refresh hooks signal so all watching views update
       refreshHooks();
       break;
+
+    case 'dataChanged': {
+      // Background pushed a data change — refresh the relevant signals
+      const domains = (msg.domains as string[]) || [];
+      for (const domain of domains) {
+        switch (domain) {
+          case 'agents': sendPortMessage({ type: 'listAgents' }); break;
+          case 'tasks': refreshTasks(); break;
+          case 'messages': refreshMessages(); break;
+          case 'artifacts': refreshArtifacts(); break;
+          case 'hooks': refreshHooks(); break;
+          case 'usage': refreshTodayUsage(); break;
+          case 'settings': refreshSettings(); break;
+        }
+      }
+      break;
+    }
 
     case 'error': {
       const col = getFocusedColumn();
