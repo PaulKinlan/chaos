@@ -1,6 +1,6 @@
 {
   "name": "@chaos/demo-cli",
-  "version": "0.1.112",
+  "version": "0.1.113",
   "private": true,
   "type": "module",
   "bin": {
