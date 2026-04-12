@@ -49,6 +49,11 @@
       "description": "Activate voice input for current agent"
     }
   },
+  "sandbox": {
+    "pages": [
+      "src/sandbox/sandbox.html"
+    ]
+  },
   "web_accessible_resources": [
     {
       "matches": [
