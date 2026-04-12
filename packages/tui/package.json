@@ -1,6 +1,6 @@
 {
   "name": "@chaos/tui",
-  "version": "0.1.101",
+  "version": "0.1.102",
   "private": true,
   "type": "module",
   "bin": {
