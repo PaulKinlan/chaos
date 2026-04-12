@@ -91,23 +91,21 @@ export class ChaosFilesView extends LitElement {
     this._selectedFileName = fileName;
     this._selectedFilePath = filePath;
     this._selectedTreePath = filePath;
-    this._fileContent = null;
-    this._fileRenderedHtml = '';
 
     try {
       const result = await sendMsg<{ content: string }>({ type: 'readAgentFile', agentId: this.activeAgentId, path: filePath });
-      this._fileContent = result.content;
 
       const ext = fileName.split('.').pop()?.toLowerCase() || '';
 
+      // Batch state updates to avoid Lit DOM diffing issues
       if (ext === 'md') {
-        this._fileViewMode = 'markdown';
         const rawHtml = marked.parse(result.content) as string;
+        this._fileViewMode = 'markdown';
         this._fileRenderedHtml = DOMPurify.sanitize(rawHtml);
+        this._fileContent = result.content;
       } else if (ext === 'jsonl') {
-        this._fileViewMode = 'jsonl';
         const lines = result.content.split('\n').filter((l) => l.trim());
-        this._fileRenderedHtml = lines
+        const html = lines
           .map((line) => {
             try {
               const parsed = JSON.parse(line);
@@ -117,8 +115,13 @@ export class ChaosFilesView extends LitElement {
             }
           })
           .join('');
+        this._fileViewMode = 'jsonl';
+        this._fileRenderedHtml = html;
+        this._fileContent = result.content;
       } else {
         this._fileViewMode = 'raw';
+        this._fileRenderedHtml = '';
+        this._fileContent = result.content;
       }
     } catch (err) {
       this._fileContent = `Error reading file: ${err instanceof Error ? err.message : String(err)}`;

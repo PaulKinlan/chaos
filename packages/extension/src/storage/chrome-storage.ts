@@ -28,21 +28,26 @@ const DEFAULT_SETTINGS: Settings = {
 
 export async function getAgentList(): Promise<AgentMeta[]> {
   try {
-    // Try sync storage first (primary)
-    const result = await chrome.storage.sync.get(KEYS.AGENT_LIST);
-    let agents = result[KEYS.AGENT_LIST];
+    // Read from BOTH storages and take the one with more agents (most up-to-date)
+    const [syncResult, localResult] = await Promise.all([
+      chrome.storage.sync.get(KEYS.AGENT_LIST).catch(() => ({ [KEYS.AGENT_LIST]: [] })),
+      chrome.storage.local.get(KEYS.AGENT_LIST).catch(() => ({ [KEYS.AGENT_LIST]: [] })),
+    ]);
 
-    // Fall back to local storage if sync is empty (may have been written by quota fallback)
-    if (!agents || !Array.isArray(agents) || agents.length === 0) {
-      const localResult = await chrome.storage.local.get(KEYS.AGENT_LIST);
-      if (Array.isArray(localResult[KEYS.AGENT_LIST]) && localResult[KEYS.AGENT_LIST].length > 0) {
-        agents = localResult[KEYS.AGENT_LIST];
-        // Migrate back to sync
-        try { await chrome.storage.sync.set({ [KEYS.AGENT_LIST]: agents }); } catch { /* ignore */ }
-      }
+    const syncAgents = Array.isArray(syncResult[KEYS.AGENT_LIST]) ? syncResult[KEYS.AGENT_LIST] : [];
+    const localAgents = Array.isArray(localResult[KEYS.AGENT_LIST]) ? localResult[KEYS.AGENT_LIST] : [];
+
+    // Use local if it has agents and sync doesn't, or if local has more agents
+    // (local is the fallback writer, so if it has data it's likely more current)
+    let agents: unknown[];
+    if (localAgents.length > 0 && localAgents.length >= syncAgents.length) {
+      agents = localAgents;
+    } else if (syncAgents.length > 0) {
+      agents = syncAgents;
+    } else {
+      return [];
     }
 
-    if (!Array.isArray(agents)) return [];
     // Ensure each agent has required fields (defensive against schema changes)
     return agents.filter((a: unknown) =>
       a && typeof a === 'object' && 'id' in (a as Record<string, unknown>) && 'name' in (a as Record<string, unknown>)
@@ -54,13 +59,15 @@ export async function getAgentList(): Promise<AgentMeta[]> {
 }
 
 export async function setAgentList(agents: AgentMeta[]): Promise<void> {
+  // Always write to BOTH storages to prevent sync/local divergence
+  const data = { [KEYS.AGENT_LIST]: agents };
   try {
-    await chrome.storage.sync.set({ [KEYS.AGENT_LIST]: agents });
+    await chrome.storage.sync.set(data);
   } catch (err) {
-    // sync storage may hit quota - fall back to local storage
-    console.warn('Failed to write agent list to sync storage, using local:', err);
-    await chrome.storage.local.set({ [KEYS.AGENT_LIST]: agents });
+    console.warn('Failed to write agent list to sync storage:', err);
   }
+  // Always write to local as backup — this ensures getAgentList finds the latest data
+  await chrome.storage.local.set(data);
 }
 
 // ── Settings (sync storage) ──
