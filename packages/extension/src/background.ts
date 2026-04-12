@@ -269,6 +269,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 chrome.runtime.onStartup?.addListener(() => {
   registerContentExtractor();
+  // Auto-connect to relay if previously configured
+  getRelaySettings().then((settings) => {
+    if (settings) {
+      console.log('[background] onStartup: auto-connecting to relay');
+      startChannelPolling(settings.pollIntervalMinutes);
+      startWebSocket().catch(() => {});
+    }
+  }).catch(() => {});
 });
 
 // ── Initialize hooks event listeners ──
