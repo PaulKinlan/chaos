@@ -124,24 +124,28 @@ export class ChaosArtifactDetail extends LitElement {
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
 
-  private async _toggleFullscreen(): Promise<void> {
+  private _isFullscreen = false;
+
+  private _toggleFullscreen(): void {
     const dialog = this.querySelector('#chaos-artifact-dialog') as HTMLDialogElement;
     if (!dialog) return;
 
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
+    this._isFullscreen = !this._isFullscreen;
+
+    if (this._isFullscreen) {
+      dialog.style.maxWidth = 'calc(100vw - 32px)';
+      dialog.style.width = 'calc(100vw - 32px)';
+      dialog.style.maxHeight = 'calc(100vh - 32px)';
+      dialog.style.height = 'calc(100vh - 32px)';
+      dialog.style.borderRadius = '8px';
+      dialog.style.margin = '16px auto';
+    } else {
       dialog.style.maxWidth = '700px';
       dialog.style.width = '90vw';
       dialog.style.maxHeight = '85vh';
+      dialog.style.height = '';
       dialog.style.borderRadius = '12px';
-    } else {
-      dialog.style.maxWidth = '100vw';
-      dialog.style.width = '100vw';
-      dialog.style.maxHeight = '100vh';
-      dialog.style.borderRadius = '0';
-      await dialog.requestFullscreen().catch(() => {
-        // Fullscreen API may not be available — just use max size
-      });
+      dialog.style.margin = 'auto';
     }
   }
 
@@ -175,7 +179,7 @@ export class ChaosArtifactDetail extends LitElement {
       : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>';
 
     return html`
-      <dialog id="chaos-artifact-dialog" style="background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default);border-radius:12px;padding:0;max-width:700px;width:90vw;max-height:85vh;overflow:hidden;position:fixed;inset:0;margin:auto;">
+      <dialog id="chaos-artifact-dialog" style="background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default);border-radius:12px;padding:0;max-width:700px;width:90vw;max-height:85vh;overflow:hidden;position:fixed;inset:0;margin:auto;display:flex;flex-direction:column;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border-subtle);">
           <h3 style="margin:0;font-size:var(--text-base);">${this._escapeHtml(displayName)}</h3>
           <div style="display:flex;gap:var(--sp-2);align-items:center;">
@@ -196,7 +200,7 @@ export class ChaosArtifactDetail extends LitElement {
             </button>
           </div>
         </div>
-        <div style="padding:20px;overflow-y:auto;max-height:calc(85vh - 60px);">
+        <div style="padding:20px;overflow-y:auto;flex:1;min-height:0;">
           <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">
             ${this._escapeHtml(artifact.description)} &middot; <code style="font-size:10px;">${this._escapeHtml(artifact.path)}</code>
           </div>
