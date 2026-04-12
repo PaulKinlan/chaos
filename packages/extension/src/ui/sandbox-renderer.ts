@@ -58,6 +58,7 @@ export class SandboxRenderer {
   private messageId = 0;
   private pendingMessages = new Map<number, { resolve: (h?: number) => void; reject: (e: unknown) => void }>();
   private boundHandler: (e: MessageEvent) => void;
+  public fillContainer = false;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -69,7 +70,7 @@ export class SandboxRenderer {
     // Load the manifest-declared sandbox page — all JS is inline inside it.
     // No iframe sandbox attribute — the manifest sandbox declaration handles isolation.
     this.iframe.src = chrome.runtime.getURL('src/sandbox/sandbox.html');
-    this.iframe.style.cssText = 'width:100%;border:none;display:block;min-height:100px;background:#0d1117;border-radius:6px;';
+    this.iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;min-height:100px;background:#0d1117;border-radius:6px;';
     this.container.appendChild(this.iframe);
   }
 
@@ -86,7 +87,12 @@ export class SandboxRenderer {
 
     if (data.type === 'RENDER_COMPLETE' || data.type === 'HEIGHT_RESPONSE') {
       if (data.height && this.iframe) {
-        this.iframe.style.height = `${data.height + 16}px`;
+        // Only set pixel height if content is taller than the container
+        // Otherwise let CSS height:100% handle it (fills available space)
+        const containerHeight = this.container.clientHeight;
+        if (!containerHeight || data.height > containerHeight) {
+          this.iframe.style.height = `${data.height + 16}px`;
+        }
       }
       const pending = this.pendingMessages.get(data.messageId);
       if (pending) {

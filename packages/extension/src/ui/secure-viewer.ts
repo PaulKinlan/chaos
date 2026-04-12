@@ -581,7 +581,7 @@ export function createSecureViewer(
 
   // Content container for the SandboxRenderer
   const contentContainer = document.createElement('div');
-  contentContainer.style.cssText = 'flex:1;overflow:auto;';
+  contentContainer.style.cssText = 'flex:1;overflow:hidden;min-height:0;';
 
   // Use the manifest sandbox page for rendering (supports interactive JS)
   const renderer = new SandboxRendererImpl(contentContainer);
