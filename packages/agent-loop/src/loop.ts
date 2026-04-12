@@ -6,7 +6,7 @@
  * the iteration limit is reached.
  */
 
-import { streamText, stepCountIs, type ToolSet, type ModelMessage } from 'ai';
+import { streamText, stepCountIs, type ToolSet, type ModelMessage, type LanguageModel, type JSONValue } from 'ai';
 import type {
   AgentConfig,
   ConversationMessage,
@@ -15,6 +15,36 @@ import type {
   RunUsage,
   HookDecision,
 } from './types.js';
+
+// ── Cache Control ──
+
+function isAnthropicModel(model: LanguageModel): boolean {
+  if (typeof model === 'string') return model.includes('anthropic') || model.includes('claude');
+  return model.provider === 'anthropic' || model.provider?.includes('anthropic') ||
+    model.modelId?.includes('anthropic') || model.modelId?.includes('claude');
+}
+
+/**
+ * Add cache control breakpoints to messages for Anthropic models.
+ * Marks the last message with ephemeral caching so that previous turns
+ * are cached across agentic loop steps, reducing cost significantly.
+ */
+function addCacheControl(messages: ModelMessage[], model: LanguageModel): ModelMessage[] {
+  if (messages.length === 0 || !isAnthropicModel(model)) return messages;
+
+  return messages.map((message, index) => {
+    if (index === messages.length - 1) {
+      return {
+        ...message,
+        providerOptions: {
+          ...(message as Record<string, unknown>).providerOptions as Record<string, Record<string, JSONValue>> | undefined,
+          anthropic: { cacheControl: { type: 'ephemeral' } },
+        },
+      };
+    }
+    return message;
+  });
+}
 import { evaluatePermission } from './permissions.js';
 import { buildSkillsPrompt, createSkillTools } from './skills.js';
 import { UsageTracker } from './usage.js';
@@ -248,6 +278,9 @@ async function runAgentLoopDirect(
       tools: Object.keys(tools).length > 0 ? tools : undefined,
       stopWhen: stepCountIs(innerStepLimit),
       abortSignal: signal,
+      prepareStep: ({ messages: stepMsgs }) => ({
+        messages: addCacheControl(stepMsgs, config.model as LanguageModel),
+      }),
     });
 
     // Consume the stream
@@ -436,6 +469,9 @@ export async function* streamAgentLoop(
       tools: Object.keys(tools).length > 0 ? tools : undefined,
       stopWhen: stepCountIs(innerStepLimit),
       abortSignal: signal,
+      prepareStep: ({ messages: stepMsgs }) => ({
+        messages: addCacheControl(stepMsgs, config.model as LanguageModel),
+      }),
     });
 
     // Consume the stream and yield events
