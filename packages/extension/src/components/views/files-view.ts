@@ -54,9 +54,28 @@ export class ChaosFilesView extends LitElement {
   @state() private _fileViewMode: 'raw' | 'markdown' | 'jsonl' = 'raw';
   @state() private _selectedTreePath: string | null = null;
 
+  private _lastAgentId: string | null = null;
+
   connectedCallback() {
     super.connectedCallback();
     console.log('[chaos-files-view] connected');
+  }
+
+  willUpdate(changedProperties: Map<string, unknown>) {
+    // Re-fetch files when agent changes
+    if (changedProperties.has('activeAgentId') && this.activeAgentId !== this._lastAgentId) {
+      this._lastAgentId = this.activeAgentId;
+      // Reset state for the new agent
+      this._files = [];
+      this._selectedFileName = '';
+      this._selectedFilePath = null;
+      this._fileContent = null;
+      this._fileRenderedHtml = '';
+      this._selectedTreePath = null;
+      this._error = '';
+      // Fetch new agent's files
+      this.refresh();
+    }
   }
 
   async refresh(): Promise<void> {
