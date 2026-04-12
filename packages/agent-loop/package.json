@@ -1,6 +1,6 @@
 {
   "name": "@chaos/agent-loop",
-  "version": "0.1.95",
+  "version": "0.1.96",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
