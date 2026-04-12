@@ -6,37 +6,24 @@
  * native WebSocket and fetch (no offscreen document needed).
  */
 
+/**
+ * Channel system for the TUI — connects to the CHAOS relay server.
+ *
+ * Uses types from @chaos/sdk for compatibility with the extension.
+ * Implements RelayConnection interface from @chaos/sdk for the transport layer.
+ */
+
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
 import { WebSocket } from 'ws';
+import type { ChannelMessage, ChannelConfig } from '@chaos/sdk';
+import type { RelayConnection } from '@chaos/sdk/connections';
+
+export type { ChannelMessage, ChannelConfig };
 
 const BASE_DIR = path.resolve(process.cwd(), '.chaos');
 const CHANNELS_FILE = path.join(BASE_DIR, 'channels.json');
 const RELAY_FILE = path.join(BASE_DIR, 'relay.json');
-
-// ── Types (matching extension) ──
-
-export interface ChannelMessage {
-  id: string;
-  channelType: string;
-  channelId: string;
-  from: string;
-  content: string;
-  timestamp: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface ChannelConfig {
-  id: string;
-  name?: string;
-  type: string;
-  direction: 'inbound' | 'bidirectional';
-  prompt?: string;
-  agentId: string;
-  enabled: boolean;
-  metadata: Record<string, unknown>;
-}
 
 export interface RelaySettings {
   serverUrl: string;
@@ -44,6 +31,58 @@ export interface RelaySettings {
   userId: string;
   pollIntervalMinutes: number;
   lastPollTimestamp: string;
+}
+
+/**
+ * Create a RelayConnection implementation for Node.js.
+ * This implements the SDK's RelayConnection interface.
+ */
+export function createNodeRelayConnection(serverUrl: string, apiKey?: string): RelayConnection {
+  const baseUrl = serverUrl.replace(/\/$/, '');
+  let storedApiKey = apiKey || '';
+
+  return {
+    async register(): Promise<{ userId: string; apiKey: string }> {
+      const resp = await fetch(`${baseUrl}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!resp.ok) throw new Error(`Registration failed: ${resp.status}`);
+      const data = await resp.json() as { userId: string; apiKey: string };
+      storedApiKey = data.apiKey;
+      return data;
+    },
+
+    async fetch(relayPath: string, options?: RequestInit): Promise<Response> {
+      return globalThis.fetch(`${baseUrl}${relayPath}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${storedApiKey}`,
+          ...(options?.headers || {}),
+        },
+      });
+    },
+
+    async connect(): Promise<{ close(): void; onMessage(handler: (msg: unknown) => void): void }> {
+      const wsUrl = baseUrl.replace(/^http/, 'ws') + `/ws?token=${storedApiKey}`;
+      const socket = new WebSocket(wsUrl);
+      let handler: ((msg: unknown) => void) | null = null;
+
+      socket.on('message', (data) => {
+        try {
+          const parsed = JSON.parse(data.toString());
+          handler?.(parsed);
+        } catch { /* */ }
+      });
+
+      return {
+        close() { socket.close(); },
+        onMessage(h) { handler = h; },
+      };
+    },
+  };
 }
 
 // ── Config persistence ──
