@@ -2128,6 +2128,9 @@ function columnScrollToBottom(col: ChatColumn): void {
 // ── Column-scoped send ──
 
 function sendColumnMessage(col: ChatColumn): void {
+  // Stop voice recording if active
+  if (isRecording) stopVoiceInput();
+
   const text = col.inputEl.value.trim();
   if (!text || col.isStreaming) return;
 
