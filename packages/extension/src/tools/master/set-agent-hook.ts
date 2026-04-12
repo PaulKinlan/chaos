@@ -10,44 +10,17 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { addHook, getAgentList } from '../../storage/chrome-storage.js';
 import type { Hook, HookTrigger } from '../../storage/types.js';
-
-const triggerSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('bookmark-created'),
-    folderId: z.string().optional(),
-    folderName: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal('tab-navigated'),
-    urlPattern: z.string(),
-  }),
-  z.object({ type: z.literal('tab-created') }),
-  z.object({ type: z.literal('tab-closed') }),
-  z.object({
-    type: z.literal('download-completed'),
-    filenamePattern: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal('history-visited'),
-    urlPattern: z.string(),
-  }),
-  z.object({
-    type: z.literal('idle-changed'),
-    state: z.enum(['active', 'idle', 'locked']),
-  }),
-  z.object({ type: z.literal('browser-startup') }),
-  z.object({
-    type: z.literal('omnibox'),
-    keyword: z.string(),
-  }),
-]);
+import { triggerSchema } from '../hooks/trigger-schema.js';
 
 export function createSetAgentHookTool(_masterAgentId: string) {
   return tool({
     description:
       'Create a hook for a specific sub-agent. The hook fires when the specified browser event ' +
       'occurs and triggers the target agent (not the master). ' +
-      'Use this to set up automations for sub-agents without them needing to do it themselves.',
+      'Trigger types: bookmark-created, tab-navigated, tab-created, tab-closed, ' +
+      'download-completed, history-visited, idle-changed, browser-startup, omnibox, ' +
+      'reading-list-changed, window-created, window-focused, window-closed, ' +
+      'context-menu, clipboard-changed, filesystem-changed.',
     inputSchema: z.object({
       agentId: z
         .string()
