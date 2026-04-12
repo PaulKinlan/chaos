@@ -343,6 +343,57 @@ export function createSystemTools(): ToolSet {
 /**
  * Hook tools — agents can create OS-level event hooks.
  */
+/**
+ * Channel tools — agents can send messages to external channels.
+ */
+export function createChannelTools(agentId: string): ToolSet {
+  return {
+    channel_send: tool({
+      description: 'Send a message to an external channel (Telegram, Discord, Email, Webhook). Use this to proactively reach out through connected channels.',
+      inputSchema: s(z.object({
+        channelId: z.string().optional().describe('Channel ID to send to (use channel_list to find)'),
+        channelType: z.string().optional().describe('Filter by type: telegram, discord, email, webhook'),
+        content: z.string().describe('Message content to send'),
+      })),
+      execute: async ({ channelId, channelType, content }: { channelId?: string; channelType?: string; content: string }) => {
+        const { loadRelaySettings, loadChannelConfigs, sendReply } = await import('./channels.js');
+        const settings = loadRelaySettings();
+        if (!settings) return 'Error: Relay not configured. Use Ctrl+K to set up channels.';
+
+        const channels = loadChannelConfigs();
+        let target = channelId
+          ? channels.find(c => c.id === channelId)
+          : channels.find(c => (!channelType || c.type === channelType) && c.direction === 'bidirectional');
+
+        if (!target) return `Error: No matching channel found. Available: ${channels.map(c => `${c.name || c.id} (${c.type})`).join(', ') || 'none'}`;
+
+        try {
+          await sendReply(
+            { serverUrl: settings.serverUrl, apiKey: settings.apiKey },
+            { channelType: target.type, channelId: target.id, content },
+          );
+          return `Sent to ${target.name || target.id} (${target.type})`;
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+    }),
+
+    channel_list: tool({
+      description: 'List all configured external channels (Telegram, Discord, Email, Webhook).',
+      inputSchema: s(z.object({})),
+      execute: async () => {
+        const { loadChannelConfigs } = await import('./channels.js');
+        const channels = loadChannelConfigs();
+        if (channels.length === 0) return 'No channels configured.';
+        return channels.map(c =>
+          `[${c.enabled ? 'ON' : 'OFF'}] ${c.name || c.id} — ${c.type} (${c.direction}, agent: ${c.agentId})`
+        ).join('\n');
+      },
+    }),
+  };
+}
+
 export function createHookTools(agentId: string): ToolSet {
   return {
     hook_create: tool({

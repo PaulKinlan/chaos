@@ -18,6 +18,8 @@ import { AgentColumn } from './AgentColumn.js';
 import { StatusBar } from './StatusBar.js';
 import { AgentEditor } from './AgentEditor.js';
 import { HooksPanel } from './HooksPanel.js';
+import { ChannelsPanel } from './ChannelsPanel.js';
+import { loadRelaySettings, startChannels, stopChannels, type ChannelMessage } from '../channels.js';
 import {
   loadAgentRegistry,
   createAgentMeta,
@@ -54,7 +56,8 @@ type InputMode =
   | { type: 'new-name'; buffer: string }
   | { type: 'new-role'; name: string; roleIdx: number }
   | { type: 'editor'; agentId: string }
-  | { type: 'hooks' };
+  | { type: 'hooks' }
+  | { type: 'channels' };
 
 let colCounter = 0;
 function nextColId(): string {
@@ -192,6 +195,34 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
     return () => stopHooks();
   }, [model]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Start channels if relay is configured
+  useEffect(() => {
+    const relaySettings = loadRelaySettings();
+    if (!relaySettings) return;
+
+    startChannels(relaySettings, (msg: ChannelMessage) => {
+      // Route incoming channel message to the target agent
+      const agentId = (msg.metadata?.channelAgentId as string) || columns[0]?.agentId || 'assistant';
+      const registry = loadAgentRegistry();
+      const meta = registry.find(a => a.id === agentId);
+      if (!meta) return;
+
+      const channelAgent = createAgentInstance(meta, model, nativeTools);
+      const prompt = `[Channel message from ${msg.from} via ${msg.channelType}]\n\n${msg.content}`;
+
+      setColumns(prev => [...prev, {
+        id: nextColId(),
+        agentId,
+        conversationId: `channel-${msg.id}-${Date.now()}`,
+        agent: channelAgent,
+        meta,
+        initialPrompt: prompt,
+      }]);
+    });
+
+    return () => stopChannels();
+  }, [model]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-save session whenever columns or active index change
   useEffect(() => {
     if (columns.length === 0) return;
@@ -305,7 +336,11 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
 
     if (mode.type === 'hooks') {
       if (key.escape) { setMode({ type: 'chat' }); }
-      // All other input handled by HooksPanel
+      return;
+    }
+
+    if (mode.type === 'channels') {
+      if (key.escape) { setMode({ type: 'chat' }); }
       return;
     }
 
@@ -360,6 +395,7 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
       return;
     }
     if (ch === 'k' && key.ctrl) { setMode({ type: 'hooks' }); return; }
+    if (ch === 'j' && key.ctrl) { setMode({ type: 'channels' }); return; }
     if (ch === 'd' && key.ctrl) { deleteAgent(); return; }
   });
 
@@ -414,9 +450,15 @@ export function App({ model, provider, modelId, initialAgents }: AppProps) {
         </Box>
       )}
 
+      {mode.type === 'channels' && (
+        <Box flexGrow={1} paddingX={1}>
+          <ChannelsPanel defaultAgentId={columns[activeIdx]?.agentId || 'assistant'} />
+        </Box>
+      )}
+
       {/* Columns — always rendered, hidden when editor is open */}
-      <Box flexGrow={mode.type === 'editor' || mode.type === 'hooks' ? 0 : 1} flexDirection="row"
-        display={mode.type === 'editor' || mode.type === 'hooks' ? 'none' : 'flex'}>
+      <Box flexGrow={mode.type === 'chat' || mode.type === 'new-name' || mode.type === 'new-role' ? 1 : 0} flexDirection="row"
+        display={mode.type === 'chat' || mode.type === 'new-name' || mode.type === 'new-role' ? 'flex' : 'none'}>
         {visibleColumns.length === 0 ? (
           <Box justifyContent="center" alignItems="center" flexGrow={1}>
             <Text dimColor>No columns. Press Ctrl+N to create an agent.</Text>
