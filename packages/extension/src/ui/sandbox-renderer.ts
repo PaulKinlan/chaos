@@ -74,10 +74,13 @@ export class SandboxRenderer {
 
   private init(): void {
     this.iframe = document.createElement('iframe');
-    // Use the manifest-declared sandbox page — already sandboxed by Chrome
-    // Do NOT set iframe.sandbox — the manifest sandbox declaration handles isolation.
-    // Adding sandbox="" on the iframe would double-sandbox and cause origin conflicts.
     this.iframe.src = chrome.runtime.getURL('src/sandbox/sandbox.html');
+    // Sandbox attributes match NotebookLM Chrome's working setup:
+    // allow-scripts needed for the inline sandbox script + injected scripts
+    // allow-forms needed for interactive content (buttons, keyboard events)
+    // No allow-same-origin — complete isolation from extension
+    this.iframe.sandbox.add('allow-scripts');
+    this.iframe.sandbox.add('allow-forms');
     this.iframe.style.cssText = 'width:100%;border:none;display:block;min-height:100px;background:#0d1117;border-radius:6px;';
 
     window.addEventListener('message', this.boundHandler);
