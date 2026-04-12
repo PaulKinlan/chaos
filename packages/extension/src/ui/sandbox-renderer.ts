@@ -1,11 +1,29 @@
 /**
- * SandboxRenderer — renders untrusted content in a sandboxed srcdoc iframe.
+ * SandboxRenderer
  *
- * Uses iframe sandbox="allow-scripts allow-forms" with srcdoc containing
- * all content inline. No external files, no manifest sandbox, no CSP conflicts.
+ * Loads the manifest-declared sandbox page (src/sandbox/sandbox.html)
+ * which has all JavaScript inline. No external script references.
+ * The manifest sandbox gives it its own origin + CSP context.
+ * No iframe sandbox attribute needed — manifest handles isolation.
+ *
+ * Communication via postMessage. Two rendering modes:
+ * - Standard: sanitized HTML, no scripts
+ * - Interactive: HTML + CSS + JS (scripts extracted and passed separately)
  */
 
 import DOMPurify from 'dompurify';
+
+const STANDARD_CONFIG = {
+  ALLOWED_TAGS: [
+    'p', 'br', 'strong', 'em', 'b', 'i', 'code', 'pre',
+    'ul', 'ol', 'li', 'a', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr',
+    'del', 'sup', 'sub', 'input', 'img',
+  ],
+  ALLOWED_ATTR: ['href', 'class', 'type', 'checked', 'disabled', 'src', 'alt', 'width', 'height'],
+  ALLOW_DATA_ATTR: false,
+  FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'object', 'embed'],
+};
 
 const INTERACTIVE_CONFIG = {
   ALLOWED_TAGS: [
@@ -27,101 +45,89 @@ const INTERACTIVE_CONFIG = {
   FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
 };
 
-const STANDARD_CONFIG = {
-  ALLOWED_TAGS: [
-    'p', 'br', 'strong', 'em', 'b', 'i', 'code', 'pre',
-    'ul', 'ol', 'li', 'a', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr',
-    'del', 'sup', 'sub', 'input', 'img',
-  ],
-  ALLOWED_ATTR: ['href', 'class', 'type', 'checked', 'disabled', 'src', 'alt', 'width', 'height'],
-  ALLOW_DATA_ATTR: false,
-  FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'object', 'embed'],
-};
-
 export function needsSandbox(html: string): boolean {
   return /<(script|style|form|iframe|canvas)[\s>]/i.test(html);
-}
-
-const BASE_STYLE = `
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; margin: 0; }
-body { font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.6; color: #e1e4e8; background: #0d1117; padding: 16px; overflow-wrap: break-word; }
-a { color: #8b9cf6; }
-pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; overflow-x: auto; margin: 8px 0; }
-code { font-family: monospace; font-size: 13px; background: #161b22; padding: 2px 5px; border-radius: 3px; }
-pre code { background: none; padding: 0; }
-table { border-collapse: collapse; width: 100%; margin: 8px 0; }
-th, td { border: 1px solid #30363d; padding: 8px 12px; }
-th { background: #161b22; font-weight: 600; color: #c9d1d9; }
-h1,h2,h3,h4 { color: #c9d1d9; margin: 16px 0 8px; font-weight: 600; }
-p { margin: 8px 0; }
-ul,ol { margin: 8px 0; padding-left: 24px; }
-blockquote { border-left: 3px solid #30363d; margin: 8px 0; padding: 4px 16px; color: #8b949e; }
-hr { border: none; border-top: 1px solid #30363d; margin: 16px 0; }
-img { max-width: 100%; }
-button { cursor: pointer; }
-`;
-
-const RESIZE_SCRIPT = `
-(function(){
-  function r(){window.parent.postMessage({type:'sandbox-resize',height:document.body.scrollHeight},'*')}
-  r();
-  requestAnimationFrame(function(){requestAnimationFrame(r)});
-  new ResizeObserver(r).observe(document.body);
-})();
-`;
-
-function buildSrcdoc(bodyHtml: string, scripts: string[] = []): string {
-  const scriptTags = scripts.map(s => `<script>${s}<\/script>`).join('\n');
-  return `<!DOCTYPE html><html><head><style>${BASE_STYLE}</style></head><body>${bodyHtml}${scriptTags}<script>${RESIZE_SCRIPT}<\/script></body></html>`;
 }
 
 export class SandboxRenderer {
   private iframe: HTMLIFrameElement | null = null;
   private container: HTMLElement;
+  private isReady = false;
+  private readyPromise: Promise<void>;
+  private readyResolve: (() => void) | null = null;
+  private messageId = 0;
+  private pendingMessages = new Map<number, { resolve: (h?: number) => void; reject: (e: unknown) => void }>();
   private boundHandler: (e: MessageEvent) => void;
 
   constructor(container: HTMLElement) {
     this.container = container;
     this.boundHandler = this.handleMessage.bind(this);
+    this.readyPromise = new Promise(resolve => { this.readyResolve = resolve; });
     window.addEventListener('message', this.boundHandler);
+
     this.iframe = document.createElement('iframe');
-    this.iframe.sandbox.add('allow-scripts');
-    this.iframe.sandbox.add('allow-forms');
+    // Load the manifest-declared sandbox page — all JS is inline inside it.
+    // No iframe sandbox attribute — the manifest sandbox declaration handles isolation.
+    this.iframe.src = chrome.runtime.getURL('src/sandbox/sandbox.html');
     this.iframe.style.cssText = 'width:100%;border:none;display:block;min-height:100px;background:#0d1117;border-radius:6px;';
     this.container.appendChild(this.iframe);
   }
 
   private handleMessage(event: MessageEvent): void {
     if (event.source !== this.iframe?.contentWindow) return;
-    if (event.data?.type === 'sandbox-resize' && typeof event.data.height === 'number') {
-      this.iframe!.style.height = `${event.data.height}px`;
+    const data = event.data;
+    if (!data) return;
+
+    if (data.type === 'SANDBOX_READY') {
+      this.isReady = true;
+      this.readyResolve?.();
+      return;
+    }
+
+    if (data.type === 'RENDER_COMPLETE' || data.type === 'HEIGHT_RESPONSE') {
+      if (data.height && this.iframe) {
+        this.iframe.style.height = `${data.height + 16}px`;
+      }
+      const pending = this.pendingMessages.get(data.messageId);
+      if (pending) {
+        pending.resolve(data.height);
+        this.pendingMessages.delete(data.messageId);
+      }
     }
   }
 
-  async render(html: string): Promise<void> {
-    if (!this.iframe) return;
+  async render(html: string): Promise<number | undefined> {
+    await this.readyPromise;
+    if (!this.iframe?.contentWindow) throw new Error('Sandbox not available');
     const sanitized = DOMPurify.sanitize(html, STANDARD_CONFIG);
-    this.iframe.srcdoc = buildSrcdoc(sanitized);
+    const id = ++this.messageId;
+    return new Promise((resolve, reject) => {
+      this.pendingMessages.set(id, { resolve, reject });
+      this.iframe!.contentWindow!.postMessage({ type: 'RENDER_CONTENT', content: sanitized, messageId: id }, '*');
+      setTimeout(() => { if (this.pendingMessages.has(id)) { this.pendingMessages.delete(id); reject(new Error('timeout')); } }, 5000);
+    });
   }
 
-  async renderInteractive(html: string): Promise<void> {
-    if (!this.iframe) return;
+  async renderInteractive(html: string): Promise<number | undefined> {
+    await this.readyPromise;
+    if (!this.iframe?.contentWindow) throw new Error('Sandbox not available');
     const scripts: string[] = [];
-    const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
-    let match;
-    while ((match = scriptRegex.exec(html)) !== null) {
-      scripts.push(match[1]!);
-    }
-    const htmlWithoutScripts = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-    const sanitized = DOMPurify.sanitize(htmlWithoutScripts, INTERACTIVE_CONFIG);
-    this.iframe.srcdoc = buildSrcdoc(sanitized, scripts);
+    const re = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+    let m;
+    while ((m = re.exec(html)) !== null) scripts.push(m[1]!);
+    const cleaned = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+    const sanitized = DOMPurify.sanitize(cleaned, INTERACTIVE_CONFIG);
+    const id = ++this.messageId;
+    return new Promise((resolve, reject) => {
+      this.pendingMessages.set(id, { resolve, reject });
+      this.iframe!.contentWindow!.postMessage({ type: 'RENDER_INTERACTIVE', content: sanitized, scripts, messageId: id }, '*');
+      setTimeout(() => { if (this.pendingMessages.has(id)) { this.pendingMessages.delete(id); reject(new Error('timeout')); } }, 5000);
+    });
   }
 
   clear(): void {
-    if (this.iframe) {
-      this.iframe.srcdoc = '';
+    if (this.iframe?.contentWindow) {
+      this.iframe.contentWindow.postMessage({ type: 'CLEAR_CONTENT' }, '*');
       this.iframe.style.height = '100px';
     }
   }
@@ -129,16 +135,17 @@ export class SandboxRenderer {
   destroy(): void {
     window.removeEventListener('message', this.boundHandler);
     if (this.iframe) { this.iframe.remove(); this.iframe = null; }
+    this.pendingMessages.clear();
   }
+
+  get ready(): boolean { return this.isReady; }
+  waitForReady(): Promise<void> { return this.readyPromise; }
 }
 
 export function renderInSandbox(html: string, container: HTMLElement): void {
   const renderer = new SandboxRenderer(container);
-  if (/<script[\s>]/i.test(html)) {
-    renderer.renderInteractive(html);
-  } else {
-    renderer.render(html);
-  }
+  if (/<script[\s>]/i.test(html)) renderer.renderInteractive(html);
+  else renderer.render(html);
 }
 
 export function createSandboxRenderer(container: HTMLElement): SandboxRenderer {
