@@ -1222,6 +1222,13 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         const resultContent = msg.toolResult as string | Record<string, unknown> | undefined;
         const toolName = msg.toolName as string || '';
 
+        // Trigger reactive updates for tools that modify shared state
+        if (toolName === 'artifact_publish' || toolName === 'artifact_list') refreshArtifacts();
+        if (toolName === 'hook_create' || toolName === 'hook_delete') refreshHooks();
+        if (toolName === 'assign_task' || toolName === 'task_create' || toolName === 'task_update') refreshTasks();
+        if (toolName === 'message_send') refreshMessages();
+        if (toolName === 'create_agent' || toolName === 'delete_agent') sendPortMessage({ type: 'listAgents' });
+
         // Record in progress entries
         col.currentProgressEntries.push({
           type: 'tool-result',
@@ -1394,11 +1401,17 @@ function handlePortMessage(msg: Record<string, unknown>): void {
         columnScrollToBottom(col);
       }
 
-      // Refresh reactive data after agentic loop completes
-      refreshTodayUsage();
-      refreshArtifacts(); // Agent may have published artifacts
-      refreshHooks(); // Agent may have created hooks
-      refreshTasks(); // Agent may have created/updated tasks
+      // Refresh ALL reactive data after agentic loop completes — the agent
+      // may have created agents, tasks, hooks, artifacts, messages, etc.
+      // Small delay to ensure OPFS writes have flushed before reading back.
+      setTimeout(() => {
+        refreshTodayUsage();
+        refreshArtifacts();
+        refreshHooks();
+        refreshTasks();
+        refreshMessages();
+        sendPortMessage({ type: 'listAgents' });
+      }, 300);
 
       // Feature: Show sub-agent completion in master's chat column
       if (msgAgentId) {
