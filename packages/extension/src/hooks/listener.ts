@@ -238,15 +238,39 @@ function registerBrowserStartupListener(): void {
 function registerOmniboxListener(): void {
   chrome.omnibox?.onInputEntered?.addListener(async (text) => {
     const hooks = (await getEnabledHooks()).filter((h) => matchesType(h, 'omnibox'));
+    let matched = false;
+
     for (const hook of hooks) {
       const trigger = hook.trigger as Extract<HookTrigger, { type: 'omnibox' }>;
-
-      // Check if the text starts with the keyword
       if (!text.toLowerCase().startsWith(trigger.keyword.toLowerCase())) continue;
 
       const input = text.slice(trigger.keyword.length).trim();
       const context = `Omnibox input: keyword="${trigger.keyword}", text="${input}"`;
       executeHook(hook, context);
+      matched = true;
+    }
+
+    // If no hook matched, open a new chat column with the text as prompt
+    if (!matched && text.trim()) {
+      console.log(`[hooks] Omnibox: no matching hook, sending to chat: "${text.slice(0, 80)}"`);
+      // Open/focus the CHAOS tab and send the prompt
+      try {
+        const tabs = await chrome.tabs.query({});
+        const chaosTab = tabs.find((t) => t.url?.includes('app.html'));
+        if (chaosTab?.id) {
+          await chrome.tabs.update(chaosTab.id, { active: true });
+          if (chaosTab.windowId) await chrome.windows.update(chaosTab.windowId, { focused: true });
+        } else {
+          await chrome.tabs.create({ url: chrome.runtime.getURL('app.html') });
+        }
+        // Send message to the UI to create a new chat column with the prompt
+        chrome.runtime.sendMessage({
+          type: 'omniboxChat',
+          prompt: text.trim(),
+        }).catch(() => {});
+      } catch (err) {
+        console.error('[hooks] Omnibox chat failed:', err);
+      }
     }
   });
 }

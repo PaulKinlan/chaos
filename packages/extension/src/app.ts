@@ -1054,6 +1054,36 @@ function handlePortMessage(msg: Record<string, unknown>): void {
       break;
     }
 
+    case 'omniboxChat': {
+      // Omnibox input with no matching hook — open a new chat column
+      const prompt = msg.prompt as string;
+      if (prompt) {
+        // Switch to chat view
+        if (activeView !== 'chat') {
+          activeView = 'chat';
+          document.querySelectorAll<HTMLElement>('.sidebar-item').forEach((b) => {
+            b.classList.toggle('active', b.dataset.view === 'chat');
+          });
+          updateViewVisibility();
+        }
+        const masterAgent = agents.find((a) => a.master) || agents[0];
+        if (masterAgent) {
+          const newCol = addColumn(masterAgent.id, true);
+          if (newCol) {
+            setTimeout(() => {
+              const textarea = newCol.columnEl.querySelector('.chat-input-area textarea') as HTMLTextAreaElement;
+              if (textarea) {
+                textarea.value = prompt;
+                textarea.dispatchEvent(new Event('input'));
+                textarea.focus();
+              }
+            }, 200);
+          }
+        }
+      }
+      break;
+    }
+
     case 'agenticStart': {
       const col = resolveColumn();
       if (col) {

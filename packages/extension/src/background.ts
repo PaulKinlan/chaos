@@ -1533,6 +1533,18 @@ chrome.runtime.onMessage.addListener(
       } catch { /* */ }
       return false;
     }
+    // Handle omnibox chat — forward to UI as a new chat column
+    if (msgType === 'omniboxChat') {
+      if (activeUiPort) {
+        try {
+          activeUiPort.postMessage({
+            type: 'omniboxChat',
+            prompt: msg.prompt as string,
+          });
+        } catch { /* */ }
+      }
+      return false;
+    }
     // Handle MCP requests from relay (forwarded by offscreen WS)
     if (msgType === 'wsMcpRequest') {
       handleInboundMcpRequest(msg);
