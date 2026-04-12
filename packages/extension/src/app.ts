@@ -434,6 +434,7 @@ document.addEventListener('view-change', (e: Event) => {
 
   const targetView = typeof detail === 'string' ? detail : detail.view;
   const prompt = typeof detail === 'object' ? detail.prompt : undefined;
+  const newColumn = typeof detail === 'object' ? detail.newColumn : false;
 
   if (targetView) {
     activeView = targetView;
@@ -441,9 +442,27 @@ document.addEventListener('view-change', (e: Event) => {
     updateViewVisibility();
     loadCurrentViewData();
 
-    // If there's a prompt, inject it into the focused chat column's input
+    // If there's a prompt, inject it into chat
     if (prompt && targetView === 'chat') {
       setTimeout(() => {
+        // If newColumn requested, create a fresh column for the master agent
+        if (newColumn) {
+          const masterAgent = agents.find((a) => a.master) || agents[0];
+          if (masterAgent) {
+            const newCol = addColumn(masterAgent.id, true);
+            // Wait for column to render, then inject prompt
+            setTimeout(() => {
+              const textarea = newCol.columnEl.querySelector('.chat-input-area textarea') as HTMLTextAreaElement;
+              if (textarea) {
+                textarea.value = prompt;
+                textarea.dispatchEvent(new Event('input'));
+                textarea.focus();
+              }
+            }, 200);
+            return;
+          }
+        }
+
         const col = getFocusedColumn();
         if (col) {
           const textarea = col.columnEl.querySelector('.chat-input-area textarea') as HTMLTextAreaElement;

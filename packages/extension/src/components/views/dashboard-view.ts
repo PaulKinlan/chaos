@@ -245,10 +245,10 @@ Write the JSON array directly to suggestions/latest.json using write_file. Do no
   private async _onDoSuggestion(idx: number): Promise<void> {
     const suggestion = this._suggestions[idx];
     if (suggestion.action?.prompt) {
-      // Dismiss after acting on it
       await this._onDismissSuggestion(idx);
+      // Open a NEW chat column with the suggestion prompt
       this.dispatchEvent(new CustomEvent('view-change', {
-        detail: { view: 'chat', prompt: suggestion.action.prompt },
+        detail: { view: 'chat', prompt: suggestion.action.prompt, newColumn: true },
         bubbles: true,
         composed: true,
       }));
@@ -375,14 +375,14 @@ Write the JSON array directly to suggestions/latest.json using write_file. Do no
         <div class="dashboard-section-title">Suggestions</div>
         <div class="dashboard-cards">
           ${suggestions.length > 0 ? suggestions.map((s, i) => html`
-            <div class="dashboard-card">
+            <div class="dashboard-card" style="display:flex;flex-direction:column;">
               <div style="display:flex;align-items:center;gap:var(--sp-1);margin-bottom:var(--sp-1);color:var(--text-muted);">
                 ${lightbulbSvg}
                 <span class="badge ${s.priority === 'high' ? 'badge-red' : s.priority === 'medium' ? 'badge-amber' : 'badge-gray'}" style="font-size:10px;">${escapeHtml(s.priority)}</span>
               </div>
               <div class="dashboard-card-title">${escapeHtml(s.title)}</div>
-              <div class="dashboard-card-desc">${escapeHtml(s.description)}</div>
-              <div class="dashboard-card-actions">
+              <div class="dashboard-card-desc" style="flex:1;">${escapeHtml(s.description)}</div>
+              <div class="dashboard-card-actions" style="margin-top:auto;padding-top:var(--sp-2);">
                 <button class="btn btn-primary btn-xs" @click=${() => this._onDoSuggestion(i)}>Do it</button>
                 <button class="btn btn-ghost btn-xs" @click=${() => this._onDismissSuggestion(i)}>Dismiss</button>
               </div>

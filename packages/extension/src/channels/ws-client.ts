@@ -28,34 +28,49 @@ function log(msg: string): void {
 /**
  * Ensure the offscreen document exists (shared with HTML parser).
  */
+let offscreenPromise: Promise<boolean> | null = null;
+
 async function ensureOffscreen(): Promise<boolean> {
-  try {
-    if (!chrome.offscreen) {
-      log('chrome.offscreen API not available — WebSocket disabled');
-      return false;
-    }
+  // Mutex: if already creating, wait for the existing attempt
+  if (offscreenPromise) return offscreenPromise;
 
-    const contexts = await (chrome.runtime as unknown as {
-      getContexts(filter: { contextTypes: string[] }): Promise<{ documentUrl: string }[]>;
-    }).getContexts?.({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+  offscreenPromise = (async () => {
+    try {
+      if (!chrome.offscreen) {
+        log('chrome.offscreen API not available — WebSocket disabled');
+        return false;
+      }
 
-    if (contexts && contexts.length > 0) {
-      log(`Offscreen document already exists (${contexts.length} context(s))`);
+      const contexts = await (chrome.runtime as unknown as {
+        getContexts(filter: { contextTypes: string[] }): Promise<{ documentUrl: string }[]>;
+      }).getContexts?.({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+
+      if (contexts && contexts.length > 0) {
+        return true;
+      }
+
+      log('Creating offscreen document...');
+      await chrome.offscreen.createDocument({
+        url: 'src/offscreen-parser.html',
+        reasons: [chrome.offscreen.Reason.DOM_PARSER],
+        justification: 'Parse HTML and maintain persistent WebSocket connection',
+      });
+      log('Offscreen document created');
       return true;
+    } catch (err) {
+      // If another call already created it, that's fine
+      const msg = String(err);
+      if (msg.includes('single offscreen') || msg.includes('already')) {
+        return true;
+      }
+      log(`Failed to create offscreen document: ${err}`);
+      return false;
+    } finally {
+      offscreenPromise = null;
     }
+  })();
 
-    log('Creating offscreen document for WebSocket...');
-    await chrome.offscreen.createDocument({
-      url: 'src/offscreen-parser.html',
-      reasons: [chrome.offscreen.Reason.DOM_PARSER],
-      justification: 'Parse HTML and maintain persistent WebSocket connection',
-    });
-    log('Offscreen document created successfully');
-    return true;
-  } catch (err) {
-    log(`Failed to create offscreen document: ${err}`);
-    return false;
-  }
+  return offscreenPromise;
 }
 
 /**
