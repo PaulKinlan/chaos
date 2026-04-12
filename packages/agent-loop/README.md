@@ -107,53 +107,33 @@ for await (const event of agent.stream('Tell me about Paris')) {
 | `done` | The agent completed its task |
 | `error` | Something went wrong or limits were exceeded |
 
-## SDK Integration
+## Multiple Agents
 
-`@chaos/agent-loop` integrates with `@chaos/sdk` -- each agent owns its own model, tools, hooks, and permissions. The SDK does not configure models; that is the agent's responsibility.
+Create multiple agents with different models, tools, and system prompts:
 
 ```ts
-import { ChaosSDK } from '@chaos/sdk';
-import {
-  InMemorySettingsStore, InMemoryMemoryStore, InMemoryConversationStore,
-  InMemoryHookStore, InMemoryUsageStore, InMemoryAgentStore,
-} from '@chaos/sdk/stores/in-memory';
 import { createAgent } from '@chaos/agent-loop';
-import { anthropic } from '@ai-sdk/anthropic';
+import { createAnthropic } from '@ai-sdk/anthropic';
 
-// Each agent owns its own model and tools
+const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
 const assistant = createAgent({
   id: 'assistant',
   name: 'Assistant',
-  model: anthropic('claude-sonnet-4-5'),
+  model: anthropic('claude-sonnet-4-6'),
   systemPrompt: 'You are a helpful assistant.',
 });
 
 const researcher = createAgent({
   id: 'researcher',
   name: 'Researcher',
-  model: anthropic('claude-sonnet-4-5'),
-  systemPrompt: 'You are a research assistant.',
+  model: anthropic('claude-haiku-4-5'), // cheaper model for research
+  systemPrompt: 'You are a research assistant. Be thorough.',
 });
 
-// Pass agents to the SDK at construction
-const sdk = new ChaosSDK({
-  settings: new InMemorySettingsStore(),
-  memory: new InMemoryMemoryStore(),
-  conversations: new InMemoryConversationStore(),
-  hooks: new InMemoryHookStore(),
-  usage: new InMemoryUsageStore(),
-  agentStore: new InMemoryAgentStore(),
-  agents: [assistant, researcher],
-});
-
-// Or register/unregister agents dynamically
-sdk.chat.registerAgent(assistant);
-sdk.chat.unregisterAgent('assistant');
-
-// Send messages through the SDK (routes to the registered agent loop)
-for await (const update of sdk.chat.sendMessage('assistant', 'Hello!')) {
-  if (update.type === 'text') console.log(update.content);
-}
+// Each agent has its own conversation context
+const answer = await assistant.run('Hello!');
+const research = await researcher.run('Find info about TypeScript');
 ```
 
 ## Tools
@@ -194,12 +174,11 @@ The agent loops automatically: it calls tools, feeds results back to the model, 
 
 ## File Tools
 
-`createFileTools()` generates a set of file-manipulation tools backed by any `MemoryStore` from `@chaos/sdk`:
+`createFileTools()` generates a set of file-manipulation tools backed by any `MemoryStore`:
 
 ```ts
-import { createAgent, createFileTools } from '@chaos/agent-loop';
+import { createAgent, createFileTools, InMemoryMemoryStore } from '@chaos/agent-loop';
 import { createMockModel } from '@chaos/agent-loop/testing';
-import { InMemoryMemoryStore } from '@chaos/sdk/stores/in-memory';
 
 const store = new InMemoryMemoryStore();
 const fileTools = createFileTools(store, 'agent-1');
@@ -229,6 +208,50 @@ The generated tools are:
 | `delete_file` | Delete a file |
 | `grep_file` | Search for a text pattern across files |
 | `find_files` | Recursively list all files from a path |
+
+## MemoryStore
+
+The `MemoryStore` interface abstracts file storage for agents. An `InMemoryMemoryStore` is included for testing and prototyping. For production, implement the interface with your preferred backend.
+
+```ts
+interface MemoryStore {
+  read(agentId: string, path: string): Promise<string>;
+  write(agentId: string, path: string, content: string): Promise<void>;
+  append(agentId: string, path: string, content: string): Promise<void>;
+  delete(agentId: string, path: string): Promise<void>;
+  list(agentId: string, path?: string): Promise<FileEntry[]>;
+  mkdir(agentId: string, path: string): Promise<void>;
+  exists(agentId: string, path: string): Promise<boolean>;
+  search(agentId: string, pattern: string, path?: string): Promise<Array<{ path: string; line: string }>>;
+}
+```
+
+### Custom implementations
+
+See [`examples/08-custom-memory-store.ts`](examples/08-custom-memory-store.ts) for complete patterns for:
+- **Node.js filesystem** (`fs`)
+- **AWS S3** (`@aws-sdk/client-s3`)
+- **Google Firestore** (`@google-cloud/firestore`)
+- **SQLite** (`better-sqlite3`)
+
+## Conversation History
+
+Pass previous conversation turns to maintain context:
+
+```ts
+import { createAgent, type ConversationMessage } from '@chaos/agent-loop';
+
+const history: ConversationMessage[] = [];
+
+// First turn
+const r1 = await agent.run('My name is Alice', undefined, history);
+history.push({ role: 'user', content: 'My name is Alice' });
+history.push({ role: 'assistant', content: r1 });
+
+// Second turn — agent remembers the name
+const r2 = await agent.run('What is my name?', undefined, history);
+// r2 = "Your name is Alice."
+```
 
 ## Skills
 
@@ -532,6 +555,8 @@ const result = await agent.run('Weather in London?');
 | `buildSkillsPrompt` | `(skills: Skill[]) => string` | Build a system prompt section from skills |
 | `parseSkillMd` | `(content, id?) => Skill` | Parse a SKILL.md with YAML frontmatter |
 | `InMemorySkillStore` | class | In-memory reference implementation of SkillStore |
+| `InMemoryMemoryStore` | class | In-memory reference implementation of MemoryStore |
+| `createOrchestrator` | `(config) => Orchestrator` | Create a multi-agent orchestrator |
 | `evaluatePermission` | `(toolName, args, config) => Promise<boolean>` | Evaluate a permission check |
 | `UsageTracker` | class | Track usage and costs within a run |
 | `estimateCost` | `(model, input, output, pricing?) => number` | Estimate cost in USD |
@@ -557,6 +582,42 @@ const result = await agent.run('Weather in London?');
 | `RunUsage` / `UsageRecord` | Usage summary and per-step records |
 | `HookDecision` | Return value from hooks to control execution |
 | `PricingTable` | Model pricing lookup (per 1M tokens) |
+| `MemoryStore` | Storage interface for agent file operations |
+| `FileEntry` | File/directory entry from `list()` |
+| `ConversationMessage` | User/assistant message for conversation history |
+| `Orchestrator` / `OrchestratorConfig` | Multi-agent orchestration types |
+
+### Store exports (`@chaos/agent-loop/stores`)
+
+| Export | Description |
+|--------|-------------|
+| `MemoryStore` | Storage interface (type) |
+| `FileEntry` | File entry type |
+
+### Store implementations
+
+| Export | Description |
+|--------|-------------|
+| `InMemoryMemoryStore` | In-memory store for testing/prototyping |
+
+## Examples
+
+The [`examples/`](examples/) directory contains runnable examples:
+
+| # | File | Description |
+|---|------|-------------|
+| 1 | [`01-basic-agent.ts`](examples/01-basic-agent.ts) | Simplest possible agent |
+| 2 | [`02-agent-with-tools.ts`](examples/02-agent-with-tools.ts) | Custom tools (weather, calculator) |
+| 3 | [`03-agent-with-memory.ts`](examples/03-agent-with-memory.ts) | File tools with InMemoryMemoryStore |
+| 4 | [`04-lifecycle-hooks.ts`](examples/04-lifecycle-hooks.ts) | Hooks for monitoring and control |
+| 5 | [`05-multi-provider.ts`](examples/05-multi-provider.ts) | Anthropic, Google, OpenAI, Ollama |
+| 6 | [`06-conversation-history.ts`](examples/06-conversation-history.ts) | Multi-turn conversations |
+| 7 | [`07-multi-agent-orchestration.ts`](examples/07-multi-agent-orchestration.ts) | Master + worker agents |
+| 8 | [`08-custom-memory-store.ts`](examples/08-custom-memory-store.ts) | Patterns for S3, Firestore, SQLite, filesystem |
+| 9 | [`09-skills.ts`](examples/09-skills.ts) | Skills system |
+| 10 | [`10-testing.ts`](examples/10-testing.ts) | Testing with createMockModel |
+
+Run any example: `npx tsx examples/01-basic-agent.ts`
 
 ## License
 

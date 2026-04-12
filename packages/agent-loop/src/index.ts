@@ -51,5 +51,6 @@ export type {
   Orchestrator,
 } from './orchestrator.js';
 
-// Store interfaces
+// Store interfaces and default implementations
 export type { MemoryStore, FileEntry } from './stores.js';
+export { InMemoryMemoryStore } from './stores/in-memory.js';

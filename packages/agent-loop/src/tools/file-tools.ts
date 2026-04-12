@@ -1,5 +1,5 @@
 /**
- * File tools backed by any MemoryStore from @chaos/sdk.
+ * File tools backed by any MemoryStore implementation.
  *
  * Returns Vercel AI SDK tools for read_file, write_file, list_directory,
  * delete_file, grep_file, and find_files.

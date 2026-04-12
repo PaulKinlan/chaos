@@ -6,7 +6,9 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing/index.ts"
+    "./testing": "./src/testing/index.ts",
+    "./stores": "./src/stores.ts",
+    "./stores/in-memory": "./src/stores/in-memory.ts"
   },
   "scripts": {
     "build": "tsc",
