@@ -11,12 +11,8 @@ import {
   loadChannelConfigs,
   saveChannelConfigs,
   registerWithRelay,
-  listChannels,
-  registerTelegramChannel,
-  registerChannel,
-  removeChannel as removeChannelApi,
-  startChannels,
-  stopChannels,
+  createChannelsSDK,
+  getChannelsSDK,
   isWebSocketConnected,
   type RelaySettings,
   type ChannelConfig,
@@ -65,10 +61,10 @@ export function ChannelsPanel({ defaultAgentId }: ChannelsPanelProps) {
       if (ch === 'w') { setView('add-webhook'); setInputStep(0); setInputBuffer(''); return; }
       if (ch === 't') { setView('add-telegram'); setInputStep(0); setInputBuffer(''); return; }
       if (ch === 'r' && settings) {
-        // Refresh channels from relay
         (async () => {
           try {
-            const remote = await listChannels({ serverUrl: settings.serverUrl, apiKey: settings.apiKey });
+            const sdk = getChannelsSDK() || createChannelsSDK(settings);
+            const remote = await sdk.channels.list();
             saveChannelConfigs(remote);
             setChannels(remote);
             setStatus('Channels refreshed');
@@ -80,12 +76,17 @@ export function ChannelsPanel({ defaultAgentId }: ChannelsPanelProps) {
       }
       if (ch === 'd' && channels[cursor]) {
         const ch2 = channels[cursor]!;
-        if (settings) {
-          removeChannelApi({ serverUrl: settings.serverUrl, apiKey: settings.apiKey }, ch2.id).catch(() => {});
-        }
-        const updated = channels.filter(c => c.id !== ch2.id);
-        saveChannelConfigs(updated);
-        setChannels(updated);
+        (async () => {
+          try {
+            if (settings) {
+              const sdk = getChannelsSDK() || createChannelsSDK(settings);
+              await sdk.channels.remove(ch2.id);
+            }
+            const updated = channels.filter(c => c.id !== ch2.id);
+            saveChannelConfigs(updated);
+            setChannels(updated);
+          } catch { /* */ }
+        })();
         return;
       }
       return;
@@ -113,8 +114,8 @@ export function ChannelsPanel({ defaultAgentId }: ChannelsPanelProps) {
               saveRelaySettings(newSettings);
               setSettings(newSettings);
 
-              // Fetch existing channels
-              const remote = await listChannels({ serverUrl: url, apiKey });
+              const sdk = createChannelsSDK(newSettings);
+              const remote = await sdk.channels.list();
               saveChannelConfigs(remote);
               setChannels(remote);
 
@@ -143,10 +144,11 @@ export function ChannelsPanel({ defaultAgentId }: ChannelsPanelProps) {
           if (!settings) { setStatus('Not connected'); setView('main'); return; }
           (async () => {
             try {
-              const channel = await registerChannel(
-                { serverUrl: settings.serverUrl, apiKey: settings.apiKey },
-                { type: 'webhook', direction: 'inbound', name: tempUrl, agentId: inputBuffer.trim(), enabled: true, metadata: {} },
-              );
+              const sdk = getChannelsSDK() || createChannelsSDK(settings);
+              const channel = await sdk.channels.register({
+                type: 'webhook', direction: 'inbound', name: tempUrl,
+                agentId: inputBuffer.trim(), enabled: true, metadata: {},
+              });
               const updated = [...channels, channel];
               saveChannelConfigs(updated);
               setChannels(updated);
@@ -175,12 +177,9 @@ export function ChannelsPanel({ defaultAgentId }: ChannelsPanelProps) {
           if (!settings) { setStatus('Not connected'); setView('main'); return; }
           (async () => {
             try {
-              const result = await registerTelegramChannel(
-                { serverUrl: settings.serverUrl, apiKey: settings.apiKey },
-                tempUrl,
-                inputBuffer.trim(),
-              );
-              const remote = await listChannels({ serverUrl: settings.serverUrl, apiKey: settings.apiKey });
+              const sdk = getChannelsSDK() || createChannelsSDK(settings);
+              const result = await sdk.channels.registerTelegram(tempUrl, inputBuffer.trim());
+              const remote = await sdk.channels.list();
               saveChannelConfigs(remote);
               setChannels(remote);
               setStatus(`Telegram: @${result.botUsername}`);

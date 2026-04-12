@@ -356,22 +356,19 @@ export function createChannelTools(agentId: string): ToolSet {
         content: z.string().describe('Message content to send'),
       })),
       execute: async ({ channelId, channelType, content }: { channelId?: string; channelType?: string; content: string }) => {
-        const { loadRelaySettings, loadChannelConfigs, sendReply } = await import('./channels.js');
-        const settings = loadRelaySettings();
-        if (!settings) return 'Error: Relay not configured. Use Ctrl+K to set up channels.';
+        const { loadChannelConfigs, getChannelsSDK } = await import('./channels.js');
+        const sdk = getChannelsSDK();
+        if (!sdk) return 'Error: Relay not configured. Use Ctrl+J to set up channels.';
 
         const channels = loadChannelConfigs();
-        let target = channelId
+        const target = channelId
           ? channels.find(c => c.id === channelId)
           : channels.find(c => (!channelType || c.type === channelType) && c.direction === 'bidirectional');
 
         if (!target) return `Error: No matching channel found. Available: ${channels.map(c => `${c.name || c.id} (${c.type})`).join(', ') || 'none'}`;
 
         try {
-          await sendReply(
-            { serverUrl: settings.serverUrl, apiKey: settings.apiKey },
-            { channelType: target.type, channelId: target.id, content },
-          );
+          await sdk.channels.reply({ channelType: target.type, channelId: target.id, content });
           return `Sent to ${target.name || target.id} (${target.type})`;
         } catch (err) {
           return `Error: ${err instanceof Error ? err.message : String(err)}`;

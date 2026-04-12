@@ -404,38 +404,174 @@ class ChannelsAPI extends EventTarget {
     super();
   }
 
-  private requireEngine(): EngineConnection {
-    if (!this.engine) throw new Error('ChannelsAPI: engine connection required for this operation');
-    return this.engine;
-  }
-
-  async register(config: ChannelConfig): Promise<ChannelConfig> {
-    const result = await this.requireEngine().send({ type: 'registerChannel', config });
+  /**
+   * Register a new channel. Uses relay directly if available, falls back to engine.
+   */
+  async register(config: Partial<ChannelConfig>): Promise<ChannelConfig> {
+    if (this.relay) {
+      const resp = await this.relay.fetch('/channels', {
+        method: 'POST',
+        body: JSON.stringify(config),
+      });
+      if (!resp.ok) throw new Error(`Channel registration failed: ${resp.status}`);
+      const data = await resp.json() as { channel: ChannelConfig };
+      this.dispatchEvent(new CustomEvent('registered', { detail: data.channel }));
+      return data.channel;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    const result = await this.engine.send({ type: 'registerChannel', config });
     const channel = result as unknown as ChannelConfig;
     this.dispatchEvent(new CustomEvent('registered', { detail: channel }));
     return channel;
   }
 
+  /**
+   * Register a Telegram bot channel.
+   */
+  async registerTelegram(botToken: string, agentId?: string): Promise<{ channelId: string; botUsername: string }> {
+    if (this.relay) {
+      const resp = await this.relay.fetch('/channels/telegram/register', {
+        method: 'POST',
+        body: JSON.stringify({ botToken, agentId }),
+      });
+      if (!resp.ok) throw new Error(`Telegram registration failed: ${resp.status}`);
+      return resp.json() as Promise<{ channelId: string; botUsername: string }>;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    const result = await this.engine.send({ type: 'registerTelegramChannel', botToken, agentId });
+    return result as unknown as { channelId: string; botUsername: string };
+  }
+
+  /**
+   * Register a Discord bot channel.
+   */
+  async registerDiscord(botToken: string, agentId?: string): Promise<{ channelId: string; botUsername: string }> {
+    if (this.relay) {
+      const resp = await this.relay.fetch('/channels/discord/register', {
+        method: 'POST',
+        body: JSON.stringify({ botToken, agentId }),
+      });
+      if (!resp.ok) throw new Error(`Discord registration failed: ${resp.status}`);
+      return resp.json() as Promise<{ channelId: string; botUsername: string }>;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    const result = await this.engine.send({ type: 'registerDiscordChannel', botToken, agentId });
+    return result as unknown as { channelId: string; botUsername: string };
+  }
+
+  /**
+   * Register an email channel.
+   */
+  async registerEmail(userEmail: string, channelName: string, agentId?: string): Promise<{ channelId: string; inboundAddress: string }> {
+    if (this.relay) {
+      const resp = await this.relay.fetch('/channels/email/register', {
+        method: 'POST',
+        body: JSON.stringify({ userEmail, channelName, agentId }),
+      });
+      if (!resp.ok) throw new Error(`Email registration failed: ${resp.status}`);
+      return resp.json() as Promise<{ channelId: string; inboundAddress: string }>;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    const result = await this.engine.send({ type: 'registerEmailChannel', userEmail, channelName, agentId });
+    return result as unknown as { channelId: string; inboundAddress: string };
+  }
+
+  /**
+   * List all channels.
+   */
   async list(): Promise<ChannelConfig[]> {
-    const result = await this.requireEngine().send({ type: 'listChannels' });
+    if (this.relay) {
+      const resp = await this.relay.fetch('/channels');
+      if (!resp.ok) throw new Error(`List channels failed: ${resp.status}`);
+      const data = await resp.json() as { channels: ChannelConfig[] };
+      return data.channels;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    const result = await this.engine.send({ type: 'listChannels' });
     return result as unknown as ChannelConfig[];
   }
 
+  /**
+   * Update a channel.
+   */
   async update(channelId: string, updates: Partial<ChannelConfig>): Promise<ChannelConfig> {
-    const result = await this.requireEngine().send({ type: 'updateChannel', channelId, updates });
+    if (this.relay) {
+      const resp = await this.relay.fetch(`/channels/${channelId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+      if (!resp.ok) throw new Error(`Update channel failed: ${resp.status}`);
+      const channel = await resp.json() as ChannelConfig;
+      this.dispatchEvent(new CustomEvent('updated', { detail: channel }));
+      return channel;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    const result = await this.engine.send({ type: 'updateChannel', channelId, updates });
     const channel = result as unknown as ChannelConfig;
     this.dispatchEvent(new CustomEvent('updated', { detail: channel }));
     return channel;
   }
 
+  /**
+   * Remove a channel.
+   */
   async remove(channelId: string): Promise<void> {
-    await this.requireEngine().send({ type: 'removeChannel', channelId });
+    if (this.relay) {
+      const resp = await this.relay.fetch(`/channels/${channelId}`, { method: 'DELETE' });
+      if (!resp.ok) throw new Error(`Remove channel failed: ${resp.status}`);
+      this.dispatchEvent(new CustomEvent('removed', { detail: { channelId } }));
+      return;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    await this.engine.send({ type: 'removeChannel', channelId });
     this.dispatchEvent(new CustomEvent('removed', { detail: { channelId } }));
   }
 
-  async getMessages(channelId: string, options?: PaginationOptions): Promise<ChannelMessage[]> {
-    const result = await this.requireEngine().send({ type: 'getChannelMessages', channelId, ...options });
-    return result as unknown as ChannelMessage[];
+  /**
+   * Poll for new messages.
+   */
+  async pollMessages(since?: string): Promise<{ messages: ChannelMessage[]; since: string }> {
+    if (this.relay) {
+      const query = since ? `?since=${encodeURIComponent(since)}` : '';
+      const resp = await this.relay.fetch(`/messages${query}`);
+      if (!resp.ok) throw new Error(`Poll failed: ${resp.status}`);
+      return resp.json() as Promise<{ messages: ChannelMessage[]; since: string }>;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    const result = await this.engine.send({ type: 'getChannelMessages', since });
+    return result as unknown as { messages: ChannelMessage[]; since: string };
+  }
+
+  /**
+   * Send a reply to a channel.
+   */
+  async reply(response: { channelType: string; channelId: string; replyTo?: string; content: string; metadata?: Record<string, unknown> }): Promise<void> {
+    if (this.relay) {
+      const resp = await this.relay.fetch('/reply', {
+        method: 'POST',
+        body: JSON.stringify(response),
+      });
+      if (!resp.ok) throw new Error(`Reply failed: ${resp.status}`);
+      return;
+    }
+    if (!this.engine) throw new Error('ChannelsAPI: engine or relay connection required');
+    await this.engine.send({ type: 'sendReply', ...response });
+  }
+
+  /**
+   * Open a WebSocket connection for real-time messages.
+   * Only available with a RelayConnection.
+   */
+  async connectWebSocket(onMessage: (msg: ChannelMessage) => void): Promise<{ close(): void } | null> {
+    if (!this.relay) return null;
+    const conn = await this.relay.connect();
+    conn.onMessage((data: unknown) => {
+      const parsed = data as { type?: string; message?: ChannelMessage; payload?: ChannelMessage };
+      if (parsed.type === 'message' && (parsed.message || parsed.payload)) {
+        onMessage((parsed.message || parsed.payload) as ChannelMessage);
+      }
+    });
+    return { close: () => conn.close() };
   }
 }
 
