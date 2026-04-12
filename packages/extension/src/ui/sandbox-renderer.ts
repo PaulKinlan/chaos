@@ -1,20 +1,32 @@
 /**
- * SandboxRenderer — renders untrusted content in a manifest-declared sandbox page.
+ * SandboxRenderer — renders untrusted content in a sandboxed srcdoc iframe.
  *
- * Uses src/sandbox/sandbox.html declared in manifest.json's "sandbox" section.
- * The sandbox page has allow-scripts but NO access to chrome.* APIs.
- * Communication via postMessage only.
- *
- * Two modes:
- * - Standard: sanitized HTML, no scripts (markdown, text, JSON display)
- * - Interactive: HTML + CSS + JS (AI-generated apps, dashboards, HTML artifacts)
- *
- * Pattern from NotebookLM Chrome's SandboxRenderer.
+ * Uses iframe sandbox="allow-scripts allow-forms" with srcdoc containing
+ * all content inline. No external files, no manifest sandbox, no CSP conflicts.
  */
 
 import DOMPurify from 'dompurify';
 
-// Standard mode: strip scripts, styles, forms
+const INTERACTIVE_CONFIG = {
+  ALLOWED_TAGS: [
+    'p', 'br', 'strong', 'em', 'b', 'i', 'code', 'pre',
+    'ul', 'ol', 'li', 'a', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr',
+    'del', 'sup', 'sub', 'input', 'img', 'label', 'button', 'select', 'option',
+    'textarea', 'form', 'details', 'summary', 'canvas', 'style',
+    'svg', 'path', 'circle', 'rect', 'line', 'g', 'text', 'defs',
+  ],
+  ALLOWED_ATTR: [
+    'href', 'class', 'id', 'type', 'checked', 'disabled', 'src', 'alt',
+    'width', 'height', 'for', 'data-*', 'aria-label', 'role', 'tabindex',
+    'name', 'value', 'placeholder', 'style',
+    'viewBox', 'fill', 'stroke', 'stroke-width', 'd', 'cx', 'cy', 'r',
+    'x', 'y', 'x1', 'y1', 'x2', 'y2', 'transform',
+  ],
+  ALLOW_DATA_ATTR: true,
+  FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
+};
+
 const STANDARD_CONFIG = {
   ALLOWED_TAGS: [
     'p', 'br', 'strong', 'em', 'b', 'i', 'code', 'pre',
@@ -27,142 +39,89 @@ const STANDARD_CONFIG = {
   FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'object', 'embed'],
 };
 
-// Interactive mode: allow styles and form elements, strip scripts (passed separately)
-const INTERACTIVE_CONFIG = {
-  ALLOWED_TAGS: [
-    'p', 'br', 'strong', 'em', 'b', 'i', 'code', 'pre',
-    'ul', 'ol', 'li', 'a', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr',
-    'del', 'sup', 'sub', 'input', 'img', 'label', 'button', 'select', 'option',
-    'textarea', 'form', 'details', 'summary', 'canvas', 'style',
-    'svg', 'path', 'circle', 'rect', 'line', 'g', 'text', 'defs', 'clipPath', 'use',
-  ],
-  ALLOWED_ATTR: [
-    'href', 'class', 'id', 'type', 'checked', 'disabled', 'src', 'alt',
-    'width', 'height', 'for', 'data-*', 'aria-label', 'aria-hidden', 'role',
-    'tabindex', 'name', 'value', 'placeholder', 'style',
-    'viewBox', 'fill', 'stroke', 'stroke-width', 'd', 'cx', 'cy', 'r',
-    'x', 'y', 'x1', 'y1', 'x2', 'y2', 'transform',
-  ],
-  ALLOW_DATA_ATTR: true,
-  FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
-};
-
-/**
- * Check whether HTML content needs sandboxed rendering (has scripts/styles).
- */
 export function needsSandbox(html: string): boolean {
   return /<(script|style|form|iframe|canvas)[\s>]/i.test(html);
+}
+
+const BASE_STYLE = `
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; margin: 0; }
+body { font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.6; color: #e1e4e8; background: #0d1117; padding: 16px; overflow-wrap: break-word; }
+a { color: #8b9cf6; }
+pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; overflow-x: auto; margin: 8px 0; }
+code { font-family: monospace; font-size: 13px; background: #161b22; padding: 2px 5px; border-radius: 3px; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+th, td { border: 1px solid #30363d; padding: 8px 12px; }
+th { background: #161b22; font-weight: 600; color: #c9d1d9; }
+h1,h2,h3,h4 { color: #c9d1d9; margin: 16px 0 8px; font-weight: 600; }
+p { margin: 8px 0; }
+ul,ol { margin: 8px 0; padding-left: 24px; }
+blockquote { border-left: 3px solid #30363d; margin: 8px 0; padding: 4px 16px; color: #8b949e; }
+hr { border: none; border-top: 1px solid #30363d; margin: 16px 0; }
+img { max-width: 100%; }
+button { cursor: pointer; }
+`;
+
+const RESIZE_SCRIPT = `
+(function(){
+  function r(){window.parent.postMessage({type:'sandbox-resize',height:document.body.scrollHeight},'*')}
+  r();
+  requestAnimationFrame(function(){requestAnimationFrame(r)});
+  new ResizeObserver(r).observe(document.body);
+})();
+`;
+
+function buildSrcdoc(bodyHtml: string, scripts: string[] = []): string {
+  const scriptTags = scripts.map(s => `<script>${s}<\/script>`).join('\n');
+  return `<!DOCTYPE html><html><head><style>${BASE_STYLE}</style></head><body>${bodyHtml}${scriptTags}<script>${RESIZE_SCRIPT}<\/script></body></html>`;
 }
 
 export class SandboxRenderer {
   private iframe: HTMLIFrameElement | null = null;
   private container: HTMLElement;
-  private isReady = false;
-  private readyPromise: Promise<void>;
-  private readyResolve: (() => void) | null = null;
-  private messageId = 0;
-  private pendingMessages = new Map<number, { resolve: (h?: number) => void; reject: (e: unknown) => void }>();
   private boundHandler: (e: MessageEvent) => void;
 
   constructor(container: HTMLElement) {
     this.container = container;
     this.boundHandler = this.handleMessage.bind(this);
-    this.readyPromise = new Promise(resolve => { this.readyResolve = resolve; });
-    this.init();
-  }
-
-  private init(): void {
-    this.iframe = document.createElement('iframe');
-    this.iframe.src = chrome.runtime.getURL('src/sandbox/sandbox.html');
-    // The manifest "sandbox" section gives this page:
-    // - Its own unique origin (can't access extension APIs)
-    // - allow-scripts (inline scripts work)
-    // - allow-forms (interactive content works)
-    // Do NOT add iframe.sandbox — manifest declaration is sufficient
-    // and adding it causes double-sandbox origin conflicts.
-    this.iframe.style.cssText = 'width:100%;border:none;display:block;min-height:100px;background:#0d1117;border-radius:6px;';
-
     window.addEventListener('message', this.boundHandler);
+    this.iframe = document.createElement('iframe');
+    this.iframe.sandbox.add('allow-scripts');
+    this.iframe.sandbox.add('allow-forms');
+    this.iframe.style.cssText = 'width:100%;border:none;display:block;min-height:100px;background:#0d1117;border-radius:6px;';
     this.container.appendChild(this.iframe);
   }
 
   private handleMessage(event: MessageEvent): void {
     if (event.source !== this.iframe?.contentWindow) return;
-    const data = event.data;
-    if (!data) return;
-
-    if (data.type === 'SANDBOX_READY') {
-      this.isReady = true;
-      this.readyResolve?.();
-      return;
-    }
-
-    if (data.type === 'RENDER_COMPLETE' || data.type === 'HEIGHT_RESPONSE') {
-      if (data.height && this.iframe) {
-        this.iframe.style.height = `${data.height + 16}px`; // Add padding
-      }
-      const pending = this.pendingMessages.get(data.messageId);
-      if (pending) {
-        pending.resolve(data.height);
-        this.pendingMessages.delete(data.messageId);
-      }
+    if (event.data?.type === 'sandbox-resize' && typeof event.data.height === 'number') {
+      this.iframe!.style.height = `${event.data.height}px`;
     }
   }
 
-  /**
-   * Render sanitized HTML (no scripts allowed).
-   */
-  async render(html: string): Promise<number | undefined> {
-    await this.readyPromise;
-    if (!this.iframe?.contentWindow) throw new Error('Sandbox not available');
-
+  async render(html: string): Promise<void> {
+    if (!this.iframe) return;
     const sanitized = DOMPurify.sanitize(html, STANDARD_CONFIG);
-    const id = ++this.messageId;
-
-    return new Promise((resolve, reject) => {
-      this.pendingMessages.set(id, { resolve, reject });
-      this.iframe!.contentWindow!.postMessage({ type: 'RENDER_CONTENT', content: sanitized, messageId: id }, '*');
-      setTimeout(() => {
-        if (this.pendingMessages.has(id)) { this.pendingMessages.delete(id); reject(new Error('Render timeout')); }
-      }, 5000);
-    });
+    this.iframe.srcdoc = buildSrcdoc(sanitized);
   }
 
-  /**
-   * Render interactive HTML with JavaScript.
-   * Scripts are extracted, HTML is sanitized, scripts injected separately in the sandbox.
-   */
-  async renderInteractive(html: string): Promise<number | undefined> {
-    await this.readyPromise;
-    if (!this.iframe?.contentWindow) throw new Error('Sandbox not available');
-
-    // Extract scripts before sanitization
+  async renderInteractive(html: string): Promise<void> {
+    if (!this.iframe) return;
     const scripts: string[] = [];
     const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
     let match;
     while ((match = scriptRegex.exec(html)) !== null) {
       scripts.push(match[1]!);
     }
-
     const htmlWithoutScripts = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
     const sanitized = DOMPurify.sanitize(htmlWithoutScripts, INTERACTIVE_CONFIG);
-    const id = ++this.messageId;
-
-    return new Promise((resolve, reject) => {
-      this.pendingMessages.set(id, { resolve, reject });
-      this.iframe!.contentWindow!.postMessage({
-        type: 'RENDER_INTERACTIVE', content: sanitized, scripts, messageId: id,
-      }, '*');
-      setTimeout(() => {
-        if (this.pendingMessages.has(id)) { this.pendingMessages.delete(id); reject(new Error('Render timeout')); }
-      }, 5000);
-    });
+    this.iframe.srcdoc = buildSrcdoc(sanitized, scripts);
   }
 
   clear(): void {
-    if (this.iframe?.contentWindow) {
-      this.iframe.contentWindow.postMessage({ type: 'CLEAR_CONTENT' }, '*');
+    if (this.iframe) {
+      this.iframe.srcdoc = '';
       this.iframe.style.height = '100px';
     }
   }
@@ -170,24 +129,15 @@ export class SandboxRenderer {
   destroy(): void {
     window.removeEventListener('message', this.boundHandler);
     if (this.iframe) { this.iframe.remove(); this.iframe = null; }
-    this.pendingMessages.clear();
   }
-
-  get ready(): boolean { return this.isReady; }
-  waitForReady(): Promise<void> { return this.readyPromise; }
 }
 
-/**
- * Render HTML in a sandboxed iframe.
- * For backwards compatibility with existing renderInSandbox() calls.
- */
 export function renderInSandbox(html: string, container: HTMLElement): void {
   const renderer = new SandboxRenderer(container);
-  // Detect if content has scripts — use interactive mode
   if (/<script[\s>]/i.test(html)) {
-    renderer.renderInteractive(html).catch(console.error);
+    renderer.renderInteractive(html);
   } else {
-    renderer.render(html).catch(console.error);
+    renderer.render(html);
   }
 }
 
