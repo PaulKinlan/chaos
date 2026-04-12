@@ -1,13 +1,12 @@
 /**
- * Secure Content Viewer (Double Iframe Pattern)
+ * Secure Content Viewer
  *
- * Renders untrusted content safely using two nested iframes:
- * - Outer iframe: sandbox="allow-scripts" — hosts toolbar with download/copy/close buttons
- * - Inner iframe: sandbox="" (NO permissions) — renders the actual content
- *
- * Content cannot access the extension's DOM, storage, or APIs.
- * Content cannot navigate the parent frame or run scripts.
+ * Renders untrusted content safely using the manifest sandbox page.
+ * The sandbox has allow-scripts but NO access to chrome.* APIs.
+ * Interactive HTML artifacts with JavaScript are supported.
  */
+
+import { SandboxRenderer as SandboxRendererImpl } from './sandbox-renderer.js';
 
 export interface SecureViewerOptions {
   type?: 'html' | 'markdown' | 'text' | 'json' | 'csv' | 'image' | 'svg' | 'pdf';
@@ -580,16 +579,22 @@ export function createSecureViewer(
   let rawContent = content;
   let currentType = type;
 
-  // Simple approach: single sandboxed iframe with content directly in srcdoc
-  // No postMessage needed — content is baked into the srcdoc at creation time
-  const frame = document.createElement('iframe');
-  frame.className = 'secure-viewer-frame';
-  frame.sandbox.value = ''; // NO permissions at all
-  frame.style.cssText = 'width:100%;height:100%;border:none;';
+  // Content container for the SandboxRenderer
+  const contentContainer = document.createElement('div');
+  contentContainer.style.cssText = 'flex:1;overflow:auto;';
 
+  // Use the manifest sandbox page for rendering (supports interactive JS)
+  const renderer = new SandboxRendererImpl(contentContainer);
+
+  // Render initial content
   const initialHtml = contentToHtml(rawContent, currentType);
-  frame.srcdoc = initialHtml;
-  console.log(`[secure-viewer] Created viewer ${viewerId}, type=${currentType}, content length=${content.length}, html length=${initialHtml.length}`);
+  const isInteractive = currentType === 'html' && /<script[\s>]/i.test(rawContent);
+  if (isInteractive) {
+    renderer.renderInteractive(initialHtml).catch(console.error);
+  } else {
+    renderer.render(initialHtml).catch(console.error);
+  }
+  console.log(`[secure-viewer] Created viewer ${viewerId}, type=${currentType}, interactive=${isInteractive}`);
 
   // Toolbar rendered in the parent DOM (not in an iframe)
   const toolbar = document.createElement('div');
@@ -630,17 +635,23 @@ export function createSecureViewer(
   const wrapper = document.createElement('div');
   wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;';
   wrapper.appendChild(toolbar);
-  wrapper.appendChild(frame);
+  wrapper.appendChild(contentContainer);
   container.appendChild(wrapper);
 
   const viewer: SecureViewer = {
     setContent(newContent: string, newType?: SecureViewerOptions['type']) {
       rawContent = newContent;
       if (newType) currentType = newType;
-      frame.srcdoc = contentToHtml(rawContent, currentType);
-      console.log(`[secure-viewer] Updated viewer ${viewerId}, type=${currentType}, content length=${newContent.length}`);
+      const html = contentToHtml(rawContent, currentType);
+      const interactive = currentType === 'html' && /<script[\s>]/i.test(rawContent);
+      if (interactive) {
+        renderer.renderInteractive(html).catch(console.error);
+      } else {
+        renderer.render(html).catch(console.error);
+      }
     },
     destroy() {
+      renderer.destroy();
       wrapper.remove();
     },
   };
