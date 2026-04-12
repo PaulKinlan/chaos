@@ -2361,15 +2361,20 @@ window.addEventListener('message', (event) => {
     case 'recognition-result': {
       if (!col) break;
       const { finalTranscript, interimTranscript } = event.data;
+
+      // Strip the previous interim text from the input
+      const lastInterimLen = col.inputEl.dataset.lastInterim?.length || 0;
+      const baseText = col.inputEl.value.substring(0, col.inputEl.value.length - lastInterimLen);
+
       if (finalTranscript) {
-        voiceFinalTranscript += finalTranscript + ' ';
+        // Final result: replace interim with final text, clear interim tracking
+        col.inputEl.value = baseText + finalTranscript + ' ';
+        col.inputEl.dataset.lastInterim = '';
+      } else {
+        // Interim result: show as preview (will be replaced by final or next interim)
+        col.inputEl.value = baseText + (interimTranscript || '');
+        col.inputEl.dataset.lastInterim = interimTranscript || '';
       }
-      const existingText = col.inputEl.value.substring(
-        0,
-        col.inputEl.value.length - (col.inputEl.dataset.lastInterim?.length || 0)
-      );
-      col.inputEl.value = existingText + voiceFinalTranscript + (interimTranscript || '');
-      col.inputEl.dataset.lastInterim = interimTranscript || '';
       col.inputEl.scrollTop = col.inputEl.scrollHeight;
       break;
     }
