@@ -82,7 +82,18 @@ async function buildSystemPrompt(
 You are running an autonomous task. Work through it step by step.
 Use your tools to gather information, do analysis, and produce output.
 When you have completed the task, respond with your final summary
-without calling any more tools.`);
+without calling any more tools.
+
+## HTML Generation Order
+
+When generating HTML content (reports, dashboards, interactive apps),
+always write in this order:
+1. **HTML structure first** — write all the DOM elements, classes, IDs
+2. **CSS styles second** — now you know what elements exist to style
+3. **JavaScript last** — the DOM and styles are ready for scripts to reference
+
+This produces better output because you can't predict what styles are
+needed until the DOM structure is defined.`);
 
   // Context
   if (context) {
