@@ -124,23 +124,24 @@ export class ChaosArtifactDetail extends LitElement {
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
 
-  private _toggleFullscreen(): void {
+  private async _toggleFullscreen(): Promise<void> {
     const dialog = this.querySelector('#chaos-artifact-dialog') as HTMLDialogElement;
     if (!dialog) return;
 
-    const isFullscreen = dialog.style.maxWidth === '100vw';
-    if (isFullscreen) {
-      // Restore normal size
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
       dialog.style.maxWidth = '700px';
       dialog.style.width = '90vw';
       dialog.style.maxHeight = '85vh';
       dialog.style.borderRadius = '12px';
     } else {
-      // Go fullscreen
       dialog.style.maxWidth = '100vw';
       dialog.style.width = '100vw';
       dialog.style.maxHeight = '100vh';
       dialog.style.borderRadius = '0';
+      await dialog.requestFullscreen().catch(() => {
+        // Fullscreen API may not be available — just use max size
+      });
     }
   }
 

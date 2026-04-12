@@ -10,7 +10,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sendMsg } from '../../services/messaging.js';
-import { createSecureViewer, detectContentType, type SecureViewer } from '../../ui/secure-viewer.js';
 import type { AgentMeta, ArtifactMeta } from '../../storage/types.js';
 import { artifacts as artifactsSignal, refreshArtifacts } from '../../state/app-state.js';
 import { SignalWatcher } from '../../state/signal-watcher.js';
@@ -81,11 +80,7 @@ export class ChaosArtifactsView extends SignalWatcher(LitElement) {
   @state() private _loading = false;
 
   // Detail modal state
-  @state() private _detailArtifact: ArtifactMeta | null = null;
-  @state() private _detailContent = '';
-  @state() private _detailOpen = false;
 
-  private _activeSecureViewer: SecureViewer | null = null;
 
   connectedCallback() {
     super.connectedCallback();
@@ -94,10 +89,6 @@ export class ChaosArtifactsView extends SignalWatcher(LitElement) {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._activeSecureViewer) {
-      this._activeSecureViewer.destroy();
-      this._activeSecureViewer = null;
-    }
   }
 
   private _agentName(agentId: string): string {
@@ -147,65 +138,13 @@ export class ChaosArtifactsView extends SignalWatcher(LitElement) {
     return this._showDetail(artifact);
   }
 
-  private async _showDetail(artifact: ArtifactMeta): Promise<void> {
-    // Destroy any previous secure viewer
-    if (this._activeSecureViewer) {
-      this._activeSecureViewer.destroy();
-      this._activeSecureViewer = null;
-    }
-
-    let fileContent = '(Unable to read file content)';
-    try {
-      const result = await sendMsg<{ content: string }>({
-        type: 'readArtifactContent',
-        path: artifact.path,
-      });
-      if (result?.content) {
-        fileContent = result.content;
-      } else {
-        // Try reading from agent-scoped path as fallback
-        try {
-          const agentResult = await sendMsg<{ content: string }>({
-            type: 'readArtifactContent',
-            path: `agents/${artifact.agentId}/${artifact.path}`,
-          });
-          if (agentResult?.content) fileContent = agentResult.content;
-        } catch { /* fallback failed too */ }
-      }
-    } catch (err) {
-      console.error('[chaos-artifacts-view] Failed to read artifact content:', artifact.path, err);
-    }
-
-    this._detailArtifact = artifact;
-    this._detailContent = fileContent;
-    this._detailOpen = true;
-
-    // Wait for render, then create the secure viewer
-    await this.updateComplete;
-    const viewerContainer = this.querySelector('#chaos-artifact-viewer-container') as HTMLElement;
-    if (viewerContainer) {
-      const contentType = artifact.type && artifact.type !== 'webpage' && artifact.type !== 'image'
-        ? artifact.type as 'html' | 'markdown' | 'text' | 'json' | 'csv'
-        : artifact.type === 'webpage' ? 'html' : detectContentType(artifact.path);
-
-      const filename = artifact.path.split('/').pop() || artifact.path;
-      const displayTitle = artifact.title || filename;
-
-      this._activeSecureViewer = createSecureViewer(viewerContainer, fileContent, {
-        type: contentType,
-        title: displayTitle,
-        downloadFilename: filename,
-      });
-    }
-  }
-
-  private _closeDetail(): void {
-    if (this._activeSecureViewer) {
-      this._activeSecureViewer.destroy();
-      this._activeSecureViewer = null;
-    }
-    this._detailOpen = false;
-    this._detailArtifact = null;
+  private _showDetail(artifact: ArtifactMeta): void {
+    // Use the shared <chaos-artifact-detail> component — same as dashboard
+    this.dispatchEvent(new CustomEvent('show-artifact-detail', {
+      detail: { artifact },
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private async _togglePin(artifact: ArtifactMeta): Promise<void> {
@@ -215,20 +154,6 @@ export class ChaosArtifactsView extends SignalWatcher(LitElement) {
     this.requestUpdate();
     // Refresh via signal — all watching views update automatically
     await refreshArtifacts();
-  }
-
-  private _downloadArtifact(): void {
-    if (!this._detailArtifact) return;
-    const filename = this._detailArtifact.path.split('/').pop() || this._detailArtifact.path;
-    const blob = new Blob([this._detailContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   }
 
   private async _deleteArtifact(artifactPath: string): Promise<void> {
@@ -326,75 +251,9 @@ export class ChaosArtifactsView extends SignalWatcher(LitElement) {
         </div>
       </div>
 
-      ${this._renderDetailModal()}
     `;
   }
 
-  private _renderDetailModal() {
-    if (!this._detailOpen || !this._detailArtifact) return nothing;
-
-    const artifact = this._detailArtifact;
-    const filename = artifact.path.split('/').pop() || artifact.path;
-    const displayTitle = artifact.title || filename;
-    const typeLabel = artifactTypeLabel(artifact);
-    const pinSvgOutline = html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>`;
-    const pinSvgFilled = html`<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>`;
-    const downloadSvg = html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
-
-    return html`
-      <div class="modal-overlay visible" @click=${(e: Event) => { if (e.target === e.currentTarget) this._closeDetail(); }}>
-        <div class="modal">
-          <button class="modal-close" @click=${() => this._closeDetail()}>
-            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-          <div>
-            <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3);">
-              <h2 style="flex:1;margin:0;">${escapeHtml(displayTitle)}</h2>
-              <span class="badge ${artifactTypeBadgeClass(typeLabel)}" style="font-size:10px;">${escapeHtml(typeLabel)}</span>
-              <button class="btn btn-ghost btn-xs" title="${artifact.pinned ? 'Unpin' : 'Pin'}"
-                style="color:${artifact.pinned ? 'var(--accent)' : 'var(--text-muted)'};"
-                @click=${() => this._togglePin(artifact)}>
-                ${artifact.pinned ? pinSvgFilled : pinSvgOutline}
-              </button>
-              <button class="btn btn-ghost btn-xs" title="Download" @click=${() => this._downloadArtifact()}>
-                ${downloadSvg}
-              </button>
-            </div>
-            <div class="task-detail-field">
-              <div class="task-detail-label">Description</div>
-              <div class="task-detail-value">${escapeHtml(artifact.description)}</div>
-            </div>
-            <div class="task-detail-field">
-              <div class="task-detail-label">Producer</div>
-              <div class="task-detail-value">${escapeHtml(this._agentName(artifact.agentId))}</div>
-            </div>
-            <div class="task-detail-field">
-              <div class="task-detail-label">Path</div>
-              <div class="task-detail-value" style="font-family:var(--font-mono);font-size:var(--text-xs);">
-                ${escapeHtml(artifact.path)}
-              </div>
-            </div>
-            <div class="task-detail-field">
-              <div class="task-detail-label">Created</div>
-              <div class="task-detail-value">${formatTimeFull(artifact.timestamp)}</div>
-            </div>
-            ${artifact.tags && artifact.tags.length > 0 ? html`
-              <div class="task-detail-field">
-                <div class="task-detail-label">Tags</div>
-                <div class="task-detail-value">
-                  ${artifact.tags.map(t => html`<span class="badge badge-gray" style="margin-right:4px;">${escapeHtml(t)}</span>`)}
-                </div>
-              </div>
-            ` : nothing}
-            <div class="task-detail-field">
-              <div class="task-detail-label">Content</div>
-              <div class="secure-viewer-container" id="chaos-artifact-viewer-container"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
 }
 
 declare global {
