@@ -22,6 +22,7 @@ export default defineConfig({
         app: new URL('./app.html', import.meta.url).pathname,
         'src/voice/recognition-frame': new URL('./src/voice/recognition-frame.html', import.meta.url).pathname,
         'src/offscreen-parser': new URL('./src/offscreen-parser.html', import.meta.url).pathname,
+        'src/sandbox/sandbox': new URL('./src/sandbox/sandbox.html', import.meta.url).pathname,
       },
     },
   },

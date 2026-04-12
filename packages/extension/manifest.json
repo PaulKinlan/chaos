@@ -49,6 +49,11 @@
       "description": "Activate voice input for current agent"
     }
   },
+  "sandbox": {
+    "pages": [
+      "src/sandbox/sandbox.html"
+    ]
+  },
   "web_accessible_resources": [
     {
       "matches": [
@@ -58,7 +63,8 @@
         "src/voice/recognition-frame.html",
         "src/voice/recognition-frame.js",
         "src/voice/beep.wav",
-        "src/voice/boop.wav"
+        "src/voice/boop.wav",
+        "src/sandbox/sandbox.html"
       ]
     }
   ],
