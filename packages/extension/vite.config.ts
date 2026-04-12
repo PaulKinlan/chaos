@@ -17,6 +17,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    modulePreload: false,
     rollupOptions: {
       input: {
         app: new URL('./app.html', import.meta.url).pathname,
