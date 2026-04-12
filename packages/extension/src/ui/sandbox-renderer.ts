@@ -111,16 +111,23 @@ export class SandboxRenderer {
   async renderInteractive(html: string): Promise<number | undefined> {
     await this.readyPromise;
     if (!this.iframe?.contentWindow) throw new Error('Sandbox not available');
+
+    // Extract scripts before sending — they get injected separately in the sandbox
     const scripts: string[] = [];
     const re = /<script[^>]*>([\s\S]*?)<\/script>/gi;
     let m;
     while ((m = re.exec(html)) !== null) scripts.push(m[1]!);
-    const cleaned = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-    const sanitized = DOMPurify.sanitize(cleaned, INTERACTIVE_CONFIG);
+    const htmlWithoutScripts = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+
+    // For interactive mode: pass HTML as-is (no DOMPurify).
+    // The sandbox is the security boundary — it has no access to extension
+    // APIs, no access to parent DOM, no access to chrome.*. The content
+    // runs in complete isolation. DOMPurify would strip styles, event
+    // handlers, and interactivity that the AI-generated content needs.
     const id = ++this.messageId;
     return new Promise((resolve, reject) => {
       this.pendingMessages.set(id, { resolve, reject });
-      this.iframe!.contentWindow!.postMessage({ type: 'RENDER_INTERACTIVE', content: sanitized, scripts, messageId: id }, '*');
+      this.iframe!.contentWindow!.postMessage({ type: 'RENDER_INTERACTIVE', content: htmlWithoutScripts, scripts, messageId: id }, '*');
       setTimeout(() => { if (this.pendingMessages.has(id)) { this.pendingMessages.delete(id); reject(new Error('timeout')); } }, 5000);
     });
   }
