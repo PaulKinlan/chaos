@@ -234,11 +234,22 @@ class SQLiteMemoryStore implements MemoryStore {
 }
 */
 
+console.log('═══════════════════════════════════════════════');
+console.log('  Example 8: Custom MemoryStore Patterns');
+console.log('═══════════════════════════════════════════════\n');
+
 console.log('This file contains MemoryStore implementation patterns.');
-console.log('Uncomment the one you need and add the appropriate SDK dependency.');
-console.log('');
+console.log('Each pattern implements the same MemoryStore interface');
+console.log('backed by a different storage system.\n');
+
+console.log('To use one: uncomment the class and add the SDK dependency.\n');
+
 console.log('Available patterns:');
-console.log('  1. Node.js Filesystem (fs)');
-console.log('  2. AWS S3 (@aws-sdk/client-s3)');
-console.log('  3. Google Firestore (@google-cloud/firestore)');
-console.log('  4. SQLite (better-sqlite3)');
+console.log('  1. Node.js Filesystem  — uses fs module, stores files on disk');
+console.log('  2. AWS S3              — uses @aws-sdk/client-s3, stores in a bucket');
+console.log('  3. Google Firestore    — uses @google-cloud/firestore, stores as documents');
+console.log('  4. SQLite              — uses better-sqlite3, stores in a local database\n');
+
+console.log('All patterns implement: read, write, append, delete, list, mkdir, exists, search');
+console.log('');
+console.log('Done — this is a reference file, no code was executed.');

@@ -211,7 +211,25 @@ The generated tools are:
 
 ## MemoryStore
 
-The `MemoryStore` interface abstracts file storage for agents. An `InMemoryMemoryStore` is included for testing and prototyping. For production, implement the interface with your preferred backend.
+The `MemoryStore` interface abstracts file storage for agents. Two implementations are included:
+
+- **`InMemoryMemoryStore`** — for testing and prototyping (data lost on exit)
+- **`FilesystemMemoryStore`** — persists to the local filesystem (survives restarts)
+
+```ts
+import { FilesystemMemoryStore, createFileTools, createAgent } from '@chaos/agent-loop';
+
+const store = new FilesystemMemoryStore('./agent-data');
+const agent = createAgent({
+  id: 'my-agent',
+  name: 'My Agent',
+  model: model as any,
+  tools: createFileTools(store, 'my-agent'),
+});
+// Files persist at ./agent-data/my-agent/
+```
+
+For other backends, implement the interface:
 
 ```ts
 interface MemoryStore {
@@ -555,7 +573,8 @@ const result = await agent.run('Weather in London?');
 | `buildSkillsPrompt` | `(skills: Skill[]) => string` | Build a system prompt section from skills |
 | `parseSkillMd` | `(content, id?) => Skill` | Parse a SKILL.md with YAML frontmatter |
 | `InMemorySkillStore` | class | In-memory reference implementation of SkillStore |
-| `InMemoryMemoryStore` | class | In-memory reference implementation of MemoryStore |
+| `InMemoryMemoryStore` | class | In-memory store (testing/prototyping) |
+| `FilesystemMemoryStore` | class | Node.js filesystem store (persistent) |
 | `createOrchestrator` | `(config) => Orchestrator` | Create a multi-agent orchestrator |
 | `evaluatePermission` | `(toolName, args, config) => Promise<boolean>` | Evaluate a permission check |
 | `UsageTracker` | class | Track usage and costs within a run |
@@ -596,9 +615,10 @@ const result = await agent.run('Weather in London?');
 
 ### Store implementations
 
-| Export | Description |
-|--------|-------------|
-| `InMemoryMemoryStore` | In-memory store for testing/prototyping |
+| Export | Import path | Description |
+|--------|-------------|-------------|
+| `InMemoryMemoryStore` | `@chaos/agent-loop` | In-memory store for testing/prototyping (data lost on exit) |
+| `FilesystemMemoryStore` | `@chaos/agent-loop` | Node.js filesystem store (persistent, path-traversal safe) |
 
 ## Examples
 
@@ -616,6 +636,7 @@ The [`examples/`](examples/) directory contains runnable examples:
 | 8 | [`08-custom-memory-store.ts`](examples/08-custom-memory-store.ts) | Patterns for S3, Firestore, SQLite, filesystem |
 | 9 | [`09-skills.ts`](examples/09-skills.ts) | Skills system |
 | 10 | [`10-testing.ts`](examples/10-testing.ts) | Testing with createMockModel |
+| 11 | [`11-filesystem-store.ts`](examples/11-filesystem-store.ts) | Persistent filesystem storage — explore the created files |
 
 Run any example: `npx tsx examples/01-basic-agent.ts`
 

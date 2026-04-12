@@ -10,12 +10,25 @@
 import { createAgent, InMemorySkillStore, parseSkillMd } from '@chaos/agent-loop';
 import { createAnthropic } from '@ai-sdk/anthropic';
 
+console.log('═══════════════════════════════════════');
+console.log('  Example 9: Skills System');
+console.log('═══════════════════════════════════════\n');
+
+console.log('Skills are markdown documents that get injected into the system prompt.');
+console.log('They give the agent domain-specific instructions without changing its code.\n');
+
+// ── Setup: Install a code review skill ──
+console.log('── Setup: Installing a "Code Review" skill ──');
+console.log('   The skill teaches the agent to check for:');
+console.log('     - Security vulnerabilities (SQL injection, XSS, etc.)');
+console.log('     - Common bugs (off-by-one, null checks, race conditions)');
+console.log('     - Readability and naming conventions');
+console.log('     - Constructive suggestions\n');
+
 const model = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })('claude-sonnet-4-6');
 
-// Create a skill store and install some skills
 const skills = new InMemorySkillStore();
 
-// Skills are defined in markdown format
 const codeReviewSkill = parseSkillMd(`---
 id: code-review
 name: Code Review
@@ -35,22 +48,35 @@ When reviewing code:
 `);
 
 await skills.install(codeReviewSkill);
+console.log('   Skill installed: code-review v1.0.0\n');
 
 const agent = createAgent({
   id: 'reviewer',
   name: 'Code Reviewer',
   model: model as any,
   systemPrompt: 'You are a code review assistant.',
-  skills, // Skills are automatically included in the system prompt
+  skills,
   maxIterations: 5,
 });
 
-const result = await agent.run(`Review this code:
-\`\`\`js
-app.get('/user/:id', (req, res) => {
+// ── Task: Review a snippet with a SQL injection vulnerability ──
+console.log('── Task: Review a code snippet ──');
+console.log('   Sending a Node.js route handler with an obvious SQL injection bug.');
+console.log('   The skill should guide the agent to catch it.\n');
+
+const codeSnippet = `app.get('/user/:id', (req, res) => {
   const query = "SELECT * FROM users WHERE id = " + req.params.id;
   db.query(query, (err, result) => res.json(result));
-});
-\`\`\``);
+});`;
 
-console.log(result);
+console.log('   Code to review:');
+codeSnippet.split('\n').forEach(line => console.log(`   | ${line}`));
+console.log('');
+
+const result = await agent.run(`Review this code:\n\`\`\`js\n${codeSnippet}\n\`\`\``);
+
+console.log('   Agent review:\n');
+result.split('\n').forEach(line => console.log(`   ${line}`));
+console.log('');
+
+console.log('Done — the agent reviewed the code using its installed skill.');
