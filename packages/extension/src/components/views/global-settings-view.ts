@@ -545,6 +545,7 @@ export class ChaosGlobalSettingsView extends LitElement {
     dlg.querySelector('#fr-confirm')?.addEventListener('click', async () => {
       try {
         await chrome.storage.local.clear();
+        // Also clear sync in case there's leftover data from older versions
         await chrome.storage.sync.clear();
         try {
           const root = await navigator.storage.getDirectory();

@@ -40,7 +40,6 @@
       "packages/agent-loop": {
         "packageJson": {
           "dependencies": [
-            "npm:@chaos/sdk@*",
             "npm:ai@6",
             "npm:typedoc-plugin-markdown@^4.4.0",
             "npm:typedoc@0.28",
@@ -113,6 +112,27 @@
             "npm:typedoc@0.28",
             "npm:typescript@^5.5.0",
             "npm:vitest@3"
+          ]
+        }
+      },
+      "packages/tui": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@ai-sdk/anthropic@3",
+            "npm:@ai-sdk/google@3",
+            "npm:@ai-sdk/openai@3",
+            "npm:@chaos/agent-loop@*",
+            "npm:@chaos/sdk@*",
+            "npm:@types/react@^19.2.0",
+            "npm:@types/ws@^8.5.0",
+            "npm:ai@6",
+            "npm:ink@7",
+            "npm:react@^19.2.0",
+            "npm:tsx@4",
+            "npm:typescript@^5.5.0",
+            "npm:vitest@3",
+            "npm:ws@^8.18.0",
+            "npm:zod@^3.23.0"
           ]
         }
       }

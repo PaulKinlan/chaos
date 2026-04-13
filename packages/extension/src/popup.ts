@@ -15,7 +15,7 @@ const btnOpenDashboard = document.getElementById('btn-open-dashboard') as HTMLBu
 
 // ── Apply saved theme ──
 
-chrome.storage.sync.get('chaos:settings').then((result) => {
+chrome.storage.local.get('chaos:settings').then((result) => {
   const settings = result['chaos:settings'] as { theme?: string } | undefined;
   const theme = settings?.theme ?? 'system';
   if (theme !== 'system') {

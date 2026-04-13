@@ -1,10 +1,9 @@
 /**
  * Chrome storage wrapper.
  *
- * - Agent list lives in chrome.storage.local (not synced — agent data is in
- *   OPFS which doesn't sync, so syncing the list would create ghost agents).
- * - Settings live in chrome.storage.sync (cross-device).
- * - API keys live in chrome.storage.local (never synced).
+ * Everything uses chrome.storage.local — no sync storage.
+ * Agent data lives in OPFS which doesn't sync, so syncing config would
+ * create ghost agents on other devices.
  */
 
 import type { AgentMeta, Settings, ApiKeys, ScheduledTask, Hook } from './types.js';
@@ -51,16 +50,16 @@ export async function setAgentList(agents: AgentMeta[]): Promise<void> {
   await chrome.storage.local.set({ [KEYS.AGENT_LIST]: agents });
 }
 
-// ── Settings (sync storage) ──
+// ── Settings (local storage) ──
 
 export async function getSettings(): Promise<Settings> {
-  const result = await chrome.storage.sync.get(KEYS.SETTINGS);
+  const result = await chrome.storage.local.get(KEYS.SETTINGS);
   const stored = result[KEYS.SETTINGS] as Partial<Settings> | undefined;
   return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 export async function setSettings(settings: Settings): Promise<void> {
-  await chrome.storage.sync.set({ [KEYS.SETTINGS]: settings });
+  await chrome.storage.local.set({ [KEYS.SETTINGS]: settings });
 }
 
 // ── API keys (local storage — never synced) ──

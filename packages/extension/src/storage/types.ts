@@ -16,7 +16,7 @@ export interface AgentMeta {
   model?: string;       // per-agent model override (e.g. 'gemini-2.5-flash')
 }
 
-// ── Settings (stored in chrome.storage.sync) ──
+// ── Settings (stored in chrome.storage.local) ──
 
 export interface Settings {
   defaultAgentId?: string;
