@@ -360,7 +360,7 @@ export class ChromeBrowserNotifications implements BrowserNotifications {
   async show(title: string, message: string, options?: { iconUrl?: string }): Promise<void> {
     await chrome.notifications.create({
       type: 'basic',
-      iconUrl: options?.iconUrl ?? chrome.runtime.getURL('icons/icon128.png'),
+      iconUrl: options?.iconUrl ?? chrome.runtime.getURL('icons/icon-128.png'),
       title,
       message,
     });

@@ -2381,6 +2381,16 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         await removeScheduledTask(task.alarmId);
       }
 
+      // Notify user that the scheduled task completed
+      try {
+        await chrome.notifications.create({
+          type: 'basic',
+          iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+          title: `Task complete: ${task.prompt.slice(0, 40)}${task.prompt.length > 40 ? '...' : ''}`,
+          message: result ? result.slice(0, 200) : '(no output)',
+        });
+      } catch { /* notifications permission may not be granted */ }
+
       console.log(`Scheduled task completed for alarm: ${alarm.name}`);
     } else {
       // Legacy fallback: alarm names following the pattern agentId:name
