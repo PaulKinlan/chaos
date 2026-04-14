@@ -659,3 +659,11 @@ export function createSecureViewer(
 
   return viewer;
 }
+
+/**
+ * Render content to a full HTML document string suitable for opening in a new tab.
+ * Converts markdown, JSON, CSV, etc. to styled HTML.
+ */
+export function renderContentToHtml(content: string, type: string): string {
+  return contentToHtml(content, type);
+}

@@ -86,14 +86,9 @@ export class SandboxRenderer {
     }
 
     if (data.type === 'RENDER_COMPLETE' || data.type === 'HEIGHT_RESPONSE') {
-      if (data.height && this.iframe) {
-        // Only set pixel height if content is taller than the container
-        // Otherwise let CSS height:100% handle it (fills available space)
-        const containerHeight = this.container.clientHeight;
-        if (!containerHeight || data.height > containerHeight) {
-          this.iframe.style.height = `${data.height + 16}px`;
-        }
-      }
+      // Keep iframe at height:100% — the sandbox body scrolls internally.
+      // Don't set pixel height, as it causes content to overflow the container
+      // and get clipped without a scrollbar.
       const pending = this.pendingMessages.get(data.messageId);
       if (pending) {
         pending.resolve(data.height);

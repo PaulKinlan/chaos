@@ -14,7 +14,7 @@ import { LitElement, html, nothing } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, state } from 'lit/decorators.js';
 import { sendMsg } from '../../services/messaging.js';
-import { createSecureViewer, detectContentType } from '../../ui/secure-viewer.js';
+import { createSecureViewer, detectContentType, renderContentToHtml } from '../../ui/secure-viewer.js';
 import type { SecureViewer } from '../../ui/secure-viewer.js';
 import type { ArtifactMeta } from '../../storage/types.js';
 
@@ -114,13 +114,17 @@ export class ChaosArtifactDetail extends LitElement {
 
   private _openInNewTab(): void {
     if (!this._content) return;
-    const type = this._artifact?.type || 'text';
-    const isHtml = type === 'html' || type === 'webpage' || this._content.trim().startsWith('<!') || this._content.trim().startsWith('<html');
-    const mimeType = isHtml ? 'text/html' : type === 'markdown' ? 'text/markdown' : 'text/plain';
-    const blob = new Blob([this._content], { type: mimeType });
+    const artifact = this._artifact;
+    const contentType = artifact?.type && artifact.type !== 'webpage' && artifact.type !== 'image'
+      ? artifact.type as string
+      : artifact?.type === 'webpage' ? 'html' : (detectContentType(artifact?.path || '') || 'text');
+
+    // Render all content types to HTML so they display formatted in the new tab
+    // (browsers render text/markdown as raw text, JSON as raw text, etc.)
+    const renderedHtml = renderContentToHtml(this._content, contentType);
+    const blob = new Blob([renderedHtml], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
-    // Clean up after a delay (the new tab needs time to load)
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
 
@@ -200,13 +204,13 @@ export class ChaosArtifactDetail extends LitElement {
             </button>
           </div>
         </div>
-        <div style="padding:20px;overflow-y:auto;flex:1;min-height:0;">
+        <div style="padding:20px;overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;">
           <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">
             ${this._escapeHtml(artifact.description)} &middot; <code style="font-size:10px;">${this._escapeHtml(artifact.path)}</code>
           </div>
           ${this._loading
             ? html`<div style="text-align:center;padding:var(--sp-6);"><div class="spinner"></div></div>`
-            : html`<div class="secure-viewer-container" id="artifact-detail-viewer" style="height:400px;"></div>`
+            : html`<div class="secure-viewer-container" id="artifact-detail-viewer" style="flex:1;min-height:200px;overflow:hidden;"></div>`
           }
         </div>
       </dialog>
