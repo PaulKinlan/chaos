@@ -183,7 +183,7 @@ export class ChaosArtifactDetail extends LitElement {
       : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.09 6.26L21 9.27l-5 4.87L17.18 21 12 17.27 6.82 21 8 14.14l-5-4.87 6.91-1.01z"/></svg>';
 
     return html`
-      <dialog id="chaos-artifact-dialog" style="background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default);border-radius:12px;padding:0;max-width:700px;width:90vw;max-height:85vh;overflow:hidden;position:fixed;inset:0;margin:auto;display:flex;flex-direction:column;">
+      <dialog id="chaos-artifact-dialog" @close=${() => this.close()} style="background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default);border-radius:12px;padding:0;max-width:700px;width:90vw;max-height:85vh;overflow:hidden;position:fixed;inset:0;margin:auto;display:flex;flex-direction:column;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border-subtle);">
           <h3 style="margin:0;font-size:var(--text-base);">${this._escapeHtml(displayName)}</h3>
           <div style="display:flex;gap:var(--sp-2);align-items:center;">
@@ -210,7 +210,7 @@ export class ChaosArtifactDetail extends LitElement {
           </div>
           ${this._loading
             ? html`<div style="text-align:center;padding:var(--sp-6);"><div class="spinner"></div></div>`
-            : html`<div class="secure-viewer-container" id="artifact-detail-viewer" style="flex:1;min-height:200px;overflow:hidden;"></div>`
+            : html`<div class="secure-viewer-container" id="artifact-detail-viewer" style="flex:1;min-height:350px;overflow:hidden;"></div>`
           }
         </div>
       </dialog>

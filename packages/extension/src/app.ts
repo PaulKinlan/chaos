@@ -164,6 +164,19 @@ chrome.storage.local.get('chaos:settings').then((result) => {
   applyTheme(theme);
 });
 
+// ── Dismiss dialogs on click outside (backdrop) ──
+// Native <dialog> already handles ESC. This adds click-outside dismiss for all modal dialogs.
+document.addEventListener('click', (e) => {
+  const dialog = (e.target as Element).closest('dialog');
+  if (!dialog || !dialog.open) return;
+
+  const rect = dialog.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right ||
+      e.clientY < rect.top || e.clientY > rect.bottom) {
+    dialog.close();
+  }
+});
+
 // ── One-shot messaging (for dashboard views) ──
 
 async function sendMsg<T = unknown>(msg: Record<string, unknown>): Promise<T> {
