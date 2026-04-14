@@ -234,7 +234,7 @@ Deno.serve(serveOptions, async (req: Request) => {
     if (!adminKey) {
       return error("Admin not configured (set CHAOS_ADMIN_KEY env var)", 503);
     }
-    return new Response(ADMIN_LOGIN_HTML, {
+    return new Response(adminLoginHtml(), {
       headers: { "Content-Type": "text/html", ...corsHeaders },
     });
   }
@@ -316,13 +316,30 @@ Deno.serve(serveOptions, async (req: Request) => {
     return false;
   }
 
-  // Login POST (login page GET is handled above init gate)
+  // Login POST — accepts form data (standard HTML form) or JSON
   if (url.pathname === "/admin/login" && method === "POST") {
     const adminKey = Deno.env.get("CHAOS_ADMIN_KEY");
     if (!adminKey) return error("Admin not configured", 503);
     try {
-      const body = await req.json();
-      if (body.password !== adminKey) {
+      // Parse password from form data or JSON
+      let password: string | undefined;
+      const contentType = req.headers.get("Content-Type") || "";
+      if (contentType.includes("application/x-www-form-urlencoded")) {
+        const formData = await req.formData();
+        password = formData.get("password")?.toString();
+      } else {
+        const body = await req.json();
+        password = body.password;
+      }
+
+      if (!password || password !== adminKey) {
+        // For form submissions, redirect back with error
+        if (contentType.includes("application/x-www-form-urlencoded")) {
+          return new Response(adminLoginHtml("Invalid password"), {
+            status: 401,
+            headers: { "Content-Type": "text/html", ...corsHeaders },
+          });
+        }
         return new Response(JSON.stringify({ error: "Invalid password" }), {
           status: 401,
           headers: { "Content-Type": "application/json", ...corsHeaders },
@@ -336,6 +353,19 @@ Deno.serve(serveOptions, async (req: Request) => {
           expireIn: ADMIN_SESSION_TTL,
         });
       }
+
+      // For form submissions, redirect to dashboard with cookie set
+      if (contentType.includes("application/x-www-form-urlencoded")) {
+        return new Response(null, {
+          status: 303,
+          headers: {
+            Location: "/admin",
+            "Set-Cookie":
+              `chaos_admin=${token}; Path=/admin; HttpOnly; SameSite=Strict; Max-Age=86400`,
+            ...corsHeaders,
+          },
+        });
+      }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: {
@@ -345,7 +375,8 @@ Deno.serve(serveOptions, async (req: Request) => {
           ...corsHeaders,
         },
       });
-    } catch {
+    } catch (err) {
+      logger.error("server", "Admin login error", { error: String(err) });
       return error("Invalid request body");
     }
   }
@@ -1401,7 +1432,11 @@ logger.info("server", "CHAOS relay server started", {
 
 // ── Admin HTML templates ──
 
-const ADMIN_LOGIN_HTML = `<!DOCTYPE html>
+function adminLoginHtml(errorMsg?: string): string {
+  const errorDiv = errorMsg
+    ? `<div class="error">${errorMsg}</div>`
+    : "";
+  return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CHAOS Admin - Login</title>
 <style>
@@ -1413,25 +1448,18 @@ const ADMIN_LOGIN_HTML = `<!DOCTYPE html>
   input:focus{outline:none;border-color:#58a6ff}
   button{width:100%;padding:8px 12px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:14px;cursor:pointer;font-weight:500}
   button:hover{background:#2ea043}
-  .error{color:#f85149;font-size:12px;margin-bottom:8px;display:none}
+  .error{color:#f85149;font-size:12px;margin-bottom:8px}
 </style></head><body>
 <div class="card">
   <h1>CHAOS Relay Admin</h1>
-  <div class="error" id="err"></div>
-  <form id="f">
-    <input type="password" id="pw" placeholder="Admin password" autofocus>
+  ${errorDiv}
+  <form method="POST" action="/admin/login">
+    <input type="password" name="password" placeholder="Admin password" autofocus required>
     <button type="submit">Log in</button>
   </form>
 </div>
-<script>
-document.getElementById('f').onsubmit=async e=>{
-  e.preventDefault();
-  const pw=document.getElementById('pw').value;
-  const r=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
-  if(r.ok){location.href='/admin'}
-  else{const d=await r.json().catch(()=>({}));const el=document.getElementById('err');el.textContent=d.error||'Login failed';el.style.display='block'}
-};
-</script></body></html>`;
+</body></html>`;
+}
 
 const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
