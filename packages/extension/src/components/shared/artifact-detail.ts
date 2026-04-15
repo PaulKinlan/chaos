@@ -204,13 +204,13 @@ export class ChaosArtifactDetail extends LitElement {
             </button>
           </div>
         </div>
-        <div style="padding:20px;overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;">
+        <div style="padding:12px 20px 0;overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column;">
           <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3);">
             ${this._escapeHtml(artifact.description)} &middot; <code style="font-size:10px;">${this._escapeHtml(artifact.path)}</code>
           </div>
           ${this._loading
             ? html`<div style="text-align:center;padding:var(--sp-6);"><div class="spinner"></div></div>`
-            : html`<div class="secure-viewer-container" id="artifact-detail-viewer" style="flex:1;min-height:350px;overflow:hidden;"></div>`
+            : html`<div class="secure-viewer-container" id="artifact-detail-viewer" style="flex:1;min-height:0;overflow:hidden;"></div>`
           }
         </div>
       </dialog>
