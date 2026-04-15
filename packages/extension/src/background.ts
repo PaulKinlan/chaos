@@ -1802,6 +1802,32 @@ async function handleOneShotMessage(
       }
     }
 
+    case 'deleteAgentFile': {
+      const dfAgentId = msg.agentId as string;
+      const dfPath = msg.path as string;
+      const dfFullPath = `agents/${dfAgentId}/${dfPath}`;
+      try {
+        await opfs.delete(dfFullPath);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    case 'moveAgentFile': {
+      const mfAgentId = msg.agentId as string;
+      const mfFrom = msg.from as string;
+      const mfTo = msg.to as string;
+      try {
+        const content = await opfs.readFile(`agents/${mfAgentId}/${mfFrom}`);
+        await opfs.writeFile(`agents/${mfAgentId}/${mfTo}`, content);
+        await opfs.delete(`agents/${mfAgentId}/${mfFrom}`);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
     case 'listSkills': {
       const skills = await listSkills(msg.agentId as string);
       return { skills };
