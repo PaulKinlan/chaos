@@ -248,7 +248,7 @@ Write the JSON array directly to suggestions/latest.json using write_file. Do no
       await this._onDismissSuggestion(idx);
       // Open a NEW chat column with the suggestion prompt
       this.dispatchEvent(new CustomEvent('view-change', {
-        detail: { view: 'chat', prompt: suggestion.action.prompt, newColumn: true },
+        detail: { view: 'chat', prompt: suggestion.action.prompt, newColumn: true, autoSend: true },
         bubbles: true,
         composed: true,
       }));

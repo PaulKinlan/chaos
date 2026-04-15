@@ -459,17 +459,24 @@ document.addEventListener('view-change', (e: Event) => {
     if (prompt && targetView === 'chat') {
       setTimeout(() => {
         // If newColumn requested, create a fresh column for the master agent
+        const autoSend = typeof detail === 'object' ? detail.autoSend : false;
+
         if (newColumn) {
           const masterAgent = agents.find((a) => a.master) || agents[0];
           if (masterAgent) {
             const newCol = addColumn(masterAgent.id, true);
-            // Wait for column to render, then inject prompt
+            // Wait for column to render, then inject prompt and optionally auto-send
             setTimeout(() => {
               const textarea = newCol.columnEl.querySelector('.chat-input-area textarea') as HTMLTextAreaElement;
               if (textarea) {
                 textarea.value = prompt;
                 textarea.dispatchEvent(new Event('input'));
-                textarea.focus();
+                if (autoSend) {
+                  const sendBtn = newCol.columnEl.querySelector('.chat-btn-send') as HTMLButtonElement;
+                  sendBtn?.click();
+                } else {
+                  textarea.focus();
+                }
               }
             }, 200);
             return;
@@ -482,8 +489,13 @@ document.addEventListener('view-change', (e: Event) => {
           if (textarea) {
             textarea.value = prompt;
             textarea.dispatchEvent(new Event('input'));
-            textarea.focus();
-            console.log('[app] Injected prompt into chat:', prompt.slice(0, 80));
+            if (autoSend) {
+              const sendBtn = col.columnEl.querySelector('.chat-btn-send') as HTMLButtonElement;
+              sendBtn?.click();
+            } else {
+              textarea.focus();
+            }
+            console.log('[app] Injected prompt into chat:', prompt.slice(0, 80), autoSend ? '(auto-send)' : '');
           } else {
             console.warn('[app] Could not find textarea in focused column');
           }
