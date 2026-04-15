@@ -489,6 +489,7 @@ export async function* streamAgentLoop(
     let iterationText = '';
     let hasToolCalls = false;
 
+    console.log(`[agent-loop] Step ${i + 1}: consuming stream...`);
     for await (const part of result.fullStream) {
       if (signal?.aborted) {
         aborted = true;
@@ -543,16 +544,22 @@ export async function* streamAgentLoop(
       }
     }
 
+    console.log(`[agent-loop] Step ${i + 1}: stream consumed, hasToolCalls=${hasToolCalls}, textLen=${iterationText.length}`);
+
     if (aborted) break;
 
     // Append response messages
+    console.log(`[agent-loop] Step ${i + 1}: awaiting result.response...`);
     const response = await result.response;
+    console.log(`[agent-loop] Step ${i + 1}: got ${response.messages.length} response messages`);
     for (const msg of response.messages) {
       messages.push(msg as ModelMessage);
     }
 
     // Record usage
+    console.log(`[agent-loop] Step ${i + 1}: awaiting totalUsage...`);
     const usage = await result.totalUsage;
+    console.log(`[agent-loop] Step ${i + 1}: usage in=${usage?.inputTokens} out=${usage?.outputTokens}`);
     const modelId =
       typeof config.model === 'string'
         ? config.model
@@ -569,7 +576,9 @@ export async function* streamAgentLoop(
     }
 
     // Get final text
+    console.log(`[agent-loop] Step ${i + 1}: awaiting result.text...`);
     const finalText = await result.text;
+    console.log(`[agent-loop] Step ${i + 1}: text len=${finalText.length}, done=${!hasToolCalls}`);
     lastText = finalText || iterationText;
 
     if (lastText) {
