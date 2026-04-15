@@ -2463,10 +2463,20 @@ setMessageHandler(async (message) => {
   // Generate a unique column ID for this channel conversation
   const channelColumnId = `channel-${message.channelId}-${Date.now()}`;
 
-  // Notify UI to open a channel column — use activeUiPort directly (not captured)
+  // Notify UI to open a channel column
   const channelLabel = message.channelType === 'telegram'
     ? `Telegram`
     : message.channelType.charAt(0).toUpperCase() + message.channelType.slice(1);
+
+  // If no dashboard tab is open, open one first and wait for it to connect
+  if (!activeUiPort) {
+    console.log('[channel] No dashboard tab open — opening one...');
+    await openOrFocusChaosTab();
+    // Wait for the port to connect (up to 5 seconds)
+    for (let i = 0; i < 50 && !activeUiPort; i++) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
 
   if (activeUiPort) {
     try {
