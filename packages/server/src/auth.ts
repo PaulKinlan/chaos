@@ -11,7 +11,6 @@ import {
 } from "./crypto.ts";
 import { logger } from "./logger.ts";
 import {
-  isKvAvailable,
   kvDeleteChannelIndex,
   kvGetChannelOwner,
   kvGetPubKeyIndex,
@@ -56,10 +55,9 @@ const nonceTracker = new NonceTracker();
 async function persistSession(session: UserSession): Promise<void> {
   sessionCache.set(session.apiKey, session);
   userIndexCache.set(session.userId, session.apiKey);
-  if (isKvAvailable()) {
-    await kvSetSession(session.apiKey, session);
-    await kvSetUserIndex(session.userId, session.apiKey);
-  }
+  // KV functions open lazily — no need to check isKvAvailable()
+  await kvSetSession(session.apiKey, session);
+  await kvSetUserIndex(session.userId, session.apiKey);
 }
 
 /**
@@ -77,9 +75,9 @@ export async function validateAuth(req: Request): Promise<AuthResult | null> {
 
   const apiKey = match[1];
 
-  // Try in-memory cache first, then KV
+  // Try in-memory cache first, then KV (KV opens lazily on first use)
   let session = sessionCache.get(apiKey) ?? null;
-  if (!session && isKvAvailable()) {
+  if (!session) {
     session = await kvGetSession(apiKey);
     if (session) {
       // Populate cache
@@ -195,7 +193,7 @@ export async function createSession(
   publicKey?: JsonWebKey,
 ): Promise<{ userId: string; apiKey: string }> {
   // Check if this public key already has a session (reclaim after server restart)
-  if (publicKey && isKvAvailable()) {
+  if (publicKey) { // KV opens lazily
     const fingerprint = pubKeyFingerprint(publicKey);
     const existingApiKey = await kvGetPubKeyIndex(fingerprint);
     if (existingApiKey) {
@@ -230,7 +228,7 @@ export async function createSession(
   await persistSession(session);
 
   // Index by public key fingerprint for future reclaim
-  if (publicKey && isKvAvailable()) {
+  if (publicKey) { // KV opens lazily
     const fingerprint = pubKeyFingerprint(publicKey);
     await kvSetPubKeyIndex(fingerprint, apiKey);
   }
@@ -246,7 +244,7 @@ export async function getSessionByApiKey(
   apiKey: string,
 ): Promise<UserSession | null> {
   let session = sessionCache.get(apiKey) ?? null;
-  if (!session && isKvAvailable()) {
+  if (!session) { // KV opens lazily
     session = await kvGetSession(apiKey);
     if (session) {
       sessionCache.set(apiKey, session);
@@ -264,7 +262,7 @@ export async function getSessionByUserId(
 ): Promise<UserSession | null> {
   // Try cache first
   let apiKey = userIndexCache.get(userId) ?? null;
-  if (!apiKey && isKvAvailable()) {
+  if (!apiKey) { // KV opens lazily
     apiKey = await kvGetUserIndex(userId);
     if (apiKey) {
       userIndexCache.set(userId, apiKey);
@@ -273,7 +271,7 @@ export async function getSessionByUserId(
   if (!apiKey) return null;
 
   let session = sessionCache.get(apiKey) ?? null;
-  if (!session && isKvAvailable()) {
+  if (!session) { // KV opens lazily
     session = await kvGetSession(apiKey);
     if (session) {
       sessionCache.set(apiKey, session);
@@ -290,7 +288,7 @@ export async function getSessionByChannelId(
 ): Promise<UserSession | null> {
   // Try channel index cache first
   let userId = channelIndexCache.get(channelId) ?? null;
-  if (!userId && isKvAvailable()) {
+  if (!userId) { // KV opens lazily
     userId = await kvGetChannelOwner(channelId);
     if (userId) {
       channelIndexCache.set(channelId, userId);
@@ -311,9 +309,7 @@ export async function addChannel(
 
   // Update channel index
   channelIndexCache.set(channel.id, userId);
-  if (isKvAvailable()) {
-    await kvSetChannelIndex(channel.id, userId);
-  }
+  await kvSetChannelIndex(channel.id, userId);
 
   // Persist updated session
   await persistSession(session);
@@ -331,9 +327,7 @@ export async function removeChannel(
 
   // Remove channel index
   channelIndexCache.delete(channelId);
-  if (isKvAvailable()) {
-    await kvDeleteChannelIndex(channelId);
-  }
+  await kvDeleteChannelIndex(channelId);
 
   // Persist updated session
   await persistSession(session);
@@ -372,9 +366,8 @@ export function getCachedSessions(): UserSession[] {
  * Loads all sessions into memory so admin dashboard works on cold start.
  */
 export async function warmSessionCache(): Promise<void> {
-  if (!isKvAvailable()) return;
-  const { getKv } = await import("./kv.ts");
-  const kv = getKv();
+  const { getKvAsync } = await import("./kv.ts");
+  const kv = await getKvAsync();
   if (!kv) return;
   const t = performance.now();
   let count = 0;

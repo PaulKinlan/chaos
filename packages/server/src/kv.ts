@@ -1,52 +1,56 @@
 // Deno KV persistence layer for the relay server
 // Provides typed helpers for session CRUD and server keypair storage
-// Falls back to in-memory storage when KV is unavailable (e.g., tests)
+// Opens KV lazily on first use — never fails at startup
 
 import type { ChannelConfig } from "@chaos/shared";
 import type { UserSession } from "./auth.ts";
 import { logger } from "./logger.ts";
 
 let kv: Deno.Kv | null = null;
-let kvAvailable = true;
+let kvFailed = false;
 
 /**
- * Initialize the KV store. Call once at startup.
- * If Deno KV is not available, falls back to in-memory mode.
+ * Get the KV instance, opening it lazily on first call.
+ * Returns null if KV is not available (e.g., tests, or after a failure).
  */
-export async function initKv(): Promise<void> {
+export async function getKvAsync(): Promise<Deno.Kv | null> {
+  if (kv) return kv;
+  if (kvFailed) return null;
+
   try {
-    // Close stale handle if reinitializing
-    if (kv) {
-      try {
-        kv.close();
-      } catch {
-        // ignore close errors on stale handle
-      }
-      kv = null;
-    }
     const t = performance.now();
     kv = await Deno.openKv();
-    kvAvailable = true;
     logger.info("kv", "Deno KV store opened", {
       ms: Math.round(performance.now() - t),
     });
+    return kv;
   } catch (err) {
-    kvAvailable = false;
+    kvFailed = true;
     logger.warn("kv", "Deno KV not available, using in-memory fallback", {
       error: String(err),
     });
+    return null;
   }
 }
 
 /**
- * Check if KV is available
+ * Initialize KV eagerly. Used at startup to warm caches.
+ * Non-fatal — server continues without KV if it fails.
  */
-export function isKvAvailable(): boolean {
-  return kvAvailable && kv !== null;
+export async function initKv(): Promise<void> {
+  await getKvAsync();
 }
 
 /**
- * Get the KV instance (or null if not available)
+ * Check if KV is available (synchronous — only true after successful open)
+ */
+export function isKvAvailable(): boolean {
+  return kv !== null;
+}
+
+/**
+ * Get the KV instance synchronously (returns null if not opened yet).
+ * Prefer getKvAsync() for new code.
  */
 export function getKv(): Deno.Kv | null {
   return kv;
@@ -58,21 +62,24 @@ export async function kvSetSession(
   apiKey: string,
   session: UserSession,
 ): Promise<void> {
-  if (!kv) return;
-  await kv.set(["sessions", apiKey], session);
+  const store = await getKvAsync();
+  if (!store) return;
+  await store.set(["sessions", apiKey], session);
 }
 
 export async function kvGetSession(
   apiKey: string,
 ): Promise<UserSession | null> {
-  if (!kv) return null;
-  const result = await kv.get<UserSession>(["sessions", apiKey]);
+  const store = await getKvAsync();
+  if (!store) return null;
+  const result = await store.get<UserSession>(["sessions", apiKey]);
   return result.value;
 }
 
 export async function kvDeleteSession(apiKey: string): Promise<void> {
-  if (!kv) return;
-  await kv.delete(["sessions", apiKey]);
+  const store = await getKvAsync();
+  if (!store) return;
+  await store.delete(["sessions", apiKey]);
 }
 
 // ── User index operations (userId -> apiKey reverse lookup) ──
@@ -81,13 +88,15 @@ export async function kvSetUserIndex(
   userId: string,
   apiKey: string,
 ): Promise<void> {
-  if (!kv) return;
-  await kv.set(["users", userId], apiKey);
+  const store = await getKvAsync();
+  if (!store) return;
+  await store.set(["users", userId], apiKey);
 }
 
 export async function kvGetUserIndex(userId: string): Promise<string | null> {
-  if (!kv) return null;
-  const result = await kv.get<string>(["users", userId]);
+  const store = await getKvAsync();
+  if (!store) return null;
+  const result = await store.get<string>(["users", userId]);
   return result.value;
 }
 
@@ -97,21 +106,24 @@ export async function kvSetChannelIndex(
   channelId: string,
   userId: string,
 ): Promise<void> {
-  if (!kv) return;
-  await kv.set(["channels", channelId], userId);
+  const store = await getKvAsync();
+  if (!store) return;
+  await store.set(["channels", channelId], userId);
 }
 
 export async function kvGetChannelOwner(
   channelId: string,
 ): Promise<string | null> {
-  if (!kv) return null;
-  const result = await kv.get<string>(["channels", channelId]);
+  const store = await getKvAsync();
+  if (!store) return null;
+  const result = await store.get<string>(["channels", channelId]);
   return result.value;
 }
 
 export async function kvDeleteChannelIndex(channelId: string): Promise<void> {
-  if (!kv) return;
-  await kv.delete(["channels", channelId]);
+  const store = await getKvAsync();
+  if (!store) return;
+  await store.delete(["channels", channelId]);
 }
 
 // ── Public key index (fingerprint -> apiKey, for session reclaim) ──
@@ -120,15 +132,17 @@ export async function kvSetPubKeyIndex(
   fingerprint: string,
   apiKey: string,
 ): Promise<void> {
-  if (!kv) return;
-  await kv.set(["pubkeys", fingerprint], apiKey);
+  const store = await getKvAsync();
+  if (!store) return;
+  await store.set(["pubkeys", fingerprint], apiKey);
 }
 
 export async function kvGetPubKeyIndex(
   fingerprint: string,
 ): Promise<string | null> {
-  if (!kv) return null;
-  const result = await kv.get<string>(["pubkeys", fingerprint]);
+  const store = await getKvAsync();
+  if (!store) return null;
+  const result = await store.get<string>(["pubkeys", fingerprint]);
   return result.value;
 }
 
@@ -140,16 +154,18 @@ export interface StoredKeyPair {
 }
 
 export async function kvGetServerKeyPair(): Promise<StoredKeyPair | null> {
-  if (!kv) return null;
-  const result = await kv.get<StoredKeyPair>(["server", "keypair"]);
+  const store = await getKvAsync();
+  if (!store) return null;
+  const result = await store.get<StoredKeyPair>(["server", "keypair"]);
   return result.value;
 }
 
 export async function kvSetServerKeyPair(
   keypair: StoredKeyPair,
 ): Promise<void> {
-  if (!kv) return;
-  await kv.set(["server", "keypair"], keypair);
+  const store = await getKvAsync();
+  if (!store) return;
+  await store.set(["server", "keypair"], keypair);
 }
 
 /**
