@@ -1,6 +1,6 @@
 {
   "name": "@chaos/extension",
-  "version": "0.1.135",
+  "version": "0.1.136",
   "private": true,
   "type": "module",
   "scripts": {
