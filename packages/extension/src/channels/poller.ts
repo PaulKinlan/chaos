@@ -73,7 +73,9 @@ export function setMessageHandler(handler: MessageHandler): void {
 // Track processed message IDs in chrome.storage.local to survive SW restarts
 const PROCESSED_IDS_KEY = 'chaos-processed-message-ids';
 let processedMessageIds: Set<string> | null = null;
-const MAX_PROCESSED_IDS = 200;
+const MAX_PROCESSED_IDS = 500;
+// Guard against concurrent processing of the same message ID
+const inProgress = new Set<string>();
 
 async function loadProcessedIds(): Promise<Set<string>> {
   if (processedMessageIds) return processedMessageIds;
@@ -90,18 +92,28 @@ async function loadProcessedIds(): Promise<Set<string>> {
 async function saveProcessedIds(): Promise<void> {
   if (!processedMessageIds) return;
   const arr = Array.from(processedMessageIds);
-  // Keep only the most recent IDs
   const trimmed = arr.length > MAX_PROCESSED_IDS ? arr.slice(arr.length - MAX_PROCESSED_IDS) : arr;
   await chrome.storage.local.set({ [PROCESSED_IDS_KEY]: trimmed }).catch(() => {});
 }
 
 async function markProcessed(id: string): Promise<boolean> {
+  // Fast in-memory guard against concurrent calls for the same ID
+  if (inProgress.has(id)) return false;
+  inProgress.add(id);
+
   const ids = await loadProcessedIds();
-  if (ids.has(id)) return false;
+  if (ids.has(id)) {
+    inProgress.delete(id);
+    return false;
+  }
   ids.add(id);
-  // Save periodically (not on every message to reduce writes)
-  if (ids.size % 5 === 0) saveProcessedIds();
+  // Save immediately — dedup must survive SW restarts between WS and poll paths
+  await saveProcessedIds();
   return true;
+}
+
+function unmarkInProgress(id: string): void {
+  inProgress.delete(id);
 }
 
 // Cache of known channel IDs — refreshed periodically
@@ -177,7 +189,7 @@ async function processMessage(message: ChannelMessage): Promise<void> {
     console.error(`Failed to process channel message ${message.id}:`, err);
     broadcastChannelLog(`Error processing message ${message.id.slice(0, 8)}: ${errMsg}`);
   } finally {
-    // Persist processed IDs to survive SW restarts
+    unmarkInProgress(message.id);
     saveProcessedIds();
   }
 }
