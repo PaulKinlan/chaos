@@ -2490,6 +2490,9 @@ setMessageHandler(async (message) => {
 
   console.log(`[channel] Starting agent loop for ${master.name} (${master.id}), channel: ${channelName}, columnId: ${channelColumnId}`);
 
+  // Keep the service worker alive during the agent loop
+  startKeepalive();
+
   // Run the agentic loop — stream progress to UI if available
   let channelAgent;
   try {
@@ -2501,6 +2504,7 @@ setMessageHandler(async (message) => {
     console.log(`[channel] Agent created successfully for ${master.id}`);
   } catch (err) {
     console.error(`[channel] Failed to create agent for channel message:`, err);
+    stopKeepalive();
     return `Error: Failed to process message — ${err instanceof Error ? err.message : String(err)}`;
   }
 
@@ -2537,6 +2541,9 @@ setMessageHandler(async (message) => {
   }
 
   console.log(`[channel] Agent loop completed for channel ${channelName}, result length: ${result.length}`);
+
+  // Release keepalive — service worker can suspend now
+  stopKeepalive();
 
   if (activeUiPort) {
     try {
