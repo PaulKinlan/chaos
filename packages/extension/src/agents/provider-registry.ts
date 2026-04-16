@@ -43,6 +43,7 @@ const anthropicProvider: ProviderConfig = {
   displayName: 'Anthropic (Claude)',
   defaultModel: 'claude-sonnet-4-6',
   models: [
+    { id: 'claude-opus-4-7', displayName: 'Claude Opus 4.7' },
     { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6' },
     { id: 'claude-opus-4-6', displayName: 'Claude Opus 4.6' },
     { id: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5' },
@@ -115,6 +116,7 @@ const openrouterProvider: ProviderConfig = {
   models: [
     // OpenRouter supports many models — these are common defaults.
     // Users can specify any model ID supported by OpenRouter.
+    { id: 'anthropic/claude-opus-4-7', displayName: 'Claude Opus 4.7 (via OpenRouter)' },
     { id: 'anthropic/claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (via OpenRouter)' },
     { id: 'anthropic/claude-opus-4-6', displayName: 'Claude Opus 4.6 (via OpenRouter)' },
     { id: 'google/gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro (via OpenRouter)' },

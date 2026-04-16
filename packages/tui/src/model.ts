@@ -17,6 +17,7 @@ export const PROVIDERS: Record<ProviderId, {
     displayName: 'Anthropic (Claude)',
     defaultModel: 'claude-sonnet-4-6',
     models: [
+      { id: 'claude-opus-4-7', displayName: 'Claude Opus 4.7' },
       { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6' },
       { id: 'claude-opus-4-6', displayName: 'Claude Opus 4.6' },
       { id: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5' },
@@ -47,6 +48,7 @@ export const PROVIDERS: Record<ProviderId, {
     displayName: 'OpenRouter',
     defaultModel: 'anthropic/claude-sonnet-4-6',
     models: [
+      { id: 'anthropic/claude-opus-4-7', displayName: 'Claude Opus 4.7 (via OR)' },
       { id: 'anthropic/claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (via OR)' },
       { id: 'anthropic/claude-opus-4-6', displayName: 'Claude Opus 4.6 (via OR)' },
       { id: 'google/gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro (via OR)' },
@@ -73,6 +75,7 @@ export const PROVIDERS: Record<ProviderId, {
 // Matches extension/src/agents/pricing.ts
 export const PRICING: Record<string, { input: number; output: number }> = {
   // Anthropic
+  'claude-opus-4-7': { input: 5.0, output: 25.0 },
   'claude-opus-4-6': { input: 5.0, output: 25.0 },
   'claude-sonnet-4-6': { input: 3.0, output: 15.0 },
   'claude-haiku-4-5': { input: 1.0, output: 5.0 },
