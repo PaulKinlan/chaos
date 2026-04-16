@@ -2,14 +2,14 @@
  * Extension Agent Adapter
  *
  * Bridges the Chrome extension's tools, system prompt, and storage
- * with @chaos/agent-loop's createAgent/streamAgentLoop.
+ * with agent-do's createAgent/streamAgentLoop.
  *
  * All Chrome-specific code stays here; the loop engine comes from
  * the shared agent-loop package.
  */
 
-import { createAgent } from '@chaos/agent-loop';
-import type { Agent, ProgressEvent, AgentConfig } from '@chaos/agent-loop';
+import { createAgent } from 'agent-do';
+import type { Agent, ProgressEvent, AgentConfig } from 'agent-do';
 import type { ToolSet } from 'ai';
 import { z } from 'zod';
 import { tool } from 'ai';
@@ -528,7 +528,7 @@ export interface CreateExtensionAgentOptions {
 }
 
 /**
- * Create an Agent (from @chaos/agent-loop) configured with all
+ * Create an Agent (from agent-do) configured with all
  * extension-specific tools, system prompt, and Chrome APIs.
  */
 export async function createExtensionAgent(
@@ -616,7 +616,7 @@ export async function createExtensionAgent(
 
   const maxIterations = options?.maxIterations ?? DEFAULT_MAX_ITERATIONS;
 
-  // 9. Create the agent via @chaos/agent-loop
+  // 9. Create the agent via agent-do
   const agent = createAgent({
     id: agentId,
     name: selfMeta?.name || agentId,

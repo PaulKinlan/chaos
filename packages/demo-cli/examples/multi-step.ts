@@ -9,7 +9,7 @@
  *      npx tsx examples/multi-step.ts --provider anthropic
  */
 
-import { createAgent } from '@chaos/agent-loop';
+import { createAgent } from 'agent-do';
 import { resolveModel, isRealProvider } from './lib/model.js';
 import { tool } from 'ai';
 import { z } from 'zod';

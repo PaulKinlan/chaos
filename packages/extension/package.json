@@ -15,7 +15,7 @@
     "extension:zip": "npm run build && cd dist && zip -r ../chaos-extension.zip . && echo 'Created chaos-extension.zip'"
   },
   "dependencies": {
-    "@chaos/agent-loop": "*",
+    "agent-do": "file:../../../agent-do",
     "@chaos/sdk": "*",
     "@ai-sdk/anthropic": "^3.0.66",
     "@ai-sdk/google": "^3.0.56",

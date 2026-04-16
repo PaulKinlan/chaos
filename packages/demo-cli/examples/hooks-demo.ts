@@ -9,7 +9,7 @@
  *      npx tsx examples/hooks-demo.ts --provider anthropic
  */
 
-import { createAgent, type AgentHooks } from '@chaos/agent-loop';
+import { createAgent, type AgentHooks } from 'agent-do';
 import { resolveModel, isRealProvider } from './lib/model.js';
 import { tool } from 'ai';
 import { z } from 'zod';

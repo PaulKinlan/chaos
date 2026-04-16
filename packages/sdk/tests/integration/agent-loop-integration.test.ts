@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ChaosSDK } from '../../src/sdk.js';
-import { createAgent } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { createAgent } from 'agent-do';
+import { createMockModel } from 'agent-do/testing';
 import {
   InMemorySettingsStore,
   InMemoryMemoryStore,

@@ -35,7 +35,7 @@ import type { EngineConnection, RelayConnection } from './connections/index.js';
 import type { BrowserCapabilities } from './browser/index.js';
 import type { TaskScheduler, PageParser } from './services/index.js';
 
-import type { Agent as AgentLoop } from '@chaos/agent-loop';
+import type { Agent as AgentLoop } from 'agent-do';
 
 export interface ChaosSDKOptions {
   engine?: EngineConnection;

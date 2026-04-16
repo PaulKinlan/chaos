@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * CHAOS CLI — reference implementation for @chaos/sdk + @chaos/agent-loop
+ * CHAOS CLI — reference implementation for @chaos/sdk + agent-do
  *
  * All data persists to ~/.chaos-data/:
  *   memory/    — per-agent files (CLAUDE.md, memories/, etc.)
@@ -12,8 +12,8 @@
  *   conversations/ — conversation history
  */
 
-import { createAgent, createFileTools } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { createAgent, createFileTools } from 'agent-do';
+import { createMockModel } from 'agent-do/testing';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
@@ -410,7 +410,7 @@ async function usageSummary(sdk: ChaosSDK): Promise<void> {
 }
 
 function showHelp(): void {
-  console.log(`chaos — CLI for @chaos/sdk + @chaos/agent-loop
+  console.log(`chaos — CLI for @chaos/sdk + agent-do
 
 Usage:
   chaos agents list [--all]             List agents (--all includes archived)

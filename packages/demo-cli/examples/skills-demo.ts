@@ -9,7 +9,7 @@
  *      npx tsx examples/skills-demo.ts --provider anthropic
  */
 
-import { createAgent, InMemorySkillStore, buildSkillsPrompt } from '@chaos/agent-loop';
+import { createAgent, InMemorySkillStore, buildSkillsPrompt } from 'agent-do';
 import { resolveModel, isRealProvider } from './lib/model.js';
 
 // Create and populate a skill store

@@ -4,7 +4,7 @@
  * These tools access the PROJECT filesystem (CWD) and shell.
  * They are intentionally named with "project_" prefix to distinguish
  * from the agent's private memory tools (read_file, write_file, etc.)
- * which are provided by @chaos/agent-loop's createFileTools.
+ * which are provided by agent-do's createFileTools.
  */
 
 import { tool } from 'ai';

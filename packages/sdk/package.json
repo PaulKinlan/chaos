@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@chaos/agent-loop": "*"
+    "agent-do": "file:../../../agent-do"
   },
   "devDependencies": {
     "ai": "^6.0.0",

@@ -9,7 +9,7 @@
  *      npx tsx examples/usage-tracking.ts --provider anthropic
  */
 
-import { createAgent, UsageTracker, type AgentHooks } from '@chaos/agent-loop';
+import { createAgent, UsageTracker, type AgentHooks } from 'agent-do';
 import { resolveModel } from './lib/model.js';
 
 const usageRecords: Array<{ step: number; input: number; output: number; cost: number }> = [];

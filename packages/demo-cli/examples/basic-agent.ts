@@ -8,7 +8,7 @@
  *      npx tsx examples/basic-agent.ts --provider anthropic
  */
 
-import { createAgent } from '@chaos/agent-loop';
+import { createAgent } from 'agent-do';
 import { resolveModel } from './lib/model.js';
 
 const model = await resolveModel([{ text: 'The capital of France is Paris. [MOCK RESPONSE]' }]);

@@ -30,7 +30,7 @@ export async function resolveModel(
 
   if (!providerArg) {
     // Default to mock
-    const { createMockModel } = await import('@chaos/agent-loop/testing');
+    const { createMockModel } = await import('agent-do/testing');
     return createMockModel({
       responses: mockResponses || [{ text: 'Mock response.' }],
     }) as LanguageModel;

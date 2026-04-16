@@ -9,7 +9,7 @@
  *      npx tsx examples/streaming.ts --provider anthropic
  */
 
-import { createAgent } from '@chaos/agent-loop';
+import { createAgent } from 'agent-do';
 import { resolveModel } from './lib/model.js';
 
 const model = await resolveModel([

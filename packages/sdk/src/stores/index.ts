@@ -10,8 +10,8 @@ export interface SettingsStore {
   getMultiple<T>(keys: string[]): Promise<Record<string, T>>;
 }
 
-// Re-exported from @chaos/agent-loop (canonical source)
-export type { MemoryStore } from '@chaos/agent-loop';
+// Re-exported from agent-do (canonical source)
+export type { MemoryStore } from 'agent-do';
 
 export interface ConversationStore {
   get(agentId: string, conversationId: string): Promise<Conversation | undefined>;

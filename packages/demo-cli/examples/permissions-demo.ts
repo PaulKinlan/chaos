@@ -9,7 +9,7 @@
  *      npx tsx examples/permissions-demo.ts --provider anthropic
  */
 
-import { createAgent, type PermissionConfig } from '@chaos/agent-loop';
+import { createAgent, type PermissionConfig } from 'agent-do';
 import { resolveModel, isRealProvider } from './lib/model.js';
 import { tool } from 'ai';
 import { z } from 'zod';

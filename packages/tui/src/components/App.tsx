@@ -13,7 +13,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
-import type { Agent, AgentConfig } from '@chaos/agent-loop';
+import type { Agent, AgentConfig } from 'agent-do';
 import { AgentColumn } from './AgentColumn.js';
 import { StatusBar } from './StatusBar.js';
 import { AgentEditor } from './AgentEditor.js';

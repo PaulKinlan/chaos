@@ -6,7 +6,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Agent, ConversationMessage as AgentHistoryMessage } from '@chaos/agent-loop';
+import type { Agent, ConversationMessage as AgentHistoryMessage } from 'agent-do';
 import { saveConversation, type ConversationEntry, type ConversationMessage, type ConversationToolCall } from '../agent-manager.js';
 
 interface ToolCall {

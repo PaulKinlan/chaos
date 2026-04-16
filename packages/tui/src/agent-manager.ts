@@ -10,8 +10,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createAgent, createFileTools } from '@chaos/agent-loop';
-import type { Agent, AgentConfig } from '@chaos/agent-loop';
+import { createAgent, createFileTools } from 'agent-do';
+import type { Agent, AgentConfig } from 'agent-do';
 import { getTemplate, listRoles } from './templates/index.js';
 import { createProjectTools, createWebTools, createSystemTools, createScheduleTools, createHookTools, createChannelTools } from './tools.js';
 import { createFsMemoryStore } from './stores/fs-memory.js';

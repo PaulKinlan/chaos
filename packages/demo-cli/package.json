@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@chaos/sdk": "*",
-    "@chaos/agent-loop": "*",
+    "agent-do": "file:../../../agent-do",
     "ai": "^6.0.0",
     "zod": "^3.23.0"
   },

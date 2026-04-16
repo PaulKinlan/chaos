@@ -7,8 +7,8 @@
  *   - Standard DOM, runs in any browser
  */
 
-import { createAgent } from '@chaos/agent-loop';
-import { createMockModel } from '@chaos/agent-loop/testing';
+import { createAgent } from 'agent-do';
+import { createMockModel } from 'agent-do/testing';
 import { ChaosSDK } from '@chaos/sdk';
 import type { AgentMeta, ProgressUpdate } from '@chaos/sdk';
 import {

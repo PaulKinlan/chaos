@@ -3,7 +3,7 @@
  * Models and defaults match the extension's provider-registry.ts exactly.
  */
 
-import type { AgentConfig } from '@chaos/agent-loop';
+import type { AgentConfig } from 'agent-do';
 
 export type ProviderId = 'anthropic' | 'google' | 'openai' | 'openrouter' | 'ollama';
 

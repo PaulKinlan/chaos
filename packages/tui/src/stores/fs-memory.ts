@@ -1,9 +1,9 @@
 /**
- * Re-exports FilesystemMemoryStore from @chaos/agent-loop.
+ * Re-exports FilesystemMemoryStore from agent-do.
  */
 
-import { FilesystemMemoryStore } from '@chaos/agent-loop';
-import type { MemoryStore } from '@chaos/agent-loop';
+import { FilesystemMemoryStore } from 'agent-do';
+import type { MemoryStore } from 'agent-do';
 
 export function createFsMemoryStore(baseDir: string): MemoryStore {
   return new FilesystemMemoryStore(baseDir);
