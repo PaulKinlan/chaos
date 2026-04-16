@@ -6,7 +6,7 @@
  * create ghost agents on other devices.
  */
 
-import type { AgentMeta, Settings, ApiKeys, ScheduledTask, Hook } from './types.js';
+import type { AgentMeta, Settings, ApiKeys, ScheduledTask, Hook, BackgroundRun } from './types.js';
 
 // ── Keys ──
 
@@ -16,6 +16,7 @@ const KEYS = {
   API_KEYS: 'chaos:apiKeys',
   SCHEDULED_TASKS: 'chaos:scheduledTasks',
   HOOKS: 'chaos:hooks',
+  BACKGROUND_RUNS: 'chaos:backgroundRuns',
 } as const;
 
 // ── Defaults ──
@@ -145,4 +146,34 @@ export async function updateHook(id: string, updates: Partial<Hook>): Promise<vo
 export async function removeHook(id: string): Promise<void> {
   const hooks = await getHooks();
   await setHooks(hooks.filter((h) => h.id !== id));
+}
+
+// ── Background runs (local storage) ──
+
+const MAX_BACKGROUND_RUNS = 100;
+
+export async function getBackgroundRuns(): Promise<BackgroundRun[]> {
+  const result = await chrome.storage.local.get(KEYS.BACKGROUND_RUNS);
+  return (result[KEYS.BACKGROUND_RUNS] as BackgroundRun[] | undefined) ?? [];
+}
+
+export async function addBackgroundRun(run: BackgroundRun): Promise<void> {
+  const runs = await getBackgroundRuns();
+  runs.unshift(run); // newest first
+  // Trim to max
+  const trimmed = runs.slice(0, MAX_BACKGROUND_RUNS);
+  await chrome.storage.local.set({ [KEYS.BACKGROUND_RUNS]: trimmed });
+}
+
+export async function updateBackgroundRun(id: string, updates: Partial<BackgroundRun>): Promise<void> {
+  const runs = await getBackgroundRuns();
+  const run = runs.find((r) => r.id === id);
+  if (run) {
+    Object.assign(run, updates);
+    await chrome.storage.local.set({ [KEYS.BACKGROUND_RUNS]: runs });
+  }
+}
+
+export async function clearBackgroundRuns(): Promise<void> {
+  await chrome.storage.local.set({ [KEYS.BACKGROUND_RUNS]: [] });
 }

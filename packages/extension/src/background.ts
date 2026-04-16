@@ -116,7 +116,7 @@ const DEFAULT_MAX_ITERATIONS_BG = 20;
 // Push data changes to the UI so signals update reactively.
 // The UI listens for 'dataChanged' and refreshes the relevant signal.
 
-type DataDomain = 'agents' | 'tasks' | 'messages' | 'artifacts' | 'hooks' | 'usage' | 'settings';
+type DataDomain = 'agents' | 'tasks' | 'messages' | 'artifacts' | 'hooks' | 'usage' | 'settings' | 'backgroundRuns';
 
 function notifyDataChanged(...domains: DataDomain[]): void {
   if (!activeUiPort) return;
@@ -1696,6 +1696,17 @@ async function handleOneShotMessage(
       return { files };
     }
 
+    case 'getBackgroundRuns': {
+      const { getBackgroundRuns } = await import('./storage/chrome-storage.js');
+      return { runs: await getBackgroundRuns() };
+    }
+
+    case 'clearBackgroundRuns': {
+      const { clearBackgroundRuns } = await import('./storage/chrome-storage.js');
+      await clearBackgroundRuns();
+      return { ok: true };
+    }
+
     case 'readAgentFile': {
       const agentId = msg.agentId as string;
       const filePath = msg.path as string;
@@ -2367,49 +2378,69 @@ setMessageHandler(async (message) => {
     : `Your final response will be sent back to ${message.from} via ${channelName} as a direct reply. Include the full answer in your response — do not just describe what you did, provide the actual content they asked for. For example, if they ask you to summarise a page, your response should BE the summary, not "I summarised the page."`;
   const task = `You received a message from an external channel.\n\nChannel: ${channelName} (${message.channelType})\nFrom: ${message.from}\nMessage:\n${message.content}\n\n${channelPrompt || defaultInstruction}`;
 
+  // Check if this channel should run in the background (no UI column)
+  const runInBackground = !!(message.metadata?.['channelRunInBackground']);
+  const notifyOnComplete = message.metadata?.['channelNotifyOnComplete'] !== false; // default true for background
+
   // Generate a unique column ID for this channel conversation
   const channelColumnId = `channel-${message.channelId}-${Date.now()}`;
 
-  // Notify UI to open a channel column
   const channelLabel = message.channelType === 'telegram'
     ? `Telegram`
     : message.channelType.charAt(0).toUpperCase() + message.channelType.slice(1);
 
-  // If no dashboard tab is open, open one first and wait for it to connect
-  if (!activeUiPort) {
-    console.log('[channel] No dashboard tab open — opening one...');
-    await openOrFocusChaosTab();
-    // Wait for the port to connect (up to 5 seconds)
-    for (let i = 0; i < 50 && !activeUiPort; i++) {
-      await new Promise(r => setTimeout(r, 100));
+  // Track as a background run if running silently
+  const bgRunId = runInBackground ? crypto.randomUUID() : null;
+  if (bgRunId) {
+    const { addBackgroundRun } = await import('./storage/chrome-storage.js');
+    await addBackgroundRun({
+      id: bgRunId,
+      agentId: master.id,
+      agentName: master.name,
+      source: 'channel',
+      sourceLabel: `${channelLabel}: ${message.from}`,
+      prompt: task.slice(0, 500),
+      result: '',
+      status: 'running',
+      startedAt: new Date().toISOString(),
+    });
+    notifyDataChanged('backgroundRuns');
+  }
+
+  if (!runInBackground) {
+    // Open dashboard and create a column for the conversation
+    if (!activeUiPort) {
+      console.log('[channel] No dashboard tab open — opening one...');
+      await openOrFocusChaosTab();
+      for (let i = 0; i < 50 && !activeUiPort; i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+
+    if (activeUiPort) {
+      try {
+        activeUiPort.postMessage({
+          type: 'channelMessageReceived',
+          agentId: master.id,
+          columnId: channelColumnId,
+          channelLabel,
+          from: message.from,
+          content: message.content,
+          channelType: message.channelType,
+          channelId: message.channelId,
+        });
+      } catch { /* port disconnected */ }
+    }
+
+    // Give the UI time to create the column
+    await new Promise(r => setTimeout(r, 300));
+
+    if (activeUiPort) {
+      try { activeUiPort.postMessage({ type: 'agenticStart', agentId: master.id, columnId: channelColumnId }); } catch { /* */ }
     }
   }
 
-  if (activeUiPort) {
-    try {
-      activeUiPort.postMessage({
-        type: 'channelMessageReceived',
-        agentId: master.id,
-        columnId: channelColumnId,
-        channelLabel,
-        from: message.from,
-        content: message.content,
-        channelType: message.channelType,
-        channelId: message.channelId,
-      });
-    } catch { /* port disconnected */ }
-  }
-
-  // Give the UI time to create the column before we start streaming events to it.
-  // Without this, agenticProgress messages arrive before the column exists and get dropped.
-  await new Promise(r => setTimeout(r, 300));
-
-  // Signal UI that agentic loop is starting
-  if (activeUiPort) {
-    try { activeUiPort.postMessage({ type: 'agenticStart', agentId: master.id, columnId: channelColumnId }); } catch { /* */ }
-  }
-
-  console.log(`[channel] Starting agent loop for ${master.name} (${master.id}), channel: ${channelName}, columnId: ${channelColumnId}`);
+  console.log(`[channel] Starting agent loop for ${master.name} (${master.id}), channel: ${channelName}, background: ${runInBackground}`);
 
   // Keep the service worker alive during the agent loop
   startKeepalive();
@@ -2461,15 +2492,41 @@ setMessageHandler(async (message) => {
     result = `Error during processing: ${err instanceof Error ? err.message : String(err)}`;
   }
 
+  const startTime = Date.now();
   console.log(`[channel] Agent loop completed for channel ${channelName}, result length: ${result.length}`);
 
   // Release keepalive — service worker can suspend now
   stopKeepalive();
 
-  if (activeUiPort) {
+  if (!runInBackground && activeUiPort) {
     try {
       activeUiPort.postMessage({ type: 'agenticDone', result, agentId: master.id, columnId: channelColumnId });
     } catch { /* */ }
+  }
+
+  // Update background run record
+  if (bgRunId) {
+    const { updateBackgroundRun } = await import('./storage/chrome-storage.js');
+    await updateBackgroundRun(bgRunId, {
+      status: result.startsWith('Error') ? 'error' : 'completed',
+      result: result.slice(0, 2000),
+      completedAt: new Date().toISOString(),
+      durationMs: Date.now() - startTime,
+      error: result.startsWith('Error') ? result : undefined,
+    });
+    notifyDataChanged('backgroundRuns');
+  }
+
+  // Desktop notification for background runs
+  if (runInBackground && notifyOnComplete) {
+    try {
+      await chrome.notifications.create({
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+        title: `${channelLabel}: ${message.from}`,
+        message: result ? result.slice(0, 200) : '(no output)',
+      });
+    } catch { /* notification permission may not be granted */ }
   }
 
   return result || null;

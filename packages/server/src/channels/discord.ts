@@ -172,6 +172,8 @@ export async function handleDiscordWebhook(
   const metadata: Record<string, unknown> = {
     channelDirection: channel.direction || "bidirectional",
     ...(channel.agentId ? { channelAgentId: channel.agentId } : {}),
+    ...(channel.runInBackground ? { channelRunInBackground: true } : {}),
+    ...(channel.notifyOnComplete !== undefined ? { channelNotifyOnComplete: channel.notifyOnComplete } : {}),
   };
 
   // Standard message event (from gateway relay or webhook forwarding)

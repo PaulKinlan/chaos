@@ -219,6 +219,8 @@ export async function handleTelegramWebhook(
     updateId: update.update_id,
     channelDirection: channel.direction || "bidirectional",
     ...(channel.agentId ? { channelAgentId: channel.agentId } : {}),
+    ...(channel.runInBackground ? { channelRunInBackground: true } : {}),
+    ...(channel.notifyOnComplete !== undefined ? { channelNotifyOnComplete: channel.notifyOnComplete } : {}),
   };
 
   if (telegramMsg) {

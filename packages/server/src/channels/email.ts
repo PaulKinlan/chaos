@@ -517,6 +517,8 @@ export async function handleEmailInbound(
     channelDirection: channel.direction || "bidirectional",
     channelName: channel.name,
     ...(channel.agentId ? { channelAgentId: channel.agentId } : {}),
+    ...(channel.runInBackground ? { channelRunInBackground: true } : {}),
+    ...(channel.notifyOnComplete !== undefined ? { channelNotifyOnComplete: channel.notifyOnComplete } : {}),
     senderAddress: senderEmail,
     subject,
     toAddress: matchedAddress,

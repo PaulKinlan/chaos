@@ -27,6 +27,8 @@ export interface ChannelConfig {
   prompt?: string;  // instructions for the agent when processing messages from this channel
   agentId: string;
   enabled: boolean;
+  runInBackground?: boolean;  // true = no UI column, runs silently (default: false)
+  notifyOnComplete?: boolean; // show desktop notification when done (default: true for background)
   metadata: Record<string, unknown>;  // bot tokens, webhook URLs, etc.
 }
 

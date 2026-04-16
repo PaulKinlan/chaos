@@ -175,9 +175,28 @@ export interface Hook {
   prompt: string;           // What the agent should do when triggered
   description: string;      // Human-readable description
   enabled: boolean;
+  runInBackground?: boolean;  // true = no UI column, runs silently (default: false)
+  notifyOnComplete?: boolean; // show desktop notification when done (default: true for background)
   createdAt: string;
   lastTriggeredAt?: string;
   triggerCount: number;
+}
+
+// ── Background run history ──
+
+export interface BackgroundRun {
+  id: string;
+  agentId: string;
+  agentName: string;
+  source: 'channel' | 'hook' | 'task';
+  sourceLabel: string;       // e.g. "Email: alice@...", "Hook: tab-navigated"
+  prompt: string;
+  result: string;
+  status: 'running' | 'completed' | 'error';
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  error?: string;
 }
 
 export type HookTrigger =
