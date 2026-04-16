@@ -733,99 +733,6 @@ function parseApiError(err: unknown): { message: string; provider?: string } {
 
 // ── Message handlers ──
 
-async function handleChat(
-  port: chrome.runtime.Port,
-  msg: {
-    agentId: string;
-    message: string;
-    pageContext?: { title: string; url: string; content: string };
-    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
-  },
-): Promise<void> {
-  port.postMessage({ type: 'chatStart', agentId: msg.agentId });
-
-  // Abort any existing loop for this agent before starting a new one
-  const existing = activeAbortControllers.get(msg.agentId);
-  if (existing) {
-    console.log(`[background] Aborting stale loop for agent ${msg.agentId}`);
-    existing.abort();
-  }
-  const abortController = new AbortController();
-  activeAbortControllers.set(msg.agentId, abortController);
-  startKeepalive();
-
-  try {
-    const { agent: chatAgent, skillNames: chatSkillNames } = await createExtensionAgent(msg.agentId, {
-      task: msg.message,
-      pageContext: msg.pageContext,
-      maxIterations: 10,
-      signal: abortController.signal,
-      source: 'chat',
-    });
-
-    if (chatSkillNames.length > 0) {
-      try {
-        port.postMessage({ type: 'chatChunk', chunk: `Loaded skills: ${chatSkillNames.join(', ')}\n\n`, agentId: msg.agentId });
-      } catch { /* */ }
-    }
-
-    // Pass conversation history for multi-turn context
-    const history = Array.isArray(msg.history) ? msg.history as Array<{ role: 'user' | 'assistant'; content: string }> : undefined;
-
-    let fullResponse = '';
-    for await (const event of chatAgent.stream(msg.message, msg.pageContext ? JSON.stringify(msg.pageContext) : undefined, history)) {
-      if (abortController.signal.aborted) break;
-      const update = mapProgressEvent(event, 10);
-      if (event.type === 'thinking') {
-        try {
-          port.postMessage({ type: 'chatChunk', chunk: event.content, agentId: msg.agentId });
-        } catch {
-          abortController.abort();
-        }
-      } else if (event.type === 'tool-call') {
-        try {
-          port.postMessage({ type: 'toolCall', name: event.toolName, args: event.toolArgs, result: undefined, agentId: msg.agentId });
-        } catch {
-          abortController.abort();
-        }
-      } else if (event.type === 'tool-result') {
-        try {
-          port.postMessage({ type: 'toolCall', name: event.toolName, args: undefined, result: event.toolResult, agentId: msg.agentId });
-        } catch {
-          abortController.abort();
-        }
-      } else if (event.type === 'done' || event.type === 'text') {
-        fullResponse = event.content;
-      }
-    }
-
-    if (!abortController.signal.aborted) {
-      port.postMessage({ type: 'chatEnd', fullResponse, agentId: msg.agentId });
-    }
-  } catch (err) {
-    if (!abortController.signal.aborted) {
-      const parsed = parseApiError(err);
-      port.postMessage({
-        type: 'chatError',
-        error: parsed.message,
-        provider: parsed.provider,
-        agentId: msg.agentId,
-        lastMessage: {
-          agentId: msg.agentId,
-          message: msg.message,
-          pageContext: msg.pageContext,
-        },
-      });
-    }
-  } finally {
-    // Only delete if this is still our controller (not replaced by a newer request)
-    if (activeAbortControllers.get(msg.agentId) === abortController) {
-      activeAbortControllers.delete(msg.agentId);
-    }
-    stopKeepalive();
-  }
-}
-
 /** Wake an agent to process a new inter-agent message. */
 async function wakeAgentForMessage(agentId: string, fromAgentId: string, body: string): Promise<void> {
   console.log(`[background] Waking agent ${agentId} for message from ${fromAgentId}`);
@@ -2492,6 +2399,10 @@ setMessageHandler(async (message) => {
       });
     } catch { /* port disconnected */ }
   }
+
+  // Give the UI time to create the column before we start streaming events to it.
+  // Without this, agenticProgress messages arrive before the column exists and get dropped.
+  await new Promise(r => setTimeout(r, 300));
 
   // Signal UI that agentic loop is starting
   if (activeUiPort) {

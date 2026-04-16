@@ -931,11 +931,15 @@ function handlePortMessage(msg: Record<string, unknown>): void {
   // Route chat-related messages to the correct column by columnId (preferred) or agentId
   const msgAgentId = msg.agentId as string | undefined;
   const msgColumnId = msg.columnId as string | undefined;
-  // Resolve the target column: prefer columnId (supports multiple columns per agent)
-  const resolveColumn = () =>
-    (msgColumnId && getColumnById(msgColumnId)) ||
-    (msgAgentId && getColumnForAgent(msgAgentId)) ||
-    getFocusedColumn();
+  // Resolve the target column: prefer columnId (supports multiple columns per agent).
+  // If a columnId is provided, only use that specific column — NEVER fall back to
+  // another column, as that causes cross-talk between concurrent conversations.
+  const resolveColumn = () => {
+    if (msgColumnId) {
+      return getColumnById(msgColumnId) || undefined;
+    }
+    return (msgAgentId && getColumnForAgent(msgAgentId)) || getFocusedColumn();
+  };
 
   switch (msg.type) {
     case 'agentList':
