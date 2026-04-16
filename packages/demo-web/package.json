@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@chaos/sdk": "*",
-    "agent-do": "file:../../../agent-do"
+    "agent-do": "^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "agent-do": "file:../../../agent-do",
+    "agent-do": "^0.1.0",
     "@chaos/sdk": "*",
     "ai": "^6.0.0",
     "ink": "^7.0.0",

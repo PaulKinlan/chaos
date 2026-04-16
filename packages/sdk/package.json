@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "agent-do": "file:../../../agent-do"
+    "agent-do": "^0.1.0"
   },
   "devDependencies": {
     "ai": "^6.0.0",
