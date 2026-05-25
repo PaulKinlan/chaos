@@ -1,9 +1,0 @@
-{
-  "entryPoints": ["src/index.ts"],
-  "out": "docs/api",
-  "plugin": ["typedoc-plugin-markdown"],
-  "theme": "markdown",
-  "readme": "none",
-  "excludePrivate": true,
-  "excludeInternal": true
-}

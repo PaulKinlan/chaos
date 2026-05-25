@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --if-present -w packages/agent-loop -w packages/sdk && npm run build --if-present -w packages/extension -w packages/demo-cli -w packages/demo-web -w packages/tui",
+    "build": "npm run build --if-present -w packages/sdk && npm run build --if-present -w packages/extension -w packages/demo-cli -w packages/demo-web -w packages/tui",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build:extension": "npm run build --workspace=packages/extension",

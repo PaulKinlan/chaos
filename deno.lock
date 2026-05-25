@@ -37,25 +37,12 @@
   },
   "workspace": {
     "members": {
-      "packages/agent-loop": {
-        "packageJson": {
-          "dependencies": [
-            "npm:ai@6",
-            "npm:typedoc-plugin-markdown@^4.4.0",
-            "npm:typedoc@0.28",
-            "npm:typescript@^5.5.0",
-            "npm:vitest@3",
-            "npm:zod@^3.23.0"
-          ]
-        }
-      },
       "packages/demo-cli": {
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/anthropic@1",
             "npm:@ai-sdk/google@1",
             "npm:@ai-sdk/openai@1",
-            "npm:@chaos/agent-loop@*",
             "npm:@chaos/sdk@*",
             "npm:ai@6",
             "npm:tsx@4",
@@ -68,7 +55,6 @@
       "packages/demo-web": {
         "packageJson": {
           "dependencies": [
-            "npm:@chaos/agent-loop@*",
             "npm:@chaos/sdk@*",
             "npm:typescript@^5.5.0",
             "npm:vite@6"
@@ -81,7 +67,6 @@
             "npm:@ai-sdk/anthropic@^3.0.66",
             "npm:@ai-sdk/google@^3.0.56",
             "npm:@ai-sdk/openai@^3.0.50",
-            "npm:@chaos/agent-loop@*",
             "npm:@chaos/sdk@*",
             "npm:@crxjs/vite-plugin@^2.0.0-beta.30",
             "npm:@mozilla/readability@0.6",
@@ -106,7 +91,6 @@
       "packages/sdk": {
         "packageJson": {
           "dependencies": [
-            "npm:@chaos/agent-loop@*",
             "npm:ai@6",
             "npm:typedoc-plugin-markdown@^4.4.0",
             "npm:typedoc@0.28",
@@ -121,7 +105,6 @@
             "npm:@ai-sdk/anthropic@3",
             "npm:@ai-sdk/google@3",
             "npm:@ai-sdk/openai@3",
-            "npm:@chaos/agent-loop@*",
             "npm:@chaos/sdk@*",
             "npm:@types/react@^19.2.0",
             "npm:@types/ws@^8.5.0",

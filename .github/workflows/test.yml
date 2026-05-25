@@ -31,7 +31,7 @@ jobs:
         working-directory: packages/extension
 
   sdk-tests:
-    name: SDK & Agent Loop Tests
+    name: SDK Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,10 +46,6 @@ jobs:
       - name: SDK conformance tests
         run: npm test
         working-directory: packages/sdk
-
-      - name: Agent loop tests
-        run: npm test
-        working-directory: packages/agent-loop
 
       - name: Demo CLI tests
         run: npm test

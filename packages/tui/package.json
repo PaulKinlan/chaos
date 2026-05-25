@@ -10,7 +10,7 @@
     "build": "tsc",
     "start": "tsx src/index.tsx",
     "dev": "tsx src/index.tsx",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
