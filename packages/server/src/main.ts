@@ -90,6 +90,20 @@ async function startKvWatch(
     const stream = kv.watch([["last_message", userId]]);
     const reader = stream.getReader();
 
+    // When the socket closes the controller aborts, but the loop below is
+    // parked inside `reader.read()` until the next watch event arrives. For a
+    // quiet user that never happens, so the loop would never re-check
+    // signal.aborted and this kv.watch() stream would leak — one leaked KV
+    // Connect subscription per closed/reconnected socket. Enough of those
+    // exhaust Deno Deploy's concurrent-watch cap and KV starts 500ing every
+    // call (including the atomic writes that /auth/register depends on).
+    // Cancelling the reader on abort wakes the parked read so the stream is
+    // torn down immediately.
+    const onAbort = () => {
+      reader.cancel().catch(() => {});
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
     while (!signal.aborted) {
       const { done, value } = await reader.read();
       if (done || signal.aborted) break;
@@ -126,6 +140,7 @@ async function startKvWatch(
       }
     }
 
+    signal.removeEventListener("abort", onAbort);
     reader.releaseLock();
   } catch (err) {
     if (!signal.aborted) {
@@ -1433,9 +1448,7 @@ logger.info("server", "CHAOS relay server started", {
 // ── Admin HTML templates ──
 
 function adminLoginHtml(errorMsg?: string): string {
-  const errorDiv = errorMsg
-    ? `<div class="error">${errorMsg}</div>`
-    : "";
+  const errorDiv = errorMsg ? `<div class="error">${errorMsg}</div>` : "";
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CHAOS Admin - Login</title>
