@@ -1,6 +1,6 @@
 {
   "name": "chaos",
-  "version": "0.1.143",
+  "version": "0.1.144",
   "private": true,
   "workspaces": [
     "packages/*"
