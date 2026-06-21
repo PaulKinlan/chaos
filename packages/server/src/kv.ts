@@ -16,7 +16,12 @@ import type { UserSession } from "./auth.ts";
 import { logger } from "./logger.ts";
 
 let kv: Deno.Kv | null = null;
-let kvFailed = false;
+// Timestamp (ms) of the last failed openKv(), or 0 if none. We do NOT latch the
+// failure permanently: an isolate that happened to call openKv() while the KV
+// database was detached/unavailable would otherwise stay KV-less forever (until
+// recycled). Instead we back off for KV_OPEN_RETRY_MS and retry, so the isolate
+// self-heals once the database is reattached.
+let lastOpenFailMs = 0;
 
 // ── Instrumentation ──
 
@@ -24,6 +29,8 @@ let kvFailed = false;
 // fail fast and visibly instead of hanging the request. Tunable via env.
 const KV_TIMEOUT_MS = Number(Deno.env.get("KV_TIMEOUT_MS") || "5000");
 const KV_SLOW_MS = Number(Deno.env.get("KV_SLOW_MS") || "1000");
+// How long to back off before retrying Deno.openKv() after a failure.
+const KV_OPEN_RETRY_MS = Number(Deno.env.get("KV_OPEN_RETRY_MS") || "10000");
 
 let opsTotal = 0;
 let errorsTotal = 0;
@@ -100,19 +107,26 @@ export async function instrumentKv<T>(
  */
 export async function getKvAsync(): Promise<Deno.Kv | null> {
   if (kv) return kv;
-  if (kvFailed) return null;
+  // Back off briefly after a failed open so we don't hammer a down KV — but do
+  // NOT latch the failure: retry after the cooldown so the isolate self-heals
+  // once the database is reattached/recovered.
+  if (lastOpenFailMs && Date.now() - lastOpenFailMs < KV_OPEN_RETRY_MS) {
+    return null;
+  }
 
   try {
     const t = performance.now();
     kv = await Deno.openKv();
+    lastOpenFailMs = 0;
     logger.info("kv", "Deno KV store opened", {
       ms: Math.round(performance.now() - t),
     });
     return kv;
   } catch (err) {
-    kvFailed = true;
-    logger.warn("kv", "Deno KV not available, using in-memory fallback", {
+    lastOpenFailMs = Date.now();
+    logger.warn("kv", "Deno KV not available, will retry after cooldown", {
       error: String(err),
+      retryMs: KV_OPEN_RETRY_MS,
     });
     return null;
   }
