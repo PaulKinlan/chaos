@@ -256,19 +256,53 @@ components:
 
     HealthResponse:
       type: object
-      required: [status, version, kv, websockets, uptime]
+      required: [status, version, kv, kvStats, websockets, uptime]
       properties:
         status:
           type: string
-          enum: [ok]
+          enum: [ok, degraded]
+          description: "\"degraded\" only when ?deep=1 ran and the live KV probe failed."
           example: "ok"
         version:
           type: string
           example: "0.1.0"
         kv:
           type: boolean
-          description: Whether Deno KV is available.
+          description: Whether Deno KV opened at boot (a flag, not a live check).
           example: true
+        kvStats:
+          type: object
+          description: Rolling in-memory KV health counters since process start.
+          required: [ops, errors, timeouts, lastError]
+          properties:
+            ops:
+              type: integer
+              description: Total instrumented KV operations.
+              example: 4
+            errors:
+              type: integer
+              description: KV operations that failed.
+              example: 0
+            timeouts:
+              type: integer
+              description: KV operations that exceeded the op timeout.
+              example: 0
+            lastError:
+              nullable: true
+              description: Most recent KV failure, or null.
+              type: object
+              properties:
+                op: { type: string, example: "setSession" }
+                error: { type: string }
+                ms: { type: integer }
+                at: { type: string, format: date-time }
+        kvLive:
+          type: object
+          description: Present only when ?deep=1 — result of a live KV write+read round-trip.
+          properties:
+            ok: { type: boolean, example: true }
+            ms: { type: integer, example: 56 }
+            error: { type: string, nullable: true }
         websockets:
           type: integer
           description: Number of active WebSocket connections.
@@ -494,12 +528,24 @@ paths:
     get:
       operationId: getHealth
       summary: Health check
-      description: Returns server status including KV availability, WebSocket connection count, and uptime.
+      description: |
+        Returns server status including KV health counters (kvStats), WebSocket
+        connection count, and uptime. Instant by default (no KV round-trip) so it
+        stays a reliable liveness probe even while KV is degraded. Pass ?deep=1 to
+        also run a live KV write+read probe (adds the kvLive field).
       tags: [Public]
       security: []
+      parameters:
+        - name: deep
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+          description: When "1", perform a live KV round-trip and include kvLive.
       responses:
         "200":
-          description: Server is healthy.
+          description: Server is healthy (or degraded if a deep probe failed).
           content:
             application/json:
               schema:
@@ -508,6 +554,7 @@ paths:
                 status: "ok"
                 version: "0.1.0"
                 kv: true
+                kvStats: { ops: 4, errors: 0, timeouts: 0, lastError: null }
                 websockets: 3
                 uptime: 12345
 
@@ -560,6 +607,14 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: "Too many registration attempts. Try again later."
+        "503":
+          description: Storage (KV) error — registration could not be persisted. Retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Registration temporarily unavailable (storage error). Please retry."
 
   /messages:
     get:

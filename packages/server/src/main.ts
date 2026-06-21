@@ -34,7 +34,7 @@ import {
   registerEmailChannel,
 } from "./channels/email.ts";
 import { getServerPublicKey } from "./crypto.ts";
-import { getKv, initKv, isKvAvailable } from "./kv.ts";
+import { getKv, initKv, isKvAvailable, kvHealthCheck, kvStats } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
 import { sanitizeMessage } from "./sanitize.ts";
 import { logger, requestLog } from "./logger.ts";
@@ -231,12 +231,20 @@ Deno.serve(serveOptions, async (req: Request) => {
     });
   }
 
-  // Health check — instant, no KV needed
+  // Health check — instant by default (no KV round-trip), so it stays a
+  // reliable liveness probe even while KV is wedged. Always includes the
+  // rolling KV counters (kvStats) so a climbing error/timeout count or a
+  // lastError is visible at a glance — that's the signal that was missing when
+  // register silently hung. Add ?deep=1 to also do a live KV write+read probe.
   if (url.pathname === "/health" && method === "GET") {
+    const deep = url.searchParams.get("deep") === "1";
+    const live = deep ? await kvHealthCheck() : null;
     return json({
-      status: "ok",
+      status: live && !live.ok ? "degraded" : "ok",
       version: VERSION,
       kv: isKvAvailable(),
+      kvStats: kvStats(),
+      ...(live ? { kvLive: live } : {}),
       initialized,
       websockets: getConnectionCount(),
       uptime: Math.floor(performance.now() / 1000),
@@ -654,8 +662,25 @@ Deno.serve(serveOptions, async (req: Request) => {
       // No body or invalid JSON — that's fine, publicKey is optional for backwards compat
     }
 
-    const session = await createSession(publicKey);
-    const serverPublicKey = await getServerPublicKey();
+    let session: { userId: string; apiKey: string };
+    let serverPublicKey: JsonWebKey | null;
+    try {
+      session = await createSession(publicKey);
+      serverPublicKey = await getServerPublicKey();
+    } catch (err) {
+      // Almost always a KV failure (e.g. KvTimeoutError from a wedged KV
+      // Connect). Fail fast and loud with a 503 instead of hanging — the
+      // instrumented KV layer has already logged the op-level detail.
+      logger.error("server", "Registration failed", {
+        ip,
+        hasPublicKey: !!publicKey,
+        error: String(err),
+      });
+      return error(
+        "Registration temporarily unavailable (storage error). Please retry.",
+        503,
+      );
+    }
 
     logger.info("server", "New session registered", {
       userId: session.userId,

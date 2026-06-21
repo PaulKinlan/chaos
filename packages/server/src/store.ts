@@ -4,7 +4,7 @@
 
 import { logger } from "./logger.ts";
 import { getConnectionCount, pushToUser } from "./ws.ts";
-import { getKv, isKvAvailable } from "./kv.ts";
+import { getKv, instrumentKv, isKvAvailable } from "./kv.ts";
 
 export interface StoredMessage {
   id: string;
@@ -101,14 +101,22 @@ export async function addMessage(
   // Store in KV (primary, durable)
   if (isKvAvailable() && getKv()) {
     const kv = getKv()!;
-    await kv.set(["messages", userId, msg.timestamp, msg.id], msg, {
-      expireIn: MESSAGE_TTL_MS,
-    });
+    await instrumentKv(
+      "addMessage.set",
+      () =>
+        kv.set(["messages", userId, msg.timestamp, msg.id], msg, {
+          expireIn: MESSAGE_TTL_MS,
+        }),
+    );
     // Update the watch key so kv.watch() on other isolates sees the new message
-    await kv.set(["last_message", userId], {
-      messageId: msg.id,
-      timestamp: msg.timestamp,
-    });
+    await instrumentKv(
+      "addMessage.lastMessage",
+      () =>
+        kv.set(["last_message", userId], {
+          messageId: msg.id,
+          timestamp: msg.timestamp,
+        }),
+    );
   }
 
   // Cache in memory
