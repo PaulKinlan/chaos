@@ -43,6 +43,7 @@ import {
   getConnectionCount,
   pushToUser,
   removeConnection,
+  startConnectionReaper,
 } from "./ws.ts";
 import {
   handleMcpDelete,
@@ -195,6 +196,7 @@ const serveOptions = Deno.env.get("DENO_DEPLOYMENT_ID") ? {} : { port: PORT };
 // Server keypair is lazy (loaded on first /register call)
 const kvInitPromise = initKv().then(async () => {
   startMessageCleanup();
+  startConnectionReaper();
   // Warm all caches from KV so admin dashboard has data immediately
   const { warmSessionCache } = await import("./auth.ts");
   const { warmMessageCache } = await import("./store.ts");

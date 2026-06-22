@@ -265,3 +265,45 @@ Deno.test("WebSocket reply with missing fields returns error", async () => {
     });
   }
 });
+
+Deno.test("WebSocket enforces a per-user connection cap (closes oldest)", async () => {
+  // Each WS holds a kv.watch; a client must not be able to accumulate
+  // unbounded connections. The relay caps per user (default 5) and closes the
+  // OLDEST when exceeded. Open cap+1 and verify the first one gets closed.
+  const cap = Number(Deno.env.get("WS_MAX_CONN_PER_USER") || "5");
+  const creds = await register();
+  const url = wsUrl(`/ws?token=${creds.apiKey}`);
+
+  const closeAndWait = (s: WebSocket) =>
+    new Promise<void>((resolve) => {
+      if (s.readyState === WebSocket.CLOSED) return resolve();
+      s.onclose = () => resolve();
+      try {
+        s.close();
+      } catch {
+        resolve();
+      }
+    });
+
+  const first = await connectWs(url);
+  let capTimer = 0;
+  const firstClosed = new Promise<boolean>((resolve) => {
+    first.onclose = () => {
+      clearTimeout(capTimer);
+      resolve(true);
+    };
+    capTimer = setTimeout(() => resolve(false), 3000);
+  });
+
+  const rest: WebSocket[] = [];
+  for (let i = 0; i < cap; i++) rest.push(await connectWs(url)); // total = cap + 1
+
+  assertEquals(
+    await firstClosed,
+    true,
+    "the oldest connection should be closed once the per-user cap is exceeded",
+  );
+
+  // Clean up remaining sockets and wait for closure (satisfies leak detection).
+  await Promise.all(rest.map(closeAndWait));
+});
