@@ -161,34 +161,77 @@ async function sendDiscordReplyAsync(
     if (!session) return;
 
     const channel = session.channels.find((ch) => ch.id === payload.channelId);
-    if (!channel || channel.type !== "discord") return;
+    if (!channel || channel.type !== "discord") {
+      logger.error("responder", "Discord reply: channel not found/wrong type", {
+        userId,
+        channelId: payload.channelId,
+        found: !!channel,
+        type: channel?.type,
+      });
+      return;
+    }
 
-    // Use plaintext token if available (in-memory), otherwise decrypt
+    // Use plaintext token if available (in-memory), otherwise decrypt. The
+    // plaintext token is lost on isolate restart, so the decrypt path is the
+    // normal case after a redeploy.
+    let tokenSource = "plain";
     let botToken = channel.metadata["botTokenPlain"] as string | undefined;
     if (!botToken) {
       const encrypted = channel.metadata["botToken"] as string | undefined;
       if (encrypted) {
-        const { decryptToken } = await import("../crypto.ts");
-        botToken = await decryptToken(encrypted);
+        try {
+          const { decryptToken } = await import("../crypto.ts");
+          botToken = await decryptToken(encrypted);
+          tokenSource = "decrypted";
+        } catch (err) {
+          logger.error("responder", "Discord reply: botToken decrypt failed", {
+            userId,
+            channelId: payload.channelId,
+            error: String(err),
+          });
+          return;
+        }
       }
     }
-    const discordChannelId = payload.metadata?.["discordChannelId"] as
+
+    // discordChannelId: prefer the reply payload, else the recorded inbound
+    // target (the agent never sees it).
+    let discordChannelId = payload.metadata?.["discordChannelId"] as
       | string
       | undefined;
+    let idSource = "payload";
+    if (!discordChannelId) {
+      const { getReplyTarget } = await import("../store.ts");
+      discordChannelId = await getReplyTarget(payload.channelId);
+      idSource = "replyTarget";
+    }
 
     if (!botToken || !discordChannelId) {
-      logger.error(
-        "responder",
-        "Discord reply missing botToken or discordChannelId",
-        {
-          userId,
-          channelId: payload.channelId,
-        },
-      );
+      logger.error("responder", "Discord reply: cannot send", {
+        userId,
+        channelId: payload.channelId,
+        hasBotToken: !!botToken,
+        tokenSource: botToken ? tokenSource : "(none)",
+        hasDiscordChannelId: !!discordChannelId,
+        triedReplyTarget: idSource === "replyTarget",
+      });
       return;
     }
 
+    logger.info("responder", "Sending Discord reply", {
+      userId,
+      channelId: payload.channelId,
+      discordChannelId,
+      idSource,
+      tokenSource,
+      contentLength: payload.content.length,
+    });
     await sendDiscordReply(botToken, discordChannelId, payload.content);
+    logger.info("responder", "Discord reply delivered", {
+      userId,
+      channelId: payload.channelId,
+      discordChannelId,
+    });
   } catch (err) {
     logger.error("responder", "Failed to send Discord reply", {
       userId,
@@ -211,9 +254,15 @@ async function sendEmailReplyAsync(
 
     const fromAddress = (channel.metadata["inboundAddress"] as string) ||
       (channel.metadata["fromAddress"] as string) || undefined;
-    const toAddress = payload.metadata?.["senderAddress"] as
-      | string
-      | undefined;
+    // toAddress: prefer the reply payload, else the recorded inbound sender
+    // (the agent never sees the sender address).
+    let toAddress = payload.metadata?.["senderAddress"] as string | undefined;
+    let toSource = "payload";
+    if (!toAddress) {
+      const { getReplyTarget } = await import("../store.ts");
+      toAddress = await getReplyTarget(payload.channelId);
+      toSource = "replyTarget";
+    }
     const originalSubject = payload.metadata?.["subject"] as
       | string
       | undefined;
@@ -227,6 +276,7 @@ async function sendEmailReplyAsync(
           channelId: payload.channelId,
           fromAddress: fromAddress || "(missing)",
           toAddress: toAddress || "(missing)",
+          toSource,
           metadataKeys: Object.keys(channel.metadata).join(","),
           payloadMetadataKeys: payload.metadata
             ? Object.keys(payload.metadata).join(",")
@@ -235,6 +285,13 @@ async function sendEmailReplyAsync(
       );
       return;
     }
+    logger.info("responder", "Sending email reply", {
+      userId,
+      channelId: payload.channelId,
+      toAddress,
+      toSource,
+      fromAddress,
+    });
 
     const subject = originalSubject
       ? `Re: ${originalSubject.replace(/^Re:\s*/i, "")}`
@@ -265,6 +322,11 @@ async function sendEmailReplyAsync(
       payload.content,
       threadingHeaders,
     );
+    logger.info("responder", "Email reply delivered", {
+      userId,
+      channelId: payload.channelId,
+      toAddress,
+    });
   } catch (err) {
     logger.error("responder", "Failed to send email reply", {
       userId,

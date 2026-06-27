@@ -1120,6 +1120,27 @@ Deno.serve(serveOptions, async (req: Request) => {
           );
           await sendTelegramChatAction(botToken, chatId);
         }
+      } else if (channelType === "discord") {
+        const channel = session.channels.find((ch) => ch.id === channelId);
+        if (!channel || channel.type !== "discord") {
+          return error("Channel not found", 404);
+        }
+        let botToken = channel.metadata["botTokenPlain"] as string | undefined;
+        if (!botToken) {
+          const encrypted = channel.metadata["botToken"] as string | undefined;
+          if (encrypted) {
+            try {
+              const { decryptToken } = await import("./crypto.ts");
+              botToken = await decryptToken(encrypted);
+            } catch { /* fall through to no-op below */ }
+          }
+        }
+        const { getReplyTarget } = await import("./store.ts");
+        const discordChannelId = await getReplyTarget(channelId);
+        if (botToken && discordChannelId) {
+          const { sendDiscordTyping } = await import("./channels/discord.ts");
+          await sendDiscordTyping(botToken, discordChannelId);
+        }
       }
       // Unknown / non-typing channel types are a no-op success.
       return json({ ok: true });
@@ -1310,13 +1331,16 @@ Deno.serve(serveOptions, async (req: Request) => {
     try {
       const body = await req.json();
       const userEmail = body.userEmail;
-      const channelName = body.channelName;
       if (!userEmail || typeof userEmail !== "string") {
         return error("Missing or invalid userEmail");
       }
-      if (!channelName || typeof channelName !== "string") {
-        return error("Missing or invalid channelName");
-      }
+      // channelName seeds the inbound address slug; default it from the email's
+      // local part when the client doesn't supply one.
+      const channelName = (typeof body.channelName === "string" &&
+          body.channelName.trim())
+        ? body.channelName.trim()
+        : (userEmail.split("@")[0].replace(/[^a-z0-9]+/gi, "-")
+          .replace(/^-+|-+$/g, "").toLowerCase() || "agent");
 
       const domain = Deno.env.get("CHAOS_EMAIL_DOMAIN");
       if (!domain) {

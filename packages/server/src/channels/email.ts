@@ -209,13 +209,25 @@ export async function handleEmailVerification(
 
   logger.info("email", "Email channel verified", { channelId, userEmail });
 
+  const inboundAddress = (channel.metadata["inboundAddress"] as string) || "";
+  const safeAddress = escapeHtml(inboundAddress);
+  const mailtoBlock = inboundAddress
+    ? `<p>Send your first email to your agent:</p>
+        <p><a href="mailto:${encodeURIComponent(inboundAddress)}?subject=${
+      encodeURIComponent("Hello from CHAOS")
+    }" style="display:inline-block;padding:10px 18px;background:#22c55e;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Email ${safeAddress}</a></p>
+        <p style="color:#6b7280;font-size:13px;">or copy the address: <code>${safeAddress}</code></p>`
+    : "";
+
   return htmlResponse(
-    `<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-      <div style="text-align:center;">
+    `<html lang="en"><head><meta charset="utf-8"><title>Email verified</title></head>
+    <body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+      <main style="text-align:center;max-width:32rem;padding:1rem;">
         <h1 style="color:#22c55e;">Email verified!</h1>
         <p>Your email address has been verified. You can now send emails to your CHAOS agent.</p>
+        ${mailtoBlock}
         <p>You can close this tab.</p>
-      </div>
+      </main>
     </body></html>`,
     200,
   );
@@ -518,7 +530,9 @@ export async function handleEmailInbound(
     channelName: channel.name,
     ...(channel.agentId ? { channelAgentId: channel.agentId } : {}),
     ...(channel.runInBackground ? { channelRunInBackground: true } : {}),
-    ...(channel.notifyOnComplete !== undefined ? { channelNotifyOnComplete: channel.notifyOnComplete } : {}),
+    ...(channel.notifyOnComplete !== undefined
+      ? { channelNotifyOnComplete: channel.notifyOnComplete }
+      : {}),
     senderAddress: senderEmail,
     subject,
     toAddress: matchedAddress,
@@ -542,6 +556,13 @@ export async function handleEmailInbound(
   };
 
   await addMessage(session.userId, message);
+
+  // Record who to reply to. The agent never sees the sender address, so the
+  // reply path falls back to this when the reply payload doesn't carry one.
+  if (senderEmail) {
+    const { setReplyTarget } = await import("../store.ts");
+    await setReplyTarget(channelId, senderEmail);
+  }
 
   logger.info("email", "Email message stored", {
     channelId,
@@ -750,6 +771,16 @@ function htmlResponse(html: string, status = 200): Response {
     status,
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
+}
+
+/** Escape text for safe interpolation into HTML. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /** Extract bare email from "Display Name <email@example.com>" format */

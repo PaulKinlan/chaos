@@ -303,11 +303,19 @@ export async function handleDiscordWebhook(
 
   await addMessage(session.userId, message);
 
+  // Record where to send replies. The agent never sees discordChannelId, so the
+  // reply path falls back to this when the reply payload doesn't carry one.
+  if (discordChannelId) {
+    const { setReplyTarget } = await import("../store.ts");
+    await setReplyTarget(channelId, discordChannelId);
+  }
+
   logger.info("discord", "Discord message stored", {
     channelId,
     messageId: message.id,
     userId: session.userId,
     from,
+    discordChannelId,
   });
 
   return jsonResponse({ ok: true, messageId: message.id });
@@ -337,6 +345,34 @@ export async function sendDiscordReply(
     throw new Error(`Discord sendMessage failed: ${resp.status} ${body}`);
   }
   logger.info("discord", "Discord reply sent", { discordChannelId });
+}
+
+/**
+ * Trigger Discord's typing indicator in a channel. It lasts ~10s or until the
+ * next message, so callers repeat it while the agent works. Best-effort.
+ */
+export async function sendDiscordTyping(
+  botToken: string,
+  discordChannelId: string,
+): Promise<void> {
+  try {
+    const resp = await discordApiCall(
+      botToken,
+      "POST",
+      `/channels/${discordChannelId}/typing`,
+    );
+    if (!resp.ok) {
+      logger.warn("discord", "Discord typing failed", {
+        discordChannelId,
+        status: resp.status,
+      });
+    }
+  } catch (err) {
+    logger.warn("discord", "Discord typing error", {
+      discordChannelId,
+      error: String(err),
+    });
+  }
 }
 
 // ── Utility ──
