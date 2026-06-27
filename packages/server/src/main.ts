@@ -1520,37 +1520,47 @@ logger.info("server", "CHAOS relay server started", {
 // ── Admin HTML templates ──
 
 function adminLoginHtml(errorMsg?: string): string {
-  const errorDiv = errorMsg ? `<div class="error">${errorMsg}</div>` : "";
+  const errorDiv = errorMsg
+    ? `<div class="error" role="alert">${errorMsg}</div>`
+    : "";
   return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CHAOS Admin - Login</title>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login | CHAOS Relay Admin</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:system-ui,sans-serif;background:#0f1117;color:#e1e4e8;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  main{width:100%;display:flex;justify-content:center}
   .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:32px;width:100%;max-width:360px}
   h1{font-size:18px;margin-bottom:16px;color:#f0f3f6}
+  label{display:block;font-size:12px;color:#8b949e;margin-bottom:6px}
   input{width:100%;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;font-size:14px;margin-bottom:12px}
-  input:focus{outline:none;border-color:#58a6ff}
+  input:focus-visible{outline:2px solid #58a6ff;outline-offset:1px;border-color:#58a6ff}
   button{width:100%;padding:8px 12px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:14px;cursor:pointer;font-weight:500}
   button:hover{background:#2ea043}
+  button:focus-visible{outline:2px solid #58a6ff;outline-offset:2px}
   .error{color:#f85149;font-size:12px;margin-bottom:8px}
 </style></head><body>
-<div class="card">
-  <h1>CHAOS Relay Admin</h1>
-  ${errorDiv}
-  <form method="POST" action="/admin/login">
-    <input type="password" name="password" placeholder="Admin password" autofocus required>
-    <button type="submit">Log in</button>
-  </form>
-</div>
+<main>
+  <div class="card">
+    <h1>CHAOS Relay Admin</h1>
+    ${errorDiv}
+    <form method="POST" action="/admin/login">
+      <label for="admin-password">Admin password</label>
+      <input id="admin-password" type="password" name="password" autocomplete="current-password" autofocus required>
+      <button type="submit">Log in</button>
+    </form>
+  </div>
+</main>
 </body></html>`;
 }
 
 const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CHAOS Admin Dashboard</title>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard | CHAOS Relay Admin</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
+  .visually-hidden:where(:not(:focus-within,:active)){position:absolute!important;clip-path:inset(50%)!important;overflow:hidden!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;border:0!important;white-space:nowrap!important}
+  :where(a:any-link,button,input,select,[tabindex]):focus-visible{outline:2px solid #58a6ff;outline-offset:2px}
   body{font-family:system-ui,sans-serif;background:#0f1117;color:#e1e4e8;padding:24px;max-width:1200px;margin:0 auto}
   h1{font-size:20px;margin-bottom:4px}
   .subtitle{color:#8b949e;font-size:13px;margin-bottom:24px}
@@ -1589,14 +1599,15 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   .ts{font-size:11px;color:#8b949e;font-family:monospace}
   code{background:#21262d;padding:1px 4px;border-radius:3px;font-size:11px}
   .search-box{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;padding:6px 12px;font-size:13px;width:260px}
-  .search-box:focus{outline:none;border-color:#58a6ff}
+  .search-box:focus{border-color:#58a6ff}
+  .search-box:focus-visible{outline:2px solid #58a6ff;outline-offset:2px;border-color:#58a6ff}
   .search-box::placeholder{color:#484f58}
   .pager{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:#8b949e}
   .pager-info{flex:1}
   dialog{background:#161b22;color:#e1e4e8;border:1px solid #30363d;border-radius:12px;padding:0;max-width:800px;width:90vw;max-height:85vh;overflow:hidden;position:fixed;inset:0;margin:auto}
   dialog::backdrop{background:rgba(0,0,0,0.6)}
   .dialog-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #30363d}
-  .dialog-header h3{font-size:15px;color:#f0f3f6}
+  .dialog-header h2{font-size:15px;color:#f0f3f6;margin:0}
   .dialog-body{padding:20px;overflow-y:auto;max-height:calc(85vh - 60px)}
   .dialog-close{background:none;border:none;color:#8b949e;cursor:pointer;font-size:18px;padding:4px 8px;border-radius:4px}
   .dialog-close:hover{color:#f0f3f6;background:#21262d}
@@ -1607,41 +1618,45 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   .empty{color:#8b949e;text-align:center;padding:24px;font-size:13px}
   .section-controls{display:flex;align-items:center;gap:8px}
 </style></head><body>
-<div class="topbar">
+<header class="topbar">
   <div><h1>CHAOS Relay Admin</h1><div class="subtitle">Server dashboard — auto-refreshes every 10s</div></div>
   <div>
-    <span id="status"></span>
-    <button class="btn btn-primary" onclick="load()" style="margin-right:4px">Refresh</button>
+    <span id="status" role="status" aria-live="polite"></span>
+    <button class="btn btn-primary" type="button" onclick="load()" style="margin-right:4px">Refresh</button>
     <form action="/admin/logout" method="POST" style="display:inline"><button class="btn" type="submit">Logout</button></form>
   </div>
-</div>
+</header>
+<main>
 <div class="grid" id="stats"></div>
 
-<h2>Sessions &amp; Channels <span class="section-controls"><input type="text" class="search-box" id="session-search" placeholder="Filter sessions..." oninput="filterSessions()"></span></h2>
+<h2>Sessions &amp; Channels <search class="section-controls"><label class="visually-hidden" for="session-search">Filter sessions</label><input type="search" class="search-box" id="session-search" placeholder="Filter sessions..." oninput="filterSessions()"></search></h2>
 <div id="sessions"></div>
 <div class="pager" id="session-pager"></div>
 
-<h2>Recent Messages <span class="section-controls"><input type="text" class="search-box" id="msg-search" placeholder="Filter messages..." oninput="filterMessages()"></span></h2>
-<table><thead><tr><th>Time</th><th>Dir</th><th>From</th><th>Channel</th><th>User</th><th>Content</th></tr></thead><tbody id="messages"></tbody></table>
+<h2>Recent Messages <search class="section-controls"><label class="visually-hidden" for="msg-search">Filter messages</label><input type="search" class="search-box" id="msg-search" placeholder="Filter messages..." oninput="filterMessages()"></search></h2>
+<table><thead><tr><th scope="col">Time</th><th scope="col">Dir</th><th scope="col">From</th><th scope="col">Channel</th><th scope="col">User</th><th scope="col">Content</th></tr></thead><tbody id="messages"></tbody></table>
 <div class="pager" id="msg-pager"></div>
 
 <h2>KV Browser</h2>
 <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+  <label class="visually-hidden" for="kv-prefix">Key prefix</label>
   <select id="kv-prefix" class="search-box" style="width:180px;">
     <option value="">Loading prefixes...</option>
   </select>
+  <label class="visually-hidden" for="kv-limit">Maximum entries</label>
   <input type="number" id="kv-limit" value="50" min="1" max="200" style="width:70px;padding:6px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;font-size:13px;">
-  <button class="btn btn-primary" onclick="browseKv()">Browse</button>
-  <span id="kv-status" style="font-size:11px;color:#8b949e;"></span>
+  <button class="btn btn-primary" type="button" onclick="browseKv()">Browse</button>
+  <span id="kv-status" role="status" aria-live="polite" style="font-size:11px;color:#8b949e;"></span>
 </div>
 <div id="kv-results" style="max-height:400px;overflow-y:auto;">
-  <table><thead><tr><th>Key</th><th>Value</th></tr></thead><tbody id="kv-entries"></tbody></table>
+  <table><thead><tr><th scope="col">Key</th><th scope="col">Value</th></tr></thead><tbody id="kv-entries"></tbody></table>
 </div>
+</main>
 
-<dialog id="session-dialog">
+<dialog id="session-dialog" closedby="any" aria-labelledby="dialog-title">
   <div class="dialog-header">
-    <h3 id="dialog-title">Session Messages</h3>
-    <button class="dialog-close" onclick="document.getElementById('session-dialog').close()">&times;</button>
+    <h2 id="dialog-title">Session Messages</h2>
+    <button class="dialog-close" type="button" aria-label="Close dialog" onclick="document.getElementById('session-dialog').close()">&times;</button>
   </div>
   <div class="dialog-body" id="dialog-body"></div>
 </dialog>
@@ -1715,8 +1730,8 @@ function renderSessions(){
           return '<div style="padding:4px 0;font-size:12px"><span class="badge badge-'+esc(ch.type)+'">'+esc(ch.type)+'</span> '+detail+'</div>';
         }).join('');
       return '<div class="card"><div class="card-header"><span class="card-title"><code>'+esc(s.userId.slice(0,12))+'...</code></span><span style="display:flex;align-items:center;gap:6px">'+wsStatus+
-        ' <button class="btn btn-primary btn-sm" onclick="viewMessages(&apos;'+esc(s.userId)+'&apos;)">Messages</button>'+
-        ' <button class="btn btn-danger btn-sm" onclick="delSession(&apos;'+esc(s.userId)+'&apos;)">Delete</button></span></div>'+
+        ' <button type="button" class="btn btn-primary btn-sm" onclick="viewMessages(&apos;'+esc(s.userId)+'&apos;)">Messages</button>'+
+        ' <button type="button" class="btn btn-danger btn-sm" onclick="delSession(&apos;'+esc(s.userId)+'&apos;)">Delete</button></span></div>'+
         '<div class="channel-detail">Created: '+fmtTime(s.createdAt)+' | Channels: '+s.channels.length+' | ID: <code>'+esc(s.userId)+'</code></div>'+
         '<div style="margin-top:8px">'+channels+'</div></div>';
     }).join('');
@@ -1724,8 +1739,8 @@ function renderSessions(){
 
   document.getElementById('session-pager').innerHTML=total<=PAGE_SIZE?'':
     '<span class="pager-info">Showing '+(start+1)+'–'+Math.min(start+PAGE_SIZE,total)+' of '+total+'</span>'+
-    '<button class="btn btn-sm" onclick="sessionPage=Math.max(0,sessionPage-1);renderSessions()"'+(sessionPage===0?' disabled':'')+'>Prev</button>'+
-    '<button class="btn btn-sm" onclick="sessionPage=Math.min('+(pages-1)+',sessionPage+1);renderSessions()"'+(sessionPage>=pages-1?' disabled':'')+'>Next</button>';
+    '<button type="button" class="btn btn-sm" onclick="sessionPage=Math.max(0,sessionPage-1);renderSessions()"'+(sessionPage===0?' disabled':'')+'>Prev</button>'+
+    '<button type="button" class="btn btn-sm" onclick="sessionPage=Math.min('+(pages-1)+',sessionPage+1);renderSessions()"'+(sessionPage>=pages-1?' disabled':'')+'>Next</button>';
 }
 
 function renderMessages(){
@@ -1754,8 +1769,8 @@ function renderMessages(){
 
   document.getElementById('msg-pager').innerHTML=total<=MSG_PAGE_SIZE?'':
     '<span class="pager-info">Showing '+(start+1)+'–'+Math.min(start+MSG_PAGE_SIZE,total)+' of '+total+'</span>'+
-    '<button class="btn btn-sm" onclick="msgPage=Math.max(0,msgPage-1);renderMessages()"'+(msgPage===0?' disabled':'')+'>Prev</button>'+
-    '<button class="btn btn-sm" onclick="msgPage=Math.min('+(pages-1)+',msgPage+1);renderMessages()"'+(msgPage>=pages-1?' disabled':'')+'>Next</button>';
+    '<button type="button" class="btn btn-sm" onclick="msgPage=Math.max(0,msgPage-1);renderMessages()"'+(msgPage===0?' disabled':'')+'>Prev</button>'+
+    '<button type="button" class="btn btn-sm" onclick="msgPage=Math.min('+(pages-1)+',msgPage+1);renderMessages()"'+(msgPage>=pages-1?' disabled':'')+'>Next</button>';
 }
 
 function filterSessions(){
@@ -1832,9 +1847,9 @@ async function viewMessages(userId){
       body.innerHTML='<div class="empty">No messages for this session</div>';
       return;
     }
-    body.innerHTML='<div style="margin-bottom:12px"><input type="text" class="search-box" id="drill-search" placeholder="Filter messages..." oninput="drillFilter()" style="width:100%"></div>'+
+    body.innerHTML='<div style="margin-bottom:12px"><label class="visually-hidden" for="drill-search">Filter messages</label><input type="search" class="search-box" id="drill-search" placeholder="Filter messages..." oninput="drillFilter()" style="width:100%"></div>'+
       '<div id="drill-msgs"></div>'+
-      (cursor?'<div style="text-align:center;margin-top:12px"><button class="btn btn-primary" id="drill-more">Load more</button></div>':'');
+      (cursor?'<div style="text-align:center;margin-top:12px"><button type="button" class="btn btn-primary" id="drill-more">Load more</button></div>':'');
     drillFilter();
     if(cursor){document.getElementById('drill-more').onclick=fetchPage}
   }
