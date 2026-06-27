@@ -71,28 +71,78 @@ async function sendTelegramReplyAsync(
     if (!session) return;
 
     const channel = session.channels.find((ch) => ch.id === payload.channelId);
-    if (!channel || channel.type !== "telegram") return;
+    if (!channel || channel.type !== "telegram") {
+      logger.error(
+        "responder",
+        "Telegram reply: channel not found/wrong type",
+        {
+          userId,
+          channelId: payload.channelId,
+          found: !!channel,
+          type: channel?.type,
+        },
+      );
+      return;
+    }
 
-    // Use plaintext token if available (in-memory), otherwise decrypt
+    // Use plaintext token if available (in-memory), otherwise decrypt. The
+    // plaintext token is lost on isolate restart, so the decrypt path is the
+    // normal case after a redeploy.
+    let tokenSource = "plain";
     let botToken = channel.metadata["botTokenPlain"] as string | undefined;
     if (!botToken) {
       const encrypted = channel.metadata["botToken"] as string | undefined;
       if (encrypted) {
-        const { decryptToken } = await import("../crypto.ts");
-        botToken = await decryptToken(encrypted);
+        try {
+          const { decryptToken } = await import("../crypto.ts");
+          botToken = await decryptToken(encrypted);
+          tokenSource = "decrypted";
+        } catch (err) {
+          logger.error("responder", "Telegram reply: botToken decrypt failed", {
+            userId,
+            channelId: payload.channelId,
+            error: String(err),
+          });
+          return;
+        }
       }
     }
-    const chatId = payload.metadata?.["chatId"] as string | number | undefined;
 
-    if (!botToken || !chatId) {
-      logger.error("responder", "Telegram reply missing botToken or chatId", {
+    // chatId: prefer what the reply carries, else the recorded inbound target.
+    let chatId = payload.metadata?.["chatId"] as string | number | undefined;
+    let chatIdSource = "payload";
+    if (chatId === undefined) {
+      const { getReplyTarget } = await import("../store.ts");
+      chatId = await getReplyTarget(payload.channelId);
+      chatIdSource = "replyTarget";
+    }
+
+    if (!botToken || chatId === undefined) {
+      logger.error("responder", "Telegram reply: cannot send", {
         userId,
         channelId: payload.channelId,
+        hasBotToken: !!botToken,
+        tokenSource: botToken ? tokenSource : "(none)",
+        hasChatId: chatId !== undefined,
+        triedReplyTarget: chatIdSource === "replyTarget",
       });
       return;
     }
 
+    logger.info("responder", "Sending Telegram reply", {
+      userId,
+      channelId: payload.channelId,
+      chatId,
+      chatIdSource,
+      tokenSource,
+      contentLength: payload.content.length,
+    });
     await sendTelegramReply(botToken, chatId, payload.content);
+    logger.info("responder", "Telegram reply delivered", {
+      userId,
+      channelId: payload.channelId,
+      chatId,
+    });
   } catch (err) {
     logger.error("responder", "Failed to send Telegram reply", {
       userId,

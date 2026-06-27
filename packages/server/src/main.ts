@@ -556,7 +556,12 @@ Deno.serve(serveOptions, async (req: Request) => {
           await getKv()!.delete(["users", targetUserId]);
           for (const ch of entry.value.channels) {
             await getKv()!.delete(["channels", ch.id]);
+            await getKv()!.delete(["reply_target", ch.id]);
           }
+          // The admin dashboard reads only the in-memory caches, so evict there
+          // too — otherwise the deleted session reappears on the next refresh.
+          const { evictSessionFromCache } = await import("./auth.ts");
+          evictSessionFromCache(targetUserId);
           logger.info("admin", "Session deleted", { userId: targetUserId });
           return json({ ok: true, deleted: targetUserId });
         }

@@ -362,6 +362,32 @@ export function getCachedSessions(): UserSession[] {
 }
 
 /**
+ * Evict a session (and its channel indices) from the in-memory caches by
+ * userId. The admin dashboard reads ONLY these caches, so a KV-only delete
+ * leaves the session visible until restart — callers that delete from KV must
+ * also evict here. Returns true if a session was found and evicted.
+ */
+export function evictSessionFromCache(userId: string): boolean {
+  const apiKey = userIndexCache.get(userId);
+  const session = apiKey ? sessionCache.get(apiKey) : undefined;
+  if (apiKey) sessionCache.delete(apiKey);
+  userIndexCache.delete(userId);
+  if (session) {
+    for (const ch of session.channels) channelIndexCache.delete(ch.id);
+  } else {
+    // Fall back to a scan if the user→apiKey index was already gone.
+    for (const [aKey, s] of sessionCache) {
+      if (s.userId === userId) {
+        sessionCache.delete(aKey);
+        for (const ch of s.channels) channelIndexCache.delete(ch.id);
+        return true;
+      }
+    }
+  }
+  return !!apiKey;
+}
+
+/**
  * Warm the session cache from KV. Call once after KV init.
  * Loads all sessions into memory so admin dashboard works on cold start.
  */

@@ -354,11 +354,19 @@ export async function handleTelegramWebhook(
 
   await addMessage(session.userId, message);
 
+  // Record where to send replies. The agent never sees chatId, so the reply
+  // path falls back to this when the reply payload doesn't carry one.
+  if (chatId !== undefined) {
+    const { setReplyTarget } = await import("../store.ts");
+    await setReplyTarget(channelId, String(chatId));
+  }
+
   logger.info("telegram", "Telegram message stored", {
     channelId,
     messageId: message.id,
     userId: session.userId,
     from,
+    chatId,
   });
 
   return jsonResponse({ ok: true, messageId: message.id });

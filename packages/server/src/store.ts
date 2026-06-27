@@ -228,6 +228,40 @@ export async function addResponse(
   });
 }
 
+// ── Reply target ──
+// The chat/thread an inbound message came from (e.g. a Telegram chatId). The
+// agent never sees this routing detail, so we record it per channel on every
+// inbound message and fall back to it when sending a reply. Persisted in KV so
+// it survives isolate restarts (in-memory token caches do not).
+const replyTargetCache: Map<string, string> = new Map();
+
+export async function setReplyTarget(
+  channelId: string,
+  target: string,
+): Promise<void> {
+  if (replyTargetCache.get(channelId) === target) return; // unchanged — skip write
+  replyTargetCache.set(channelId, target);
+  if (isKvAvailable() && getKv()) {
+    await getKv()!.set(["reply_target", channelId], target);
+  }
+  logger.info("store", "Reply target recorded", { channelId, target });
+}
+
+export async function getReplyTarget(
+  channelId: string,
+): Promise<string | undefined> {
+  const cached = replyTargetCache.get(channelId);
+  if (cached) return cached;
+  if (isKvAvailable() && getKv()) {
+    const entry = await getKv()!.get<string>(["reply_target", channelId]);
+    if (entry.value) {
+      replyTargetCache.set(channelId, entry.value);
+      return entry.value;
+    }
+  }
+  return undefined;
+}
+
 export async function getResponses(
   channelId: string,
   since?: string,
