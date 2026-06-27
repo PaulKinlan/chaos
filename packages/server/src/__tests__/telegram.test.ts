@@ -233,6 +233,10 @@ Deno.test({
                 botToken: "fake:token",
                 botUsername: "test_bot",
                 webhookSecret,
+                // Pre-paired: sender 100 is already allowlisted. Channels are
+                // fail-closed (locked until a user pairs), so ingestion tests
+                // below would otherwise be rejected as unauthorized.
+                allowedUsers: ["100"],
               },
             }),
           });
@@ -457,6 +461,69 @@ Deno.test({
           ) => r.channelType === "telegram");
           assertEquals(telegramResps.length, 1);
           assertEquals(telegramResps[0].content, "Agent reply via Telegram");
+        },
+      );
+      // ── Security: an unpaired channel is fail-closed ──
+      await t.step(
+        "unpaired channel rejects messages until the pairing code is sent",
+        async () => {
+          // Fresh channel with a pairing code and NO allowlist (the real
+          // registration default).
+          const reg = await authFetch(apiKey, "/channels", {
+            method: "POST",
+            body: JSON.stringify({
+              type: "telegram",
+              agentId: "test-agent",
+              enabled: true,
+              metadata: {
+                botToken: "fake:token",
+                botUsername: "locked_bot",
+                webhookSecret,
+                pairingCode: "PAIR1234",
+              },
+            }),
+          });
+          assertEquals(reg.status, 201);
+          const lockedId = (await reg.json()).channel.id as string;
+
+          const post = (text: string, updateId: number) =>
+            fetch(`${BASE}/telegram/${lockedId}?secret=${webhookSecret}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                update_id: updateId,
+                message: {
+                  message_id: updateId,
+                  from: { id: 777, is_bot: false, first_name: "Mallory" },
+                  chat: { id: 888, type: "private" },
+                  date: Math.floor(Date.now() / 1000),
+                  text,
+                },
+              }),
+            });
+
+          // 1. Stranger message before pairing — accepted by the webhook (200)
+          //    but NOT ingested (no messageId), so it never reaches the agent.
+          const before = await post("let me in", 901);
+          assertEquals(before.status, 200);
+          assertEquals((await before.json()).messageId, undefined);
+
+          // 2. Send the pairing code — links the sender.
+          const pair = await post("PAIR1234", 902);
+          assertEquals(pair.status, 200);
+
+          // 3. Same sender, now paired — message is ingested.
+          const after = await post("now I'm in", 903);
+          assertEquals(after.status, 200);
+          assertExists((await after.json()).messageId);
+
+          // The pre-pairing "let me in" must never have been stored.
+          const msgs = await authFetch(apiKey, "/messages");
+          const contents = (await msgs.json()).messages
+            .filter((m: { channelId: string }) => m.channelId === lockedId)
+            .map((m: { content: string }) => m.content);
+          assertEquals(contents.includes("let me in"), false);
+          assertEquals(contents.includes("now I'm in"), true);
         },
       );
     } finally {

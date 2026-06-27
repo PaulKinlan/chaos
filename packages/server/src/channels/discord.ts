@@ -173,7 +173,9 @@ export async function handleDiscordWebhook(
     channelDirection: channel.direction || "bidirectional",
     ...(channel.agentId ? { channelAgentId: channel.agentId } : {}),
     ...(channel.runInBackground ? { channelRunInBackground: true } : {}),
-    ...(channel.notifyOnComplete !== undefined ? { channelNotifyOnComplete: channel.notifyOnComplete } : {}),
+    ...(channel.notifyOnComplete !== undefined
+      ? { channelNotifyOnComplete: channel.notifyOnComplete }
+      : {}),
   };
 
   // Standard message event (from gateway relay or webhook forwarding)
@@ -246,36 +248,45 @@ export async function handleDiscordWebhook(
     return jsonResponse({ ok: true });
   }
 
-  // ── Allowlist check ──
+  // ── Allowlist check (fail closed) ──
+  // The channel is locked until at least one user has paired. An empty or
+  // absent allowlist means nobody is authorized yet, so every message other
+  // than the pairing code handled above is rejected. Previously an empty
+  // allowlist was treated as "open to everyone", which left the window between
+  // registration and the first pairing wide open to anyone who found the bot.
   const allowlist = channel.metadata["allowedUsers"] as string[] | undefined;
-  if (allowlist && allowlist.length > 0 && senderId !== undefined) {
-    if (!allowlist.includes(senderId)) {
-      logger.warn("discord", "Sender not in allowlist", {
+  const authorized = senderId !== undefined &&
+    Array.isArray(allowlist) && allowlist.includes(senderId);
+  if (!authorized) {
+    logger.warn(
+      "discord",
+      "Unauthorized sender (channel not paired or sender not allowlisted)",
+      {
         channelId,
         senderId,
         from,
-      });
-      if (discordChannelId) {
-        let botToken = channel.metadata["botTokenPlain"] as string | undefined;
-        if (!botToken) {
-          const encrypted = channel.metadata["botToken"] as string | undefined;
-          if (encrypted) {
-            try {
-              const { decryptToken } = await import("../crypto.ts");
-              botToken = await decryptToken(encrypted);
-            } catch { /* */ }
-          }
-        }
-        if (botToken) {
-          await sendDiscordReply(
-            botToken,
-            discordChannelId,
-            "You are not authorized to use this bot. Ask the owner for a pairing code.",
-          ).catch(() => {});
+      },
+    );
+    if (discordChannelId) {
+      let botToken = channel.metadata["botTokenPlain"] as string | undefined;
+      if (!botToken) {
+        const encrypted = channel.metadata["botToken"] as string | undefined;
+        if (encrypted) {
+          try {
+            const { decryptToken } = await import("../crypto.ts");
+            botToken = await decryptToken(encrypted);
+          } catch { /* */ }
         }
       }
-      return jsonResponse({ ok: true });
+      if (botToken) {
+        await sendDiscordReply(
+          botToken,
+          discordChannelId,
+          "You are not authorized to use this bot. Send the pairing code to link it, or ask the owner for one.",
+        ).catch(() => {});
+      }
     }
+    return jsonResponse({ ok: true });
   }
 
   // Store as a ChannelMessage
