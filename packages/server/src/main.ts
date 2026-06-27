@@ -1630,6 +1630,7 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   .pager-info{flex:1}
   dialog{background:#161b22;color:#e1e4e8;border:1px solid #30363d;border-radius:12px;padding:0;max-width:800px;width:90vw;max-height:85vh;overflow:hidden;position:fixed;inset:0;margin:auto}
   dialog::backdrop{background:rgba(0,0,0,0.6)}
+  #confirm-dialog{max-width:420px}
   .dialog-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #30363d}
   .dialog-header h2{font-size:15px;color:#f0f3f6;margin:0}
   .dialog-body{padding:20px;overflow-y:auto;max-height:calc(85vh - 60px)}
@@ -1685,6 +1686,20 @@ const ADMIN_DASHBOARD_HTML = `<!DOCTYPE html>
   <div class="dialog-body" id="dialog-body"></div>
 </dialog>
 
+<dialog id="confirm-dialog" closedby="any" aria-labelledby="confirm-title">
+  <div class="dialog-header">
+    <h2 id="confirm-title">Confirm</h2>
+    <button class="dialog-close" type="button" aria-label="Close dialog" onclick="document.getElementById('confirm-dialog').close()">&times;</button>
+  </div>
+  <div class="dialog-body">
+    <p id="confirm-message" style="margin:0 0 20px"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" class="btn btn-sm" id="confirm-cancel">Cancel</button>
+      <button type="button" class="btn btn-sm" id="confirm-ok">OK</button>
+    </div>
+  </div>
+</dialog>
+
 <script>
 const PAGE_SIZE = 10;
 const MSG_PAGE_SIZE = 20;
@@ -1697,6 +1712,31 @@ let msgFilter = '';
 
 function esc(s){if(s==null)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
 function ago(ts){const s=Math.floor((Date.now()-new Date(ts).getTime())/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'}
+
+// Accessible modal replacement for native confirm()/alert(): a <dialog> shown
+// with showModal() (native focus-trap + Esc-to-close), light-dismissable via
+// closedby="any". Resolves true on confirm, false on cancel/dismiss.
+function modal({message,okLabel='OK',danger=false,showCancel=true}){
+  return new Promise(resolve=>{
+    const dlg=document.getElementById('confirm-dialog');
+    document.getElementById('confirm-message').textContent=message;
+    const ok=document.getElementById('confirm-ok');
+    const cancel=document.getElementById('confirm-cancel');
+    ok.textContent=okLabel;
+    ok.classList.toggle('btn-danger',danger);
+    cancel.style.display=showCancel?'':'none';
+    let done=false;
+    const finish=v=>{if(done)return;done=true;ok.removeEventListener('click',onOk);cancel.removeEventListener('click',onCancel);dlg.removeEventListener('close',onClose);if(dlg.open)dlg.close();resolve(v)};
+    const onOk=()=>finish(true);
+    const onCancel=()=>finish(false);
+    const onClose=()=>finish(false); // Esc, backdrop, or the × button
+    ok.addEventListener('click',onOk);
+    cancel.addEventListener('click',onCancel);
+    dlg.addEventListener('close',onClose);
+    dlg.showModal();
+    (showCancel?cancel:ok).focus(); // default focus to the non-destructive action
+  });
+}
 function fmtTime(ts){return new Date(ts).toLocaleString()}
 
 function matchSession(s,q){
@@ -1906,9 +1946,9 @@ async function viewMessages(userId){
 }
 
 async function delSession(userId){
-  if(!confirm('Delete session '+userId.slice(0,12)+'...?'))return;
+  if(!await modal({message:'Delete session '+userId.slice(0,12)+'…? This also removes its channels and cannot be undone.',okLabel:'Delete',danger:true}))return;
   const r=await fetch('/admin/sessions/'+userId,{method:'DELETE'});
-  if(r.ok){load()}else{alert('Failed: '+(await r.json()).error)}
+  if(r.ok){load()}else{await modal({message:'Delete failed: '+(await r.json()).error,showCancel:false})}
 }
 
 load();
