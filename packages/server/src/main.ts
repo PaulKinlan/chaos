@@ -1088,6 +1088,46 @@ Deno.serve(serveOptions, async (req: Request) => {
     }
   }
 
+  // Send a transient activity indicator (e.g. Telegram "typing") to the channel
+  // so the user sees the agent is working. Best-effort; the client repeats it.
+  if (url.pathname === "/typing" && method === "POST") {
+    try {
+      const body = await req.json();
+      const channelId = body.channelId as string | undefined;
+      const channelType = body.channelType as string | undefined;
+      if (!channelId) return error("Missing channelId");
+
+      if (channelType === "telegram") {
+        const channel = session.channels.find((ch) => ch.id === channelId);
+        if (!channel || channel.type !== "telegram") {
+          return error("Channel not found", 404);
+        }
+        let botToken = channel.metadata["botTokenPlain"] as string | undefined;
+        if (!botToken) {
+          const encrypted = channel.metadata["botToken"] as string | undefined;
+          if (encrypted) {
+            try {
+              const { decryptToken } = await import("./crypto.ts");
+              botToken = await decryptToken(encrypted);
+            } catch { /* fall through to no-op below */ }
+          }
+        }
+        const { getReplyTarget } = await import("./store.ts");
+        const chatId = await getReplyTarget(channelId);
+        if (botToken && chatId) {
+          const { sendTelegramChatAction } = await import(
+            "./channels/telegram.ts"
+          );
+          await sendTelegramChatAction(botToken, chatId);
+        }
+      }
+      // Unknown / non-typing channel types are a no-op success.
+      return json({ ok: true });
+    } catch {
+      return error("Invalid JSON body");
+    }
+  }
+
   // Register a Telegram bot channel
   if (url.pathname === "/channels/telegram/register" && method === "POST") {
     // Rate limit: 10/hour per user (same as channels)

@@ -397,6 +397,35 @@ export async function sendTelegramReply(
   logger.info("telegram", "Telegram reply sent", { chatId });
 }
 
+/**
+ * Send a chat action (e.g. "typing") so the user sees an activity indicator.
+ * Telegram clears it after ~5s or when the next message is sent, so callers
+ * repeat it while the agent is working. Best-effort: never throws.
+ */
+export async function sendTelegramChatAction(
+  botToken: string,
+  chatId: string | number,
+  action = "typing",
+): Promise<void> {
+  try {
+    const resp = await telegramApiCall(botToken, "sendChatAction", {
+      chat_id: chatId,
+      action,
+    });
+    if (!resp.ok) {
+      logger.warn("telegram", "Telegram sendChatAction failed", {
+        chatId,
+        status: resp.status,
+      });
+    }
+  } catch (err) {
+    logger.warn("telegram", "Telegram sendChatAction error", {
+      chatId,
+      error: String(err),
+    });
+  }
+}
+
 // ── Delete webhook (cleanup) ──
 
 export async function deleteTelegramWebhook(botToken: string): Promise<void> {
