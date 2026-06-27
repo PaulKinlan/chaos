@@ -21,6 +21,47 @@ const MAX_MESSAGES_PER_USER = 100;
 const MESSAGE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
+// Deno KV caps a single value at 65536 bytes (the v8-serialized form). A large
+// inbound body — a long email thread, stripped HTML — would otherwise throw
+// "Value too large" and drop the message entirely. Cap the content so the whole
+// record fits, leaving headroom for metadata + serialization overhead.
+const KV_MAX_VALUE_BYTES = 65536;
+const KV_VALUE_SAFETY_MARGIN = 2048;
+
+/**
+ * Truncate `msg.content` (by bytes) so the serialized record stays under the KV
+ * value limit. Returns the original message untouched when it already fits.
+ */
+export function fitMessageForKv(msg: StoredMessage): StoredMessage {
+  const enc = new TextEncoder();
+  const contentBytes = enc.encode(msg.content);
+  // Budget = limit − (everything except content) − margin.
+  const overhead = enc.encode(JSON.stringify({ ...msg, content: "" })).length;
+  const budget = KV_MAX_VALUE_BYTES - overhead - KV_VALUE_SAFETY_MARGIN;
+  if (contentBytes.length <= budget) return msg;
+
+  const marker = "\n\n[Message truncated: too large to deliver in full.]";
+  const keep = Math.max(0, budget - enc.encode(marker).length);
+  // Decode the byte slice; a split trailing multibyte char becomes U+FFFD.
+  const truncated = new TextDecoder().decode(contentBytes.slice(0, keep)) +
+    marker;
+  logger.warn("store", "Message content truncated to fit KV value limit", {
+    userId: msg.userId,
+    channelType: msg.channelType,
+    originalBytes: contentBytes.length,
+    keptBytes: keep,
+  });
+  return {
+    ...msg,
+    content: truncated,
+    metadata: {
+      ...msg.metadata,
+      truncated: true,
+      originalContentBytes: contentBytes.length,
+    },
+  };
+}
+
 // In-memory caches (hot path only, KV is the source of truth)
 const messageCache: Map<string, StoredMessage[]> = new Map();
 const responseCache: Map<string, StoredMessage[]> = new Map();
@@ -98,6 +139,10 @@ export async function addMessage(
   userId: string,
   msg: StoredMessage,
 ): Promise<void> {
+  // Cap oversized content so it can't exceed the KV 64KB value limit (and so the
+  // in-memory cache stays consistent with what was persisted).
+  msg = fitMessageForKv(msg);
+
   // Store in KV (primary, durable)
   if (isKvAvailable() && getKv()) {
     const kv = getKv()!;
