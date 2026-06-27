@@ -81,7 +81,9 @@ export async function handleWebhook(
   if (channel.prompt) metadata.channelPrompt = channel.prompt;
   if (channel.agentId) metadata.channelAgentId = channel.agentId;
   if (channel.runInBackground) metadata.channelRunInBackground = true;
-  if (channel.notifyOnComplete !== undefined) metadata.channelNotifyOnComplete = channel.notifyOnComplete;
+  if (channel.notifyOnComplete !== undefined) {
+    metadata.channelNotifyOnComplete = channel.notifyOnComplete;
+  }
 
   const message: StoredMessage = {
     id: crypto.randomUUID(),

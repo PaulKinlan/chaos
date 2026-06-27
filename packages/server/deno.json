@@ -7,5 +7,9 @@
   },
   "imports": {
     "@chaos/shared": "../shared/src/types.ts"
+  },
+  "deploy": {
+    "org": "paulkinlan-ea",
+    "app": "chaos"
   }
 }
