@@ -34,6 +34,7 @@ import {
   registerEmailChannel,
 } from "./channels/email.ts";
 import { getServerPublicKey } from "./crypto.ts";
+import { VERSION } from "./version.ts";
 import { getKv, initKv, isKvAvailable, kvHealthCheck, kvStats } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
 import { sanitizeMessage } from "./sanitize.ts";
@@ -54,7 +55,10 @@ import {
 import type { ChannelConfig } from "@chaos/shared";
 
 const PORT = parseInt(Deno.env.get("PORT") || "8787");
-const VERSION = "0.1.0";
+// Deno Deploy stamps each deploy with a unique id — surfacing it alongside the
+// semver lets you confirm exactly which build is live (the semver tells you
+// "what", the deployment id tells you "this exact deploy").
+const DEPLOYMENT_ID = Deno.env.get("DENO_DEPLOYMENT_ID") || "local";
 
 /**
  * Watch KV for new messages and push them to a WebSocket.
@@ -261,6 +265,7 @@ Deno.serve(serveOptions, async (req: Request) => {
     return json({
       status: live && !live.ok ? "degraded" : "ok",
       version: VERSION,
+      deploymentId: DEPLOYMENT_ID,
       kv: isKvAvailable(),
       kvStats: kvStats(),
       ...(live ? { kvLive: live } : {}),
