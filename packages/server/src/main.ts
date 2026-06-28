@@ -74,6 +74,13 @@ async function startKvWatch(
     const lookback = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { getMessages } = await import("./store.ts");
     const missed = await getMessages(userId, lookback);
+    // Baseline timestamp: never (re-)push anything at or before this. Start from
+    // the lookback window and advance past everything we send in the missed
+    // batch. This is what stops the kv.watch() INITIAL emission — which always
+    // replays the current `last_message`, however old — from re-delivering a
+    // message the client already has on every reconnect. (ISO-8601 strings
+    // compare chronologically.)
+    let lastSent = lookback;
     if (missed.length > 0) {
       logger.info("server", "Sending missed messages on WS connect", {
         userId,
@@ -83,6 +90,7 @@ async function startKvWatch(
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ type: "message", message: msg }));
         }
+        if (msg.timestamp > lastSent) lastSent = msg.timestamp;
       }
     }
 
@@ -116,6 +124,15 @@ async function startKvWatch(
         messageId: string;
         timestamp: string;
       };
+
+      // Skip the stale initial emission (and any already-sent message): kv.watch
+      // delivers the CURRENT last_message immediately on subscribe, which would
+      // otherwise re-push the last message on every reconnect. Only push what's
+      // newer than everything we've already sent this connection.
+      if (timestamp <= lastSent) {
+        continue;
+      }
+      lastSent = timestamp;
 
       logger.info("server", "KV watch triggered", {
         userId,
