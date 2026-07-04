@@ -73,7 +73,7 @@ export async function instrumentKv<T>(
 ): Promise<T> {
   opsTotal++;
   const t = performance.now();
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([
       fn(),

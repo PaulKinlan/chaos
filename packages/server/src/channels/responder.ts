@@ -8,12 +8,74 @@ import { sendDiscordReply } from "./discord.ts";
 import { sendEmailReply } from "./email.ts";
 import { logger } from "../logger.ts";
 
+/**
+ * An outbound attachment (image or file) riding on a reply. PASS-THROUGH ONLY:
+ * attachments are forwarded straight to the channel API (Telegram sendPhoto /
+ * sendDocument, Resend attachments) and are never written to KV — replies are
+ * stored as text only, so the KV 64KB value limit is never in play.
+ */
+export interface ReplyAttachment {
+  filename: string;
+  mimeType: string;
+  /** Base64-encoded file bytes. */
+  dataBase64: string;
+}
+
 export interface ReplyPayload {
   channelType: string;
   channelId: string;
   replyTo?: string;
   content: string;
+  attachments?: ReplyAttachment[];
   metadata?: Record<string, unknown>;
+}
+
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB decoded, per attachment
+
+/** Validate reply attachments. Returns an error string, or null when fine. */
+export function validateAttachments(
+  attachments: unknown,
+): string | null {
+  if (attachments === undefined) return null;
+  if (!Array.isArray(attachments)) return "attachments must be an array";
+  if (attachments.length > MAX_ATTACHMENTS) {
+    return `too many attachments (max ${MAX_ATTACHMENTS})`;
+  }
+  for (const a of attachments) {
+    if (!a || typeof a !== "object") return "attachment must be an object";
+    const { filename, mimeType, dataBase64 } = a as Record<string, unknown>;
+    if (typeof filename !== "string" || !filename.trim()) {
+      return "attachment.filename is required";
+    }
+    if (filename.length > 255 || /[\\/\0]/.test(filename)) {
+      return "attachment.filename is invalid";
+    }
+    if (
+      typeof mimeType !== "string" || !/^[\w.+-]+\/[\w.+-]+$/.test(mimeType)
+    ) {
+      return "attachment.mimeType is invalid";
+    }
+    if (typeof dataBase64 !== "string" || dataBase64.length === 0) {
+      return "attachment.dataBase64 is required";
+    }
+    // Base64 expands bytes by ~4/3; check the decoded size without decoding.
+    const approxBytes = Math.floor(dataBase64.length * 3 / 4);
+    if (approxBytes > MAX_ATTACHMENT_BYTES) {
+      return `attachment ${filename} is too large (max ${
+        MAX_ATTACHMENT_BYTES / (1024 * 1024)
+      }MB)`;
+    }
+  }
+  return null;
+}
+
+/** Decode a base64 attachment into bytes for multipart upload. */
+export function decodeAttachment(a: ReplyAttachment): Uint8Array {
+  const bin = atob(a.dataBase64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
 }
 
 export async function handleReply(
@@ -31,6 +93,10 @@ export async function handleReply(
     metadata: {
       ...payload.metadata,
       replyTo: payload.replyTo,
+      // Attachments are pass-through (never stored); record only the count.
+      ...(payload.attachments?.length
+        ? { attachmentCount: payload.attachments.length }
+        : {}),
     },
   };
 
@@ -137,7 +203,12 @@ async function sendTelegramReplyAsync(
       tokenSource,
       contentLength: payload.content.length,
     });
-    await sendTelegramReply(botToken, chatId, payload.content);
+    await sendTelegramReply(
+      botToken,
+      chatId,
+      payload.content,
+      payload.attachments,
+    );
     logger.info("responder", "Telegram reply delivered", {
       userId,
       channelId: payload.channelId,
@@ -321,6 +392,7 @@ async function sendEmailReplyAsync(
       subject,
       payload.content,
       threadingHeaders,
+      payload.attachments,
     );
     logger.info("responder", "Email reply delivered", {
       userId,

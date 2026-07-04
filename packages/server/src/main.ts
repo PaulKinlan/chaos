@@ -19,7 +19,11 @@ import {
   type StoredMessage,
 } from "./store.ts";
 import { handleWebhook } from "./channels/webhook.ts";
-import { handleReply, type ReplyPayload } from "./channels/responder.ts";
+import {
+  handleReply,
+  type ReplyPayload,
+  validateAttachments,
+} from "./channels/responder.ts";
 import {
   handleTelegramWebhook,
   registerTelegramBot,
@@ -927,6 +931,7 @@ Deno.serve(serveOptions, async (req: Request) => {
             channelId: data.channelId,
             replyTo: data.replyTo,
             content: data.content,
+            attachments: data.attachments,
             metadata: data.metadata,
           };
           if (!payload.channelId || !payload.content) {
@@ -936,6 +941,11 @@ Deno.serve(serveOptions, async (req: Request) => {
                 error: "Missing channelId or content",
               }),
             );
+            return;
+          }
+          const attErr = validateAttachments(payload.attachments);
+          if (attErr) {
+            socket.send(JSON.stringify({ type: "error", error: attErr }));
             return;
           }
           const sanitized = sanitizeMessage(payload.content);
@@ -1097,6 +1107,15 @@ Deno.serve(serveOptions, async (req: Request) => {
         return error(sanitized.error || "Invalid message content");
       }
       payload.content = sanitized.content;
+
+      const attErr = validateAttachments(payload.attachments);
+      if (attErr) {
+        logger.warn("server", "Reply attachments failed validation", {
+          userId: session.userId,
+          error: attErr,
+        });
+        return error(attErr);
+      }
 
       const result = await handleReply(session.userId, payload);
       logger.info("server", "Reply sent", {

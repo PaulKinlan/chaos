@@ -6,6 +6,7 @@ import { addMessage, type StoredMessage } from "../store.ts";
 import { getSessionByChannelId } from "../auth.ts";
 import { getKv, isKvAvailable } from "../kv.ts";
 import { logger } from "../logger.ts";
+import type { ReplyAttachment } from "./responder.ts";
 
 // ── Resend inbound webhook types ──
 
@@ -641,6 +642,7 @@ export async function sendEmailReply(
     inReplyTo?: string;
     references?: string;
   },
+  attachments?: ReplyAttachment[],
 ): Promise<void> {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   if (!apiKey) {
@@ -665,6 +667,15 @@ export async function sendEmailReply(
 
   if (Object.keys(customHeaders).length > 0) {
     body.headers = customHeaders;
+  }
+
+  // Resend accepts base64 attachment content directly; pass-through, never stored.
+  if (attachments && attachments.length > 0) {
+    body.attachments = attachments.map((a) => ({
+      filename: a.filename,
+      content: a.dataBase64,
+      content_type: a.mimeType,
+    }));
   }
 
   const resp = await fetch("https://api.resend.com/emails", {

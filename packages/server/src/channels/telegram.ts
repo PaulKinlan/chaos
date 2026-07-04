@@ -4,6 +4,7 @@
 import { addMessage, type StoredMessage } from "../store.ts";
 import { getSessionByChannelId } from "../auth.ts";
 import { logger } from "../logger.ts";
+import { decodeAttachment, type ReplyAttachment } from "./responder.ts";
 
 // ── Telegram API types ──
 
@@ -378,23 +379,69 @@ export async function sendTelegramReply(
   botToken: string,
   chatId: string | number,
   text: string,
+  attachments?: ReplyAttachment[],
 ): Promise<void> {
-  const resp = await telegramApiCall(botToken, "sendMessage", {
-    chat_id: chatId,
-    text,
-    parse_mode: "Markdown",
-  });
+  // Telegram captions cap at 1024 chars, so when the text is long (or there is
+  // more than one attachment) send the text as its own message first and the
+  // media without captions; a short text + single attachment rides as caption.
+  const single = attachments?.length === 1;
+  const asCaption = single && text.length > 0 && text.length <= 1024;
 
-  if (!resp.ok) {
-    const body = await resp.text();
-    logger.error("telegram", "Telegram sendMessage failed", {
-      chatId,
-      status: resp.status,
-      body,
+  if (text.length > 0 && !asCaption) {
+    const resp = await telegramApiCall(botToken, "sendMessage", {
+      chat_id: chatId,
+      text,
+      parse_mode: "Markdown",
     });
-    throw new Error(`Telegram sendMessage failed: ${resp.status} ${body}`);
+    if (!resp.ok) {
+      const body = await resp.text();
+      logger.error("telegram", "Telegram sendMessage failed", {
+        chatId,
+        status: resp.status,
+        body,
+      });
+      throw new Error(`Telegram sendMessage failed: ${resp.status} ${body}`);
+    }
   }
-  logger.info("telegram", "Telegram reply sent", { chatId });
+
+  for (const a of attachments ?? []) {
+    // Images go as photos (inline preview); everything else as a document.
+    const isImage = a.mimeType.startsWith("image/") &&
+      a.mimeType !== "image/svg+xml"; // Telegram rejects SVG as photo
+    const method = isImage ? "sendPhoto" : "sendDocument";
+    const field = isImage ? "photo" : "document";
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append(
+      field,
+      new Blob([decodeAttachment(a) as BlobPart], { type: a.mimeType }),
+      a.filename,
+    );
+    if (asCaption) form.append("caption", text);
+    const resp = await fetch(
+      `${TELEGRAM_API_BASE}${botToken}/${method}`,
+      { method: "POST", body: form },
+    );
+    if (!resp.ok) {
+      const body = await resp.text();
+      logger.error("telegram", `Telegram ${method} failed`, {
+        chatId,
+        filename: a.filename,
+        status: resp.status,
+        body,
+      });
+      throw new Error(`Telegram ${method} failed: ${resp.status} ${body}`);
+    }
+    logger.info("telegram", `Telegram attachment sent (${method})`, {
+      chatId,
+      filename: a.filename,
+      mimeType: a.mimeType,
+    });
+  }
+  logger.info("telegram", "Telegram reply sent", {
+    chatId,
+    attachments: attachments?.length ?? 0,
+  });
 }
 
 /**
