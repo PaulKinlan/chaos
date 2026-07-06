@@ -66,3 +66,23 @@ Overlaps `plans/reactive-ui.md`, `plans/onboarding-and-help.md`, and
 `plans/smart-onboarding.md` (all extension-side UI). This is the first
 **server-hosted, key-authed** user surface, so it is new, but should reuse the
 component/design-system direction in `reactive-ui.md`.
+
+## Decisions (2026-07-06, Paul)
+- **No account management at all.** Auth is the CLI mints a short-lived
+  **device-link token**, redeemed in the browser (chosen over browser key-paste).
+- **Served by the relay at `/app`**, because that is where the Deno KV lives. The
+  app and relay may be separate instances **sharing the same KV** (same store +
+  same `CHAOS_ENCRYPTION_KEY`), so an `/app`-only deployment can talk to the same
+  data as the relay.
+
+## Finding: channels vs "hooks" (investigated 2026-07-06)
+The data model **already supports multiples of every type.** `ChannelConfig` is
+keyed by a unique `id` (not by type), and `addChannel` does
+`session.channels.push(channel)` (`packages/server/src/auth.ts`), so a user can
+have many Telegram bots, Discord bots, email addresses, and webhooks at once.
+There is **no separate "hook" concept** in the code today — each bot/email/webhook
+*is* a channel. So "sort out hooks" is most likely: (a) make the register flow +
+admin UI cleanly add/list/manage multiple channels per type (a UX gap, not a data
+gap), OR (b) if Paul wants a **grouping** (one logical channel with several
+endpoints/hooks under it), that is a new model on top of the flat channel list.
+**Needs one clarification from Paul before building.**

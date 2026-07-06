@@ -62,3 +62,13 @@ This is now a public project, so packaging and release discipline matter.
 3. Dockerfile + docker-compose.
 4. Cloud Run / VPS docs.
 5. Chosen public-distribution artifact.
+
+## Decisions (2026-07-06, Paul)
+- **Ship all three distributions:** the Docker image (done), a **JSR module**
+  (`deno run -A jsr:.../chaos-relay`), and a **thin npx wrapper** that shells to
+  Deno so it is literally on npm.
+- **Multi-instance sharing a KV is a goal.** The relay and the admin app may run
+  as separate instances pointing at the **same Deno KV** (same `CHAOS_KV_PATH` /
+  same store) and the **same `CHAOS_ENCRYPTION_KEY`** so they can read each
+  other's encrypted data without cross-contamination. Document this as the
+  supported multi-instance story (supersedes the earlier "out of scope for v1").
