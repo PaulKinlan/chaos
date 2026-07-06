@@ -61,11 +61,18 @@ import {
   deleteUserChannel,
   getAppSessionUser,
   listUserChannels,
+  maskChannel,
   mintDeviceLink,
   patchUserChannel,
   redeemDeviceLink,
   renderAppPage,
 } from "./app.ts";
+import {
+  registerDiscordForUser,
+  registerEmailForUser,
+  registerTelegramForUser,
+  registerWebhookForUser,
+} from "./registration.ts";
 import type { ChannelConfig } from "@chaos/shared";
 
 const PORT = parseInt(Deno.env.get("PORT") || "8787");
@@ -1045,6 +1052,67 @@ Deno.serve(serveOptions, async (req: Request) => {
     }
     if (url.pathname === "/app/api/channels" && method === "GET") {
       return json(await listUserChannels(appUser));
+    }
+    // Add a channel (multiples of each type allowed). Runs the same per-type
+    // registration the signed endpoints use, under the app-session's user.
+    if (url.pathname === "/app/api/channels" && method === "POST") {
+      if (
+        !rateLimiter.check(
+          `app-add:${appUser}`,
+          RATE_LIMITS.channels.limit,
+          RATE_LIMITS.channels.windowMs,
+        )
+      ) {
+        return error("Too many channel additions. Try again later.", 429);
+      }
+      try {
+        const b = await req.json();
+        const base = Deno.env.get("CHAOS_PUBLIC_URL") ||
+          new URL(req.url).origin;
+        const name = typeof b.name === "string" ? b.name : "";
+        let result;
+        switch (b.type) {
+          case "telegram":
+            if (typeof b.botToken !== "string" || !b.botToken) {
+              return error("botToken is required");
+            }
+            result = await registerTelegramForUser(appUser, b.botToken, base);
+            break;
+          case "discord":
+            if (typeof b.botToken !== "string" || !b.botToken) {
+              return error("botToken is required");
+            }
+            result = await registerDiscordForUser(appUser, b.botToken, base);
+            break;
+          case "email":
+            if (typeof b.userEmail !== "string" || !b.userEmail) {
+              return error("userEmail is required");
+            }
+            result = await registerEmailForUser(
+              appUser,
+              b.userEmail,
+              name,
+              base,
+            );
+            break;
+          case "webhook":
+            result = await registerWebhookForUser(appUser, base, { name });
+            break;
+          default:
+            return error("Unknown or missing channel type");
+        }
+        return json({
+          channel: maskChannel(result.channel),
+          botUsername: result.botUsername,
+          pairingCode: result.pairingCode,
+          inboundAddress: result.inboundAddress,
+          webhookUrl: result.webhookUrl,
+        }, 201);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn("app", "Channel add failed", { userId: appUser, msg });
+        return error(`Could not add channel: ${msg}`);
+      }
     }
     const chMatch = url.pathname.match(/^\/app\/api\/channels\/([^/]+)$/);
     if (chMatch) {

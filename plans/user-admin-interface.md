@@ -110,3 +110,17 @@ enable/disable + delete. CLI entry point: pi-chaos-relay `configure` mints the
 link and prints it. Validated (fmt/check/36 tests + smoke). **Slice 2:** add
 channels from the UI — needs the per-type registration logic (telegram/discord
 webhook setup, email allocation) extracted so app-session endpoints can call it.
+
+## Slice 2 shipped (2026-07-06)
+Add channels from the UI. Extracted per-type registration into
+`src/registration.ts` (`registerTelegram/Discord/Email/WebhookForUser`, wrapping
+the existing platform helpers + encrypt + addChannel), and wired
+`POST /app/api/channels` to dispatch by type under the app-session's user. UI got
+an "Add a channel" form (type select + field + name). Returns pairing code /
+webhook URL / inbound address as appropriate. Validated end-to-end with a new
+conformance test (`tests/conformance/app_test.ts`: device-link → session → add
+webhook → list masked → single-use → delete) and the existing channels
+conformance still passes (14). **Follow-up (low priority):** dedupe the signed
+`/channels/*/register` endpoints to call `registration.ts` too (kept as-is to
+avoid touching live, mostly-untestable endpoints; registration logic is
+duplicated but stable).

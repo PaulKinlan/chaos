@@ -167,6 +167,11 @@ const APP_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
   .grouptitle { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:24px 0 8px; }
   .empty { color:var(--muted); text-align:center; padding:40px 0; }
   .err { color:var(--danger); }
+  .addcard { border-style:dashed; }
+  .addrow { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  select, input { font:inherit; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:7px 10px; }
+  input { flex:1; min-width:140px; }
+  #add-result:not(:empty) { margin-top:10px; }
 </style></head>
 <body>
 <header>
@@ -178,6 +183,23 @@ const APP_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 const SVG = {
   trash: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
 };
+const FIELD_PLACEHOLDER = { telegram:'Bot token', discord:'Bot token', email:'Your email address', webhook:'' };
+const ADDFORM =
+  '<div class="card addcard">'
+  + '<div class="row"><strong class="grow">Add a channel</strong></div>'
+  + '<div class="addrow">'
+  + '<select id="add-type">'
+  + '<option value="telegram">Telegram bot</option>'
+  + '<option value="discord">Discord bot</option>'
+  + '<option value="email">Email</option>'
+  + '<option value="webhook">Webhook</option>'
+  + '</select>'
+  + '<input id="add-field" placeholder="Bot token" autocomplete="off">'
+  + '<input id="add-name" placeholder="Name (optional)" autocomplete="off">'
+  + '<button id="add-btn">Add</button>'
+  + '</div>'
+  + '<div id="add-result" class="meta"></div>'
+  + '</div>';
 const main = document.getElementById('main');
 let token = null;
 
@@ -220,17 +242,49 @@ async function render() {
   }
   const channels = await r.json();
   if (!channels.length) {
-    main.innerHTML = '<div class="empty">No channels yet. Add one from your agent (e.g. "register a Telegram bot"), then refresh.</div>';
+    main.innerHTML = ADDFORM + '<div class="empty">No channels yet — add your first one above.</div>';
     return;
   }
   const byType = {};
   for (const c of channels) (byType[c.type] ??= []).push(c);
-  let html = '<p class="muted">' + channels.length + ' channel' + (channels.length===1?'':'s') + ' on this key. You can have as many of each type as you like.</p>';
+  let html = ADDFORM + '<p class="muted">' + channels.length + ' channel' + (channels.length===1?'':'s') + ' on this key. You can have as many of each type as you like.</p>';
   for (const type of Object.keys(byType).sort()) {
     html += '<div class="grouptitle">' + esc(type) + ' (' + byType[type].length + ')</div>';
     for (const c of byType[type]) html += card(c);
   }
   main.innerHTML = html;
+}
+
+async function addChannel() {
+  const type = document.getElementById('add-type').value;
+  const field = document.getElementById('add-field').value.trim();
+  const name = document.getElementById('add-name').value.trim();
+  const out = document.getElementById('add-result');
+  const payload = { type };
+  if (name) payload.name = name;
+  if (type === 'telegram' || type === 'discord') {
+    if (!field) { out.innerHTML = '<span class="err">Enter the bot token.</span>'; return; }
+    payload.botToken = field;
+  } else if (type === 'email') {
+    if (!field) { out.innerHTML = '<span class="err">Enter your email address.</span>'; return; }
+    payload.userEmail = field;
+  }
+  const btn = document.getElementById('add-btn');
+  btn.disabled = true; out.textContent = 'Adding…';
+  const r = await api('/channels', { method:'POST', body: JSON.stringify(payload) });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    out.innerHTML = '<span class="err">' + esc(e.error || ('HTTP ' + r.status)) + '</span>';
+    btn.disabled = false; return;
+  }
+  const d = await r.json();
+  let msg = 'Added.';
+  if (d.pairingCode) msg = 'Added. Send this pairing code to your bot to link it: <b>' + esc(d.pairingCode) + '</b>' + (d.botUsername ? ' (@' + esc(d.botUsername) + ')' : '');
+  else if (d.webhookUrl) msg = 'Added. Your webhook URL (save it now):<br>' + esc(d.webhookUrl);
+  else if (d.inboundAddress) msg = 'Added. Once verified, send email to: <b>' + esc(d.inboundAddress) + '</b>';
+  await render();
+  const out2 = document.getElementById('add-result');
+  if (out2) out2.innerHTML = msg;
 }
 
 function card(c) {
@@ -245,9 +299,19 @@ function card(c) {
     + '</div>';
 }
 
+main.addEventListener('change', (e) => {
+  if (e.target.id !== 'add-type') return;
+  const f = document.getElementById('add-field');
+  const t = e.target.value;
+  f.style.display = t === 'webhook' ? 'none' : '';
+  f.placeholder = FIELD_PLACEHOLDER[t] || '';
+  f.value = '';
+});
+
 main.addEventListener('click', async (e) => {
   const btn = e.target.closest('button'); if (!btn) return;
-  const card = btn.closest('.card'); if (!card) return;
+  if (btn.id === 'add-btn') { await addChannel(); return; }
+  const card = btn.closest('.card'); if (!card || !card.dataset.id) return;
   const id = card.dataset.id;
   const act = btn.dataset.act;
   btn.disabled = true;

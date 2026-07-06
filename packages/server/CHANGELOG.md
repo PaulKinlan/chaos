@@ -15,7 +15,9 @@ on [Keep a Changelog](https://keepachangelog.com/), and the project aims to foll
 - **Per-user admin app at `/app`** (device-link auth, no accounts): open a
   one-time link from the CLI (`chaos-relay configure`) to view every channel on
   your key, enable/disable, and delete them, scoped strictly to your key. Secrets
-  are masked. First slice is list/manage; adding channels from the UI is next.
+  are masked. Add channels of any type (multiple Telegram/Discord bots, emails,
+  webhooks), enable/disable, and delete — all from the UI, via the same per-type
+  registration the signed endpoints use (`registration.ts`).
 - Outbound **attachments** on replies (Telegram `sendPhoto`/`sendDocument`,
   email via Resend), pass-through only, never stored in KV.
 - `/health` now reports the real running version and deployment id.
