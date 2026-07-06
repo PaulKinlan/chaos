@@ -191,6 +191,36 @@ export async function addMessage(
   pushToUser(userId, { type: "message", message: msg });
 }
 
+/** How long a delivery claim lives before it may be re-claimed (ms). */
+const DELIVERY_CLAIM_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Atomically claim delivery of one message to exactly one connection.
+ *
+ * When several clients connect with the SAME identity (key), each runs its own
+ * `kv.watch`, so a newly-stored message fires every connection's watch and would
+ * otherwise be handled by every connected agent (the same command runs N times).
+ * The first connection to claim a given (user, message) wins and delivers it; the
+ * losers skip. The claim key expires via `expireIn` so it never accumulates.
+ *
+ * Race-safe: the atomic `check({ versionstamp: null })` only commits when the key
+ * was unset, so exactly one concurrent claimer succeeds. Returns true iff THIS
+ * connection won and should forward the message.
+ */
+export async function claimDelivery(
+  kv: Deno.Kv,
+  userId: string,
+  messageId: string,
+  connId: string,
+): Promise<boolean> {
+  const key = ["delivery_claim", userId, messageId];
+  const res = await kv.atomic()
+    .check({ key, versionstamp: null })
+    .set(key, connId, { expireIn: DELIVERY_CLAIM_TTL_MS })
+    .commit();
+  return res.ok;
+}
+
 export async function getMessages(
   userId: string,
   since?: string,

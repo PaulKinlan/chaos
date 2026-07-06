@@ -80,7 +80,11 @@ async function startKvWatch(
     // First, send any messages that arrived while the client was disconnected
     // Use a short lookback window (5 minutes) to catch missed messages
     const lookback = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { getMessages } = await import("./store.ts");
+    const { getMessages, claimDelivery } = await import("./store.ts");
+    // Unique per WebSocket connection. Used to atomically claim each message so
+    // that when multiple clients share one identity, exactly one of them (not
+    // all) receives and runs a given inbound message.
+    const connId = crypto.randomUUID();
     const missed = await getMessages(userId, lookback);
     // Baseline timestamp: never (re-)push anything at or before this. Start from
     // the lookback window and advance past everything we send in the missed
@@ -95,7 +99,10 @@ async function startKvWatch(
         count: missed.length,
       });
       for (const msg of missed) {
-        if (socket.readyState === WebSocket.OPEN) {
+        if (
+          socket.readyState === WebSocket.OPEN &&
+          await claimDelivery(kv, userId, msg.id, connId)
+        ) {
           socket.send(JSON.stringify({ type: "message", message: msg }));
         }
         if (msg.timestamp > lastSent) lastSent = msg.timestamp;
@@ -155,7 +162,11 @@ async function startKvWatch(
         timestamp,
         messageId,
       ]);
-      if (result.value && socket.readyState === WebSocket.OPEN) {
+      if (
+        result.value &&
+        socket.readyState === WebSocket.OPEN &&
+        await claimDelivery(kv, userId, messageId, connId)
+      ) {
         socket.send(
           JSON.stringify({ type: "message", message: result.value }),
         );

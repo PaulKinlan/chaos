@@ -17,6 +17,12 @@ on [Keep a Changelog](https://keepachangelog.com/), and the project aims to foll
 - `/health` now reports the real running version and deployment id.
 
 ### Fixed
+- **Duplicate agent execution across shared-identity clients.** When several
+  clients connected with the same key, each ran its own `kv.watch`, so every
+  inbound message fired on every connection and the same command ran N times.
+  Delivery is now claimed atomically per (user, message), so exactly one
+  connection handles each message. Lets you run multiple instances on one key
+  without duplicate runs (no more separate-profile workaround).
 - WebSocket no longer re-pushes the last message on every reconnect.
 - Message content is capped to fit the Deno KV 64KB value limit.
 - `kv.ts` timer typed as `ReturnType<typeof setTimeout>` (was `number`), fixing

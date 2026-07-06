@@ -86,3 +86,16 @@ admin UI cleanly add/list/manage multiple channels per type (a UX gap, not a dat
 gap), OR (b) if Paul wants a **grouping** (one logical channel with several
 endpoints/hooks under it), that is a new model on top of the flat channel list.
 **Needs one clarification from Paul before building.**
+
+## Clarified (2026-07-06): it's (a), flat multiples — no grouping
+Paul confirmed: he wants users to add/manage multiple webhooks, emails, and bots
+under the **one account per ECDSA key** — the flat model that already exists. No
+grouping/"logical channel" layer. So the admin UI is purely a management surface
+over the existing `session.channels[]`.
+
+The real driver behind the question was a bug (now fixed): running multiple
+instances on one key duplicated inbound message execution, forcing separate
+per-instance keys. Fixed via atomic per-message delivery claiming (see
+`plans/single-delivery-multi-connection.md` / server CHANGELOG). With that fixed,
+multiple instances can share one key safely, which is what makes the flat
+multi-channel model usable in practice.
