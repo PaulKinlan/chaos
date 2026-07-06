@@ -1,7 +1,7 @@
 {
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-read --allow-env --unstable-kv src/main.ts",
-    "start": "deno run --allow-net --allow-read --allow-env --unstable-kv src/main.ts",
+    "start": "deno run --allow-net --allow-read --allow-write --allow-env --unstable-kv src/main.ts",
     "test": "deno test --allow-all --unstable-kv src/__tests__/",
     "test:conformance": "deno test --allow-all tests/conformance/"
   },

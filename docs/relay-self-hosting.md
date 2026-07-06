@@ -97,37 +97,21 @@ Deno Deploy provides:
 
 ## Deploying with Docker
 
-Create a `Dockerfile` in the repository root:
+A ready-made [`Dockerfile`](../packages/server/Dockerfile) and
+[`docker-compose.yml`](../packages/server/docker-compose.yml) live in
+`packages/server/`. They persist Deno KV to a `/data` volume via the
+`CHAOS_KV_PATH` variable, which the server reads at startup (`src/kv.ts`); on
+Deno Deploy that variable is unset and the managed KV is used instead. The
+container runs `deno task start`, which includes `--allow-write` so it can write
+the KV file.
 
-```dockerfile
-FROM denoland/deno:latest
-
-WORKDIR /app
-
-# Copy source
-COPY packages/server/ ./packages/server/
-COPY packages/shared/ ./packages/shared/
-
-WORKDIR /app/packages/server
-
-# Cache dependencies
-RUN deno cache src/main.ts
-
-# Deno KV uses SQLite locally -- data persists in /app/data
-ENV DENO_KV_PATH=/app/data/kv.sqlite
-
-EXPOSE 8787
-
-CMD ["deno", "run", "--allow-net", "--allow-read", "--allow-env", "--unstable-kv", "src/main.ts"]
-```
-
-Build and run:
+Build from the **repo root** (the server import-maps to `../shared`) and run:
 
 ```bash
-docker build -t chaos-relay .
+docker build -f packages/server/Dockerfile -t chaos-relay .
 docker run -d \
   -p 8787:8787 \
-  -v chaos-relay-data:/app/data \
+  -v chaos-kv:/data \
   -e CHAOS_ADMIN_KEY=my-secret \
   -e CHAOS_ENCRYPTION_KEY=$(openssl rand -hex 32) \
   chaos-relay
@@ -135,25 +119,12 @@ docker run -d \
 
 ### Docker Compose
 
-```yaml
-version: "3.8"
-services:
-  relay:
-    build: .
-    ports:
-      - "8787:8787"
-    volumes:
-      - relay-data:/app/data
-    environment:
-      - CHAOS_ADMIN_KEY=${CHAOS_ADMIN_KEY}
-      - CHAOS_ENCRYPTION_KEY=${CHAOS_ENCRYPTION_KEY}
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
-    restart: unless-stopped
-
-volumes:
-  relay-data:
+```bash
+docker compose -f packages/server/docker-compose.yml up -d
 ```
+
+The compose file sets `CHAOS_KV_PATH=/data/kv.sqlite` and mounts a named
+`chaos-kv` volume at `/data`, so the KV database survives restarts.
 
 ## Deploying to Fly.io
 
@@ -189,6 +160,32 @@ fly secrets set CHAOS_ENCRYPTION_KEY=$(openssl rand -hex 32)
 fly deploy
 ```
 
+## Deploying to Google Cloud Run
+
+Cloud Run runs the same container and keeps WebSocket connections open (set a long
+request timeout, up to 60 minutes). Build and push the image, then deploy:
+
+```bash
+# From the repo root
+docker build -f packages/server/Dockerfile \
+  -t REGION-docker.pkg.dev/PROJECT/chaos/relay .
+docker push REGION-docker.pkg.dev/PROJECT/chaos/relay
+
+gcloud run deploy chaos-relay \
+  --image REGION-docker.pkg.dev/PROJECT/chaos/relay \
+  --port 8787 \
+  --timeout 3600 \
+  --allow-unauthenticated \
+  --set-env-vars CHAOS_ADMIN_KEY=my-secret
+```
+
+**Persistence caveat:** Cloud Run's container filesystem is ephemeral, so a
+`CHAOS_KV_PATH` on local disk does *not* survive across revisions or cold starts.
+For durable KV on Cloud Run, mount a volume (Cloud Run supports GCS FUSE and
+network file shares) at `/data`, or prefer Deno Deploy / a persistent VPS when
+you need guaranteed durability. See [`setup-gcp.md`](./setup-gcp.md) for project
+setup.
+
 ## Deploying to Other Platforms
 
 The relay server works on any platform that supports Deno. Key requirements:
@@ -201,8 +198,13 @@ The relay server works on any platform that supports Deno. Key requirements:
 For platforms like Railway, Render, or a plain VPS:
 
 1. Install Deno on the host
-2. Clone the repo and set environment variables
-3. Run `deno run --allow-net --allow-read --allow-env --unstable-kv packages/server/src/main.ts`
+2. Clone the repo, set environment variables, and pick a persistent KV path:
+   `export CHAOS_KV_PATH=/var/lib/chaos/kv.sqlite`
+3. Run `deno task start` from `packages/server` (it includes `--allow-write` for
+   the KV file), ideally under a `systemd` unit so it restarts on reboot, with a
+   TLS reverse proxy (see below) in front for the HTTPS webhooks require. A
+   long-lived host like this is the setup where WebSocket connections stay open
+   indefinitely, unlike serverless isolates.
 4. Set up a reverse proxy (nginx, Caddy) for TLS termination
 
 ### Reverse Proxy (Caddy)

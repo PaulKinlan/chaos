@@ -1,0 +1,25 @@
+# Run the CHAOS relay on any Docker host with persistent Deno KV.
+#   docker compose -f packages/server/docker-compose.yml up -d
+# Put a TLS-terminating reverse proxy (e.g. Caddy) in front for the public
+# HTTPS URL that Telegram/Discord webhooks require.
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: packages/server/Dockerfile
+    image: chaos-relay
+    ports:
+      - "8787:8787"
+    volumes:
+      - chaos-kv:/data
+    environment:
+      CHAOS_KV_PATH: /data/kv.sqlite
+      # CHAOS_ADMIN_KEY: "change-me"            # operator dashboard at /admin
+      # CHAOS_ENCRYPTION_KEY: "fixed-key-here"  # set explicitly if you run >1 instance
+      # CHAOS_EMAIL_DOMAIN: "relay.example.com" # only for email channels
+      # RESEND_API_KEY: ""                       # only for email channels
+      LOG_FORMAT: "json"
+    restart: unless-stopped
+
+volumes:
+  chaos-kv:

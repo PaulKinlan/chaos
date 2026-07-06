@@ -116,10 +116,16 @@ export async function getKvAsync(): Promise<Deno.Kv | null> {
 
   try {
     const t = performance.now();
-    kv = await Deno.openKv();
+    // On Deno Deploy, KV is managed and CHAOS_KV_PATH is unset, so openKv() with
+    // no argument uses the hosted store. When self-hosting, set CHAOS_KV_PATH to
+    // a file on a persistent volume (e.g. /data/kv.sqlite) so the local SQLite KV
+    // survives restarts; the process then also needs --allow-write to that path.
+    const kvPath = Deno.env.get("CHAOS_KV_PATH") || undefined;
+    kv = await Deno.openKv(kvPath);
     lastOpenFailMs = 0;
     logger.info("kv", "Deno KV store opened", {
       ms: Math.round(performance.now() - t),
+      path: kvPath ?? "(managed/default)",
     });
     return kv;
   } catch (err) {
