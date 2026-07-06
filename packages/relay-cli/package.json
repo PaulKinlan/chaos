@@ -1,0 +1,30 @@
+{
+  "name": "chaos-relay-server",
+  "version": "0.1.161",
+  "description": "Thin npx launcher for the CHAOS relay server. Runs the Deno server from JSR — no build step, just `npx chaos-relay-server`.",
+  "type": "module",
+  "bin": {
+    "chaos-relay-server": "bin.mjs"
+  },
+  "files": [
+    "bin.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "chaos",
+    "relay",
+    "deno",
+    "telegram",
+    "discord",
+    "webhook"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PaulKinlan/chaos.git",
+    "directory": "packages/relay-cli"
+  }
+}

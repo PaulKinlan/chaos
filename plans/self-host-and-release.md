@@ -72,3 +72,12 @@ This is now a public project, so packaging and release discipline matter.
   same store) and the **same `CHAOS_ENCRYPTION_KEY`** so they can read each
   other's encrypted data without cross-contamination. Document this as the
   supported multi-instance story (supersedes the earlier "out of scope for v1").
+
+## Progress (2026-07-06)
+- Done + validated: Docker image, `CHAOS_KV_PATH` persistence, Cloud Run/VPS
+  docs, CHANGELOG + RELEASING, JSR config (Deno workspace; `deno publish
+  --dry-run` passes), thin npx wrapper (`packages/relay-cli`, `chaos-relay-server`).
+  Bump script now syncs `deno.json` versions.
+- Left to Paul (publish-gated): create the `@paulkinlan` JSR scope and run
+  `deno publish` for `@paulkinlan/chaos-shared` + `@paulkinlan/chaos-relay`;
+  `npm publish` the wrapper; push the Docker image to a registry.

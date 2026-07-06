@@ -1,0 +1,5 @@
+{
+  "name": "@paulkinlan/chaos-shared",
+  "version": "0.1.162",
+  "exports": "./src/types.ts"
+}

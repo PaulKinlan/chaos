@@ -73,6 +73,19 @@ for (const dir of packageDirs) {
   pkg.version = newVersion;
   writeJson(pkgPath, pkg);
   console.log(`  packages/${dir}/package.json → ${newVersion}`);
+
+  // Keep the package's deno.json version in lockstep — JSR reads the version
+  // from deno.json, so it must move with package.json or the published JSR
+  // module would drift from the release.
+  const denoPath = join(PACKAGES_DIR, dir, "deno.json");
+  if (existsSync(denoPath)) {
+    const deno = readJson(denoPath);
+    if (deno.version) {
+      deno.version = newVersion;
+      writeJson(denoPath, deno);
+      console.log(`  packages/${dir}/deno.json → ${newVersion}`);
+    }
+  }
 }
 
 // Update extension manifest.json

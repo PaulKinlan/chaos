@@ -15,6 +15,11 @@ on [Keep a Changelog](https://keepachangelog.com/), and the project aims to foll
 - Outbound **attachments** on replies (Telegram `sendPhoto`/`sendDocument`,
   email via Resend), pass-through only, never stored in KV.
 - `/health` now reports the real running version and deployment id.
+- **Container/self-host support:** `CHAOS_KV_PATH` for persistent Deno KV on a
+  volume, a `Dockerfile` + `docker-compose.yml`, and a Cloud Run guide.
+- **Public distribution:** a JSR module (`jsr:@paulkinlan/chaos-relay`, via a
+  Deno workspace with `@paulkinlan/chaos-shared`) and a thin
+  `npx chaos-relay-server` wrapper, alongside the Docker image.
 
 ### Fixed
 - **Duplicate agent execution across shared-identity clients.** When several

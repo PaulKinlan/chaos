@@ -31,3 +31,18 @@ CI (or a pre-push hook) should refuse a publish where `CHANGELOG.md` was not
 touched in the same change as a version bump, so a release always carries notes.
 If we keep any auto-bump, restrict it to `patch` on `main` and still require a
 changelog line, or drop it in favour of the deliberate flow above.
+
+## Publishing the distributions (server)
+The relay ships three ways; keep their versions in lockstep (the bump script now
+syncs both `package.json` and `deno.json`, and `relay-cli/bin.mjs` reads its own
+`package.json` so the JSR spec follows automatically).
+
+1. **Docker image:** build from the repo root and push
+   (`docker build -f packages/server/Dockerfile -t <registry>/chaos-relay .`).
+2. **JSR module:** needs the `@paulkinlan` JSR scope. Publish the workspace
+   members (shared first): `deno publish --allow-slow-types` from
+   `packages/shared`, then `packages/server`. (`--allow-slow-types` because the
+   server is an app entry, not a typed library API.) Validate first with
+   `deno publish --dry-run --allow-slow-types`.
+3. **npx wrapper:** `cd packages/relay-cli && npm publish` (package
+   `chaos-relay-server`, runs `jsr:@paulkinlan/chaos-relay@<version>`).

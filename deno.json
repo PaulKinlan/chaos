@@ -1,0 +1,6 @@
+{
+  "workspace": [
+    "./packages/shared",
+    "./packages/server"
+  ]
+}
