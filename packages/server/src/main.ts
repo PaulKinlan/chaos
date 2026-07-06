@@ -56,6 +56,16 @@ import {
   handleMcpPost,
   handleMcpResponse,
 } from "./channels/mcp.ts";
+import {
+  appBearer,
+  deleteUserChannel,
+  getAppSessionUser,
+  listUserChannels,
+  mintDeviceLink,
+  patchUserChannel,
+  redeemDeviceLink,
+  renderAppPage,
+} from "./app.ts";
 import type { ChannelConfig } from "@chaos/shared";
 
 const PORT = parseInt(Deno.env.get("PORT") || "8787");
@@ -1005,6 +1015,65 @@ Deno.serve(serveOptions, async (req: Request) => {
     return response;
   }
 
+  // ── Per-user admin app (/app) — device-link auth, no accounts ──
+
+  if (url.pathname === "/app" && method === "GET") {
+    return new Response(renderAppPage(), {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+
+  // Redeem a one-time device-link token for an app session.
+  if (url.pathname === "/app/api/session" && method === "POST") {
+    try {
+      const { token } = await req.json();
+      if (typeof token !== "string" || !token) return error("Missing token");
+      const sessionToken = await redeemDeviceLink(token);
+      if (!sessionToken) return error("Invalid or expired link", 401);
+      return json({ sessionToken });
+    } catch {
+      return error("Invalid JSON body");
+    }
+  }
+
+  // App channel management, scoped to the app-session's user only.
+  if (url.pathname.startsWith("/app/api/channels")) {
+    const appUser = await getAppSessionUser(appBearer(req));
+    if (!appUser) return error("Unauthorized", 401);
+    if (!rateLimiter.check(`app:${appUser}`, 120, 60_000)) {
+      return error("Too many requests. Try again later.", 429);
+    }
+    if (url.pathname === "/app/api/channels" && method === "GET") {
+      return json(await listUserChannels(appUser));
+    }
+    const chMatch = url.pathname.match(/^\/app\/api\/channels\/([^/]+)$/);
+    if (chMatch) {
+      const channelId = decodeURIComponent(chMatch[1]);
+      if (method === "DELETE") {
+        const ok = await deleteUserChannel(appUser, channelId);
+        return ok ? json({ ok: true }) : error("Channel not found", 404);
+      }
+      if (method === "PATCH") {
+        try {
+          const patch = await req.json();
+          const clean: {
+            enabled?: boolean;
+            name?: string;
+            prompt?: string;
+          } = {};
+          if (typeof patch.enabled === "boolean") clean.enabled = patch.enabled;
+          if (typeof patch.name === "string") clean.name = patch.name;
+          if (typeof patch.prompt === "string") clean.prompt = patch.prompt;
+          const ok = await patchUserChannel(appUser, channelId, clean);
+          return ok ? json({ ok: true }) : error("Channel not found", 404);
+        } catch {
+          return error("Invalid JSON body");
+        }
+      }
+    }
+    return error("Not found", 404);
+  }
+
   // ── Authenticated endpoints ──
 
   const authResult = await validateAuth(req);
@@ -1014,6 +1083,19 @@ Deno.serve(serveOptions, async (req: Request) => {
   }
 
   const { session } = authResult;
+
+  // Mint a device link for the per-user admin app (/app). Signed request only,
+  // so only the holder of the ECDSA key can create a link to manage this user's
+  // channels. CHAOS_PUBLIC_URL overrides the origin when behind a proxy.
+  if (url.pathname === "/app/device-link" && method === "POST") {
+    if (!rateLimiter.check(`devicelink:${session.userId}`, 10, 60_000)) {
+      return error("Too many device-link requests. Try again later.", 429);
+    }
+    const base = Deno.env.get("CHAOS_PUBLIC_URL") || new URL(req.url).origin;
+    const link = await mintDeviceLink(session.userId, base);
+    if (!link) return error("KV unavailable", 503);
+    return json(link);
+  }
 
   // ── MCP Server Endpoints ──
   const mcpMatch = url.pathname.match(/^\/mcp\/([^/]+)$/);

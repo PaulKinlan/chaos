@@ -99,3 +99,14 @@ per-instance keys. Fixed via atomic per-message delivery claiming (see
 `plans/single-delivery-multi-connection.md` / server CHANGELOG). With that fixed,
 multiple instances can share one key safely, which is what makes the flat
 multi-channel model usable in practice.
+
+## Slice 1 shipped (2026-07-06)
+Device-link auth (`POST /app/device-link` signed → one-time token; browser
+redeems via `POST /app/api/session` for a 24h app-session bearer; no accounts),
+served UI at `/app`, and channel management API (`GET /app/api/channels`,
+`DELETE`/`PATCH /app/api/channels/:id`) scoped to the app-session's user, with
+secrets masked (`maskChannel`, tested). UI lists channels grouped by type with
+enable/disable + delete. CLI entry point: pi-chaos-relay `configure` mints the
+link and prints it. Validated (fmt/check/36 tests + smoke). **Slice 2:** add
+channels from the UI — needs the per-type registration logic (telegram/discord
+webhook setup, email allocation) extracted so app-session endpoints can call it.

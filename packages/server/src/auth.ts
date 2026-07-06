@@ -354,6 +354,38 @@ export async function getChannels(userId: string): Promise<ChannelConfig[]> {
 }
 
 /**
+ * Patch non-secret fields of a channel (enabled, name, prompt, background/notify
+ * flags). Deliberately cannot touch id/type/metadata so a management surface
+ * can't corrupt identity or leak/rewrite secrets.
+ */
+export async function updateChannelFields(
+  userId: string,
+  channelId: string,
+  patch: Partial<
+    Pick<
+      ChannelConfig,
+      "enabled" | "name" | "prompt" | "runInBackground" | "notifyOnComplete"
+    >
+  >,
+): Promise<boolean> {
+  const session = await getSessionByUserId(userId);
+  if (!session) return false;
+  const channel = session.channels.find((ch) => ch.id === channelId);
+  if (!channel) return false;
+  if (patch.enabled !== undefined) channel.enabled = patch.enabled;
+  if (patch.name !== undefined) channel.name = patch.name;
+  if (patch.prompt !== undefined) channel.prompt = patch.prompt;
+  if (patch.runInBackground !== undefined) {
+    channel.runInBackground = patch.runInBackground;
+  }
+  if (patch.notifyOnComplete !== undefined) {
+    channel.notifyOnComplete = patch.notifyOnComplete;
+  }
+  await persistSession(session);
+  return true;
+}
+
+/**
  * Get all cached sessions (in-memory only, no KV scan).
  * Fast path for admin dashboard — returns what's in memory.
  */
