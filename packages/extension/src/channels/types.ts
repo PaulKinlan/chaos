@@ -11,11 +11,20 @@ export interface ChannelMessage {
   metadata?: Record<string, unknown>;
 }
 
+export interface ReplyAttachment {
+  filename: string;
+  mimeType: string;
+  /** Base64-encoded file bytes. */
+  dataBase64: string;
+}
+
 export interface ChannelResponse {
   channelType: string;
   channelId: string;
   replyTo?: string;
   content: string;
+  /** Optional attachments forwarded to the channel (Telegram photo/document, email attachment). */
+  attachments?: ReplyAttachment[];
   metadata?: Record<string, unknown>;
 }
 

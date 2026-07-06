@@ -186,6 +186,22 @@ describe('sendReply', () => {
       }),
     );
   });
+
+  it('forwards attachments in the reply body', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ ok: true }) });
+
+    await sendReply(mockConfig, {
+      channelType: 'telegram',
+      channelId: 'ch1',
+      content: 'here you go',
+      attachments: [{ filename: 'chart.png', mimeType: 'image/png', dataBase64: 'aGk=' }],
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as { body: string }).body);
+    expect(body.attachments).toHaveLength(1);
+    expect(body.attachments[0].filename).toBe('chart.png');
+    expect(body.attachments[0].mimeType).toBe('image/png');
+  });
 });
 
 describe('registerChannel', () => {

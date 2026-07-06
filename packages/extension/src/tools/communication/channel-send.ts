@@ -31,8 +31,20 @@ export function createChannelSendTool(_agentId: string) {
         .describe(
           'Channel-specific metadata (e.g. { subject: "..." } for email, { action: "write", path: "..." } for filesystem)',
         ),
+      attachments: z
+        .array(
+          z.object({
+            filename: z.string().describe('File name, e.g. "chart.png"'),
+            mimeType: z.string().describe('MIME type, e.g. "image/png"'),
+            dataBase64: z.string().describe('Base64-encoded file bytes'),
+          }),
+        )
+        .optional()
+        .describe(
+          'Optional image/file attachments as base64 data (e.g. a screenshot or canvas export). Telegram shows images inline; email gets real attachments. Max 3 files, 5MB each. Only for bidirectional channels (Telegram, email).',
+        ),
     }),
-    execute: async ({ channelName, channelType, content, metadata }) => {
+    execute: async ({ channelName, channelType, content, metadata, attachments }) => {
       // Load relay settings
       const relaySettings = await getRelaySettings();
       if (!relaySettings) {
@@ -141,6 +153,7 @@ export function createChannelSendTool(_agentId: string) {
           channelType: match.type,
           channelId: match.id,
           content,
+          attachments,
           metadata: metadata as Record<string, unknown> | undefined,
         });
       } catch (err) {
