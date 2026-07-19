@@ -20,6 +20,10 @@ on [Keep a Changelog](https://keepachangelog.com/), and the project aims to foll
   registration the signed endpoints use (`registration.ts`).
 - Outbound **attachments** on replies (Telegram `sendPhoto`/`sendDocument`,
   email via Resend), pass-through only, never stored in KV.
+- Inbound Telegram and email attachments: messages carry bounded descriptors,
+  while an ECDSA-signed, user/message-scoped endpoint proxies up to three files
+  of 5 MiB each on demand. Provider credentials, signed URLs, and bytes never
+  enter message KV records.
 - `/health` now reports the real running version and deployment id.
 - **Container/self-host support:** `CHAOS_KV_PATH` for persistent Deno KV on a
   volume, a `Dockerfile` + `docker-compose.yml`, and a Cloud Run guide.

@@ -1,10 +1,20 @@
 // Telegram bot channel handler
 // Registers Telegram bots, handles webhooks, and sends replies
 
-import { addMessage, type StoredMessage } from "../store.ts";
+import {
+  addInboundAttachmentRef,
+  addMessage,
+  type InboundAttachmentRef,
+  type StoredMessage,
+} from "../store.ts";
 import { getSessionByChannelId } from "../auth.ts";
 import { logger } from "../logger.ts";
 import { decodeAttachment, type ReplyAttachment } from "./responder.ts";
+import {
+  MAX_INBOUND_ATTACHMENT_BYTES,
+  MAX_INBOUND_ATTACHMENTS,
+  publicAttachment,
+} from "../inbound-attachments.ts";
 
 // ── Telegram API types ──
 
@@ -31,12 +41,30 @@ interface TelegramChat {
   last_name?: string;
 }
 
+interface TelegramFileMedia {
+  file_id: string;
+  file_unique_id?: string;
+  file_size?: number;
+  file_name?: string;
+  mime_type?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+}
+
 interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
   chat: TelegramChat;
   date: number;
   text?: string;
+  caption?: string;
+  photo?: TelegramFileMedia[];
+  document?: TelegramFileMedia;
+  video?: TelegramFileMedia;
+  audio?: TelegramFileMedia;
+  voice?: TelegramFileMedia;
+  animation?: TelegramFileMedia;
   edit_date?: number;
 }
 
@@ -166,6 +194,70 @@ export async function registerTelegramBot(
 
 // ── Webhook handler ──
 
+function extensionForMime(mime: string): string {
+  if (mime === "image/jpeg") return ".jpg";
+  if (mime === "image/png") return ".png";
+  if (mime === "video/mp4") return ".mp4";
+  if (mime === "audio/ogg") return ".ogg";
+  if (mime === "audio/mpeg") return ".mp3";
+  return "";
+}
+
+/** Convert Telegram media into public descriptors plus private provider refs. */
+export function extractTelegramInboundAttachments(
+  message: TelegramMessage,
+  channelId: string,
+): InboundAttachmentRef[] {
+  const media: Array<
+    { value: TelegramFileMedia; fallback: string; mime: string }
+  > = [];
+  if (message.photo?.length) {
+    const score = (item: TelegramFileMedia) =>
+      item.file_size || (item.width || 0) * (item.height || 0);
+    const largest = [...message.photo].sort((a, b) => score(b) - score(a))[0];
+    if (largest) {
+      media.push({
+        value: largest,
+        fallback: `photo-${message.message_id}.jpg`,
+        mime: "image/jpeg",
+      });
+    }
+  }
+  const named = [
+    [
+      message.document,
+      `document-${message.message_id}`,
+      "application/octet-stream",
+    ],
+    [message.video, `video-${message.message_id}.mp4`, "video/mp4"],
+    [message.audio, `audio-${message.message_id}.mp3`, "audio/mpeg"],
+    [message.voice, `voice-${message.message_id}.ogg`, "audio/ogg"],
+    [message.animation, `animation-${message.message_id}.mp4`, "video/mp4"],
+  ] as const;
+  for (const [value, fallback, mime] of named) {
+    if (value) media.push({ value, fallback, mime });
+  }
+
+  return media
+    .filter(({ value }) =>
+      !value.file_size || value.file_size <= MAX_INBOUND_ATTACHMENT_BYTES
+    )
+    .slice(0, MAX_INBOUND_ATTACHMENTS)
+    .map(({ value, fallback, mime }) => {
+      const actualMime = value.mime_type || mime;
+      const filename = value.file_name ||
+        (fallback.includes(".")
+          ? fallback
+          : fallback + extensionForMime(actualMime));
+      return {
+        provider: "telegram" as const,
+        channelId,
+        fileId: value.file_id,
+        attachment: publicAttachment(filename, actualMime, value.file_size),
+      };
+    });
+}
+
 export async function handleTelegramWebhook(
   channelId: string,
   req: Request,
@@ -213,6 +305,7 @@ export async function handleTelegramWebhook(
   // Extract the message content
   const telegramMsg = update.message || update.edited_message;
   let content = "";
+  let inboundAttachmentRefs: InboundAttachmentRef[] = [];
   let from = "unknown";
   let senderId: number | undefined;
   let chatId: number | undefined;
@@ -227,7 +320,16 @@ export async function handleTelegramWebhook(
   };
 
   if (telegramMsg) {
-    content = telegramMsg.text || "";
+    inboundAttachmentRefs = extractTelegramInboundAttachments(
+      telegramMsg,
+      channelId,
+    );
+    content = telegramMsg.text || telegramMsg.caption ||
+      (inboundAttachmentRefs.length
+        ? `[Received ${inboundAttachmentRefs.length} attachment${
+          inboundAttachmentRefs.length === 1 ? "" : "s"
+        }.]`
+        : "");
     from = telegramMsg.from?.username || telegramMsg.from?.first_name ||
       "unknown";
     senderId = telegramMsg.from?.id;
@@ -350,9 +452,15 @@ export async function handleTelegramWebhook(
     from,
     content,
     timestamp: new Date().toISOString(),
+    ...(inboundAttachmentRefs.length
+      ? { attachments: inboundAttachmentRefs.map((ref) => ref.attachment) }
+      : {}),
     metadata,
   };
 
+  for (const ref of inboundAttachmentRefs) {
+    await addInboundAttachmentRef(session.userId, message.id, ref);
+  }
   await addMessage(session.userId, message);
 
   // Record where to send replies. The agent never sees chatId, so the reply

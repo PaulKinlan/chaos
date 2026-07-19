@@ -13,6 +13,7 @@ import {
   validateAuth,
 } from "./auth.ts";
 import {
+  getInboundAttachmentRef,
   getMessages,
   getResponses,
   startMessageCleanup,
@@ -43,6 +44,7 @@ import { getKv, initKv, isKvAvailable, kvHealthCheck, kvStats } from "./kv.ts";
 import { RATE_LIMITS, RateLimiter } from "./rate-limit.ts";
 import { sanitizeMessage } from "./sanitize.ts";
 import { logger, requestLog } from "./logger.ts";
+import { downloadInboundAttachment } from "./inbound-attachments.ts";
 import {
   addConnection,
   getConnectionCount,
@@ -1205,6 +1207,43 @@ Deno.serve(serveOptions, async (req: Request) => {
       info:
         "Use POST /mcp/{agentId} with JSON-RPC initialize to connect to a specific agent. Agent IDs are configured in the Chrome extension.",
     });
+  }
+
+  // Retrieve one inbound attachment. This endpoint intentionally requires a
+  // valid ECDSA signature even for legacy bearer-only sessions. Provider refs
+  // are looked up by user + message + attachment, so ids from another session
+  // cannot be used as an oracle or confused-deputy download.
+  const inboundAttachmentMatch = url.pathname.match(
+    /^\/messages\/([A-Za-z0-9_-]{1,128})\/attachments\/([A-Za-z0-9_-]{1,128})$/,
+  );
+  if (inboundAttachmentMatch && method === "GET") {
+    if (!authResult.verified) {
+      return error(
+        "A signed request is required for attachment retrieval",
+        401,
+      );
+    }
+    if (!rateLimiter.check(`attachments:${session.userId}`, 30, 60_000)) {
+      return error("Too many attachment requests. Try again later.", 429);
+    }
+    const [, messageId, attachmentId] = inboundAttachmentMatch;
+    const ref = await getInboundAttachmentRef(
+      session.userId,
+      messageId,
+      attachmentId,
+    );
+    if (!ref) return error("Attachment not found", 404);
+    try {
+      return await downloadInboundAttachment(session, ref);
+    } catch {
+      logger.warn("attachments", "Inbound attachment retrieval failed", {
+        userId: session.userId,
+        messageId,
+        attachmentId,
+        provider: ref.provider,
+      });
+      return error("Attachment is unavailable", 502);
+    }
   }
 
   // Poll for messages

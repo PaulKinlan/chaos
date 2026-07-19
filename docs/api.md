@@ -119,7 +119,7 @@ Telegram Bot API webhook endpoint. Telegram sends updates here when the bot rece
 { "ok": true }
 ```
 
-The server parses the Telegram update, extracts the message content and sender, enforces the allowlist (if configured), checks the pairing code for first-time users, and stores it as a `ChannelMessage` for the extension to process.
+The server parses the Telegram update, extracts text/caption, sender, and bounded photo/document/video/audio/voice/animation descriptors, enforces the allowlist, checks the pairing code for first-time users, and stores it as a `ChannelMessage` for the client to process. Attachment bytes and bot credentials are not stored in the message record.
 
 ---
 
@@ -256,6 +256,13 @@ Poll for new inbound messages.
       "from": "GitHub",
       "content": "Build succeeded",
       "timestamp": "2025-01-15T10:30:00Z",
+      "attachments": [{
+        "id": "7e559a52-75d8-48ea-b2d7-2831a7496ce1",
+        "filename": "screenshot.png",
+        "mimeType": "image/png",
+        "size": 4096,
+        "kind": "image"
+      }],
       "metadata": {}
     }
   ],
@@ -263,7 +270,19 @@ Poll for new inbound messages.
 }
 ```
 
-Use the returned `since` value as the `since` parameter for the next poll.
+Use the returned `since` value as the `since` parameter for the next poll. `attachments` contains descriptors only, capped at three items of 5 MiB each.
+
+---
+
+### `GET /messages/:messageId/attachments/:attachmentId`
+
+Retrieve one Telegram or email attachment on demand.
+
+**Auth:** Bearer token **and** valid ECDSA `X-Timestamp`, `X-Nonce`, and `X-Signature` headers. Legacy unsigned sessions cannot retrieve files.
+
+**Rate Limit:** 30 per minute per user
+
+The ids must resolve to an attachment reference owned by the authenticated user and bound to the named message. The server obtains a Telegram `getFile` path or fresh Resend signed URL, validates the provider path/host, enforces declared and streamed 5 MiB limits, and returns bytes with `Cache-Control: private, no-store`. Unknown/cross-user references return `404`; unavailable, expired, or oversized provider objects return `502`.
 
 ---
 

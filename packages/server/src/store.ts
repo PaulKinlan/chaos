@@ -6,6 +6,29 @@ import { logger } from "./logger.ts";
 import { getConnectionCount, pushToUser } from "./ws.ts";
 import { getKv, instrumentKv, isKvAvailable } from "./kv.ts";
 
+export interface InboundAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  kind: "image" | "file";
+}
+
+export type InboundAttachmentRef =
+  | {
+    provider: "telegram";
+    channelId: string;
+    fileId: string;
+    attachment: InboundAttachment;
+  }
+  | {
+    provider: "resend";
+    channelId: string;
+    emailId: string;
+    providerAttachmentId: string;
+    attachment: InboundAttachment;
+  };
+
 export interface StoredMessage {
   id: string;
   userId: string;
@@ -14,6 +37,7 @@ export interface StoredMessage {
   from: string;
   content: string;
   timestamp: string;
+  attachments?: InboundAttachment[];
   metadata?: Record<string, unknown>;
 }
 
@@ -65,6 +89,10 @@ export function fitMessageForKv(msg: StoredMessage): StoredMessage {
 // In-memory caches (hot path only, KV is the source of truth)
 const messageCache: Map<string, StoredMessage[]> = new Map();
 const responseCache: Map<string, StoredMessage[]> = new Map();
+const attachmentRefCache: Map<
+  string,
+  { ref: InboundAttachmentRef; expiresAt: number }
+> = new Map();
 
 // Periodic cleanup timer
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -128,11 +156,72 @@ export function cleanupExpiredMessages(): number {
     }
   }
 
+  const now = Date.now();
+  for (const [key, cached] of attachmentRefCache) {
+    if (cached.expiresAt <= now) {
+      attachmentRefCache.delete(key);
+      removed++;
+    }
+  }
+
   if (removed > 0) {
     logger.debug("store", "Cleaned up expired cache entries", { removed });
   }
 
   return removed;
+}
+
+function attachmentRefKey(
+  userId: string,
+  messageId: string,
+  attachmentId: string,
+): string {
+  return `${userId}:${messageId}:${attachmentId}`;
+}
+
+/** Persist only provider references and bounded metadata, never attachment bytes. */
+export async function addInboundAttachmentRef(
+  userId: string,
+  messageId: string,
+  ref: InboundAttachmentRef,
+): Promise<void> {
+  const key = attachmentRefKey(userId, messageId, ref.attachment.id);
+  attachmentRefCache.set(key, { ref, expiresAt: Date.now() + MESSAGE_TTL_MS });
+  if (isKvAvailable() && getKv()) {
+    await getKv()!.set(
+      ["attachment_refs", userId, messageId, ref.attachment.id],
+      ref,
+      { expireIn: MESSAGE_TTL_MS },
+    );
+  }
+}
+
+/** Lookup is scoped by user + message + attachment, preventing cross-session reads. */
+export async function getInboundAttachmentRef(
+  userId: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<InboundAttachmentRef | undefined> {
+  const cacheKey = attachmentRefKey(userId, messageId, attachmentId);
+  const cached = attachmentRefCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.ref;
+  if (cached) attachmentRefCache.delete(cacheKey);
+  if (isKvAvailable() && getKv()) {
+    const entry = await getKv()!.get<InboundAttachmentRef>([
+      "attachment_refs",
+      userId,
+      messageId,
+      attachmentId,
+    ]);
+    if (entry.value) {
+      attachmentRefCache.set(cacheKey, {
+        ref: entry.value,
+        expiresAt: Date.now() + MESSAGE_TTL_MS,
+      });
+      return entry.value;
+    }
+  }
+  return undefined;
 }
 
 export async function addMessage(

@@ -313,7 +313,7 @@ Agent B can now:
 
 ### Architecture
 
-The relay server bridges external channels (webhooks, Telegram) to the Chrome extension. It runs on Deno Deploy with Deno KV for persistence.
+The relay server bridges external channels (webhooks, Telegram, Discord, and email) to relay clients. It runs on Deno Deploy with Deno KV for persistence.
 
 ```
 External Source           Relay Server              Extension
@@ -341,7 +341,7 @@ The extension connects to the relay via two complementary paths:
 
 - **Registration**: `POST /auth/register` with optional ECDSA P-256 public key. Returns `{ userId, apiKey, serverPublicKey }`.
 - **API auth**: `Authorization: Bearer {apiKey}` header on all authenticated endpoints.
-- **Request signing** (optional): ECDSA-SHA256 signature in `X-Timestamp`, `X-Nonce`, `X-Signature` headers. Server verifies if present.
+- **Request signing** (optional for legacy endpoints, mandatory for inbound attachment retrieval): ECDSA-SHA256 signature in `X-Timestamp`, `X-Nonce`, `X-Signature` headers. Server verifies timestamp freshness and nonce uniqueness.
 - **Webhook auth**: URL-based token (`/webhook/{channelId}?token={secret}`), no Bearer header.
 - **Admin auth**: Session cookie (`chaos_admin`) after password login via `CHAOS_ADMIN_KEY` env var.
 
@@ -351,8 +351,8 @@ The extension connects to the relay via two complementary paths:
 |------|-----------|------|-------------|
 | `webhook` | Inbound only | URL token | Any HTTP client POSTs JSON |
 | `telegram` | Bidirectional | Bot token + webhook secret | Telegram Bot API, pairing code flow |
-| `discord` | Bidirectional | (planned) | -- |
-| `email` | Bidirectional | (planned) | -- |
+| `discord` | Bidirectional | Bot token + webhook secret | Discord interaction/gateway relay, pairing flow |
+| `email` | Bidirectional | Verified inbound address + sender allowlist | Resend Receiving API |
 | `slack` | Bidirectional | (planned) | -- |
 
 ## Data Flow Diagrams
@@ -427,8 +427,25 @@ background.ts processChannelMessage():
   v
 Relay server routes reply:
   - Webhook channels: store response for polling via GET /responses/{channelId}
-  - Telegram channels: call Telegram Bot API sendMessage
+  - Telegram channels: call Telegram Bot API sendMessage/sendPhoto/sendDocument
+  - Email channels: call Resend with optional attachments
 ```
+
+### Inbound Attachment Flow
+
+Telegram and Resend webhooks are normalized to at most three public attachment
+descriptors (5 MiB each). `ChannelMessage` stores those descriptors; a separate
+24-hour KV reference binds the opaque descriptor id to the authenticated user,
+message, channel, and provider object. Provider credentials, Resend signed URLs,
+and attachment bytes are never written to message KV records.
+
+A client retrieves bytes with the ECDSA-signed
+`GET /messages/{messageId}/attachments/{attachmentId}` endpoint. The server
+checks the user/message/attachment binding, resolves the Telegram `getFile` path
+or a fresh Resend signed URL, validates provider paths/hosts, and enforces both
+declared and streamed byte limits before returning a private `no-store`
+response. This allows clients to create private local temporary files while
+preserving offline message polling without introducing blob storage.
 
 ### Master Agent -> Assign Task -> Sub-Agent -> Completion
 

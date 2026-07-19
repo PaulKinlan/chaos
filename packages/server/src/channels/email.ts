@@ -2,11 +2,20 @@
 // Single inbound webhook routes by "to" address. Sender allowlist filtering.
 // Uses Resend for sending verification emails and replies.
 
-import { addMessage, type StoredMessage } from "../store.ts";
+import {
+  addInboundAttachmentRef,
+  addMessage,
+  type InboundAttachmentRef,
+  type StoredMessage,
+} from "../store.ts";
 import { getSessionByChannelId } from "../auth.ts";
 import { getKv, isKvAvailable } from "../kv.ts";
 import { logger } from "../logger.ts";
 import type { ReplyAttachment } from "./responder.ts";
+import {
+  buildResendInboundAttachmentRefs,
+  listResendAttachments,
+} from "../inbound-attachments.ts";
 
 // ── Resend inbound webhook types ──
 
@@ -490,6 +499,16 @@ export async function handleEmailInbound(
     logger.info("email", "No allowlist configured, accepting all senders");
   }
 
+  // Extract bounded attachment descriptors. Provider ids stay in private,
+  // user/message-scoped refs; bytes and signed CDN URLs never enter KV.
+  const inboundAttachmentRefs: InboundAttachmentRef[] = resendEmailId
+    ? buildResendInboundAttachmentRefs(
+      await listResendAttachments(resendEmailId),
+      resendEmailId,
+      channelId,
+    )
+    : [];
+
   // Extract content
   const subject = inbound.subject || "(no subject)";
   const content = inbound.text || stripHtml(inbound.html || "") || subject;
@@ -553,9 +572,15 @@ export async function handleEmailInbound(
     from: senderEmail,
     content: `Subject: ${subject}\n\n${content}`,
     timestamp: new Date().toISOString(),
+    ...(inboundAttachmentRefs.length
+      ? { attachments: inboundAttachmentRefs.map((ref) => ref.attachment) }
+      : {}),
     metadata,
   };
 
+  for (const ref of inboundAttachmentRefs) {
+    await addInboundAttachmentRef(session.userId, message.id, ref);
+  }
   await addMessage(session.userId, message);
 
   // Record who to reply to. The agent never sees the sender address, so the

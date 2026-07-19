@@ -54,6 +54,7 @@ All endpoints enforce per-key rate limits. Exceeding a limit returns `429 Too Ma
 |----------|-------|--------|----------|
 | `POST /auth/register` | 5 | 1 hour | Client IP |
 | `GET /messages` | 120 | 1 minute | User ID |
+| `GET /messages/:messageId/attachments/:attachmentId` | 30 | 1 minute | User ID |
 | `POST /reply` | 30 | 1 minute | User ID |
 | `POST /webhook/:id` | 60 | 1 minute | Channel ID |
 | `POST /telegram/:id` | 60 | 1 minute | Channel ID |
@@ -171,6 +172,13 @@ Messages are stored for up to 24 hours with a maximum of 100 per user. Use the `
       "from": "GitHub Actions",
       "content": "Build succeeded on main",
       "timestamp": "2025-01-15T10:30:00Z",
+      "attachments": [{
+        "id": "7e559a52-75d8-48ea-b2d7-2831a7496ce1",
+        "filename": "screenshot.png",
+        "mimeType": "image/png",
+        "size": 4096,
+        "kind": "image"
+      }],
       "metadata": { "repo": "user/project" }
     }
   ],
@@ -178,7 +186,11 @@ Messages are stored for up to 24 hours with a maximum of 100 per user. Use the `
 }
 ```
 
-Use the returned `since` value for the next poll.
+Use the returned `since` value for the next poll. Attachment entries are bounded descriptors only; provider ids, credentials, signed URLs, and file bytes are never included.
+
+#### `GET /messages/:messageId/attachments/:attachmentId`
+
+Retrieve one inbound attachment through the relay. Requires Bearer authentication **and** a valid ECDSA request signature. The attachment id must belong to the named message and authenticated user. The server fetches the provider object on demand and returns it with `Cache-Control: private, no-store`; bytes are never stored in relay KV. Maximum 3 attachments per inbound message and 5 MiB per attachment. Returns `404` for an unknown/cross-user descriptor and `502` when the provider object is unavailable, expired, or oversized.
 
 #### `POST /reply`
 
@@ -525,6 +537,13 @@ interface ChannelMessage {
   from: string;
   content: string;
   timestamp: string; // ISO 8601
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+    kind: "image" | "file";
+  }>;
   metadata?: Record<string, unknown>;
 }
 ```

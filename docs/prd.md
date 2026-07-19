@@ -96,6 +96,9 @@ Each agent gets an isolated directory in OPFS:
 - Update their own personality and instructions
 - Track patterns in user behavior and make suggestions
 - Send and receive messages to/from other agents
+- Receive Telegram and email text, images, and files through the relay, with
+  authenticated on-demand attachment retrieval (maximum 3 files per message,
+  5 MiB each) and no attachment-byte persistence in relay KV
 - Publish and consume shared artifacts
 - Coordinate on shared tasks with dependency tracking
 - Install skills (SKILL.md instruction bundles) from paste, URL, or GitHub to gain specialised knowledge. Browse featured skills and preview before installing.

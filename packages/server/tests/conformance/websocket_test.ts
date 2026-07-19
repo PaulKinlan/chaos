@@ -286,7 +286,7 @@ Deno.test("WebSocket enforces a per-user connection cap (closes oldest)", async 
     });
 
   const first = await connectWs(url);
-  let capTimer = 0;
+  let capTimer: ReturnType<typeof setTimeout> | undefined;
   const firstClosed = new Promise<boolean>((resolve) => {
     first.onclose = () => {
       clearTimeout(capTimer);
