@@ -1,6 +1,6 @@
 {
   "name": "chaos-relay-server",
-  "version": "0.1.165",
+  "version": "0.1.166",
   "description": "Thin npx launcher for the CHAOS relay server. Runs the Deno server from JSR — no build step, just `npx chaos-relay-server`.",
   "type": "module",
   "bin": {

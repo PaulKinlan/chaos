@@ -1,6 +1,6 @@
 {
   "name": "@paulkinlan/chaos-relay",
-  "version": "0.1.165",
+  "version": "0.1.166",
   "exports": "./src/main.ts",
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-read --allow-env --unstable-kv src/main.ts",
