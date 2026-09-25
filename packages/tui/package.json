@@ -16,16 +16,16 @@
   "dependencies": {
     "agent-do": "^0.1.2",
     "@chaos/sdk": "*",
-    "ai": "^6.0.0",
+    "ai": "^6.0.291",
     "ink": "^7.0.0",
     "react": "^19.2.0",
     "ws": "^8.21.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "^3.0.0",
-    "@ai-sdk/google": "^3.0.0",
-    "@ai-sdk/openai": "^3.0.0",
+    "@ai-sdk/anthropic": "^3.0.122",
+    "@ai-sdk/google": "^3.0.127",
+    "@ai-sdk/openai": "^3.0.118",
     "@types/react": "^19.2.0",
     "@types/ws": "^8.5.0",
     "typescript": "^5.5.0",
