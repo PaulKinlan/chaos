@@ -212,10 +212,32 @@ For Telegram channels, the server calls the Telegram Bot API `sendMessage`. For 
 ```json
 {
   "ok": true,
-  "channelType": "telegram",
-  "channelId": "ch_abc123"
+  "responseId": "b1a2c3d4-...",
+  "channel": {
+    "id": "ch_abc123",
+    "type": "telegram",
+    "label": "@my_bot"
+  }
 }
 ```
+
+`channel` is the registered channel the relay actually resolved the reply
+against — id, type, and a human label. A client confirms delivery intent
+against this observation, never against its own echoed request fields.
+
+**Channel check (refused by name).** Before anything is stored or sent, the
+`channelId` must name a channel registered to this session, and a provided
+`channelType` must match that channel's type. A reply to an unknown or
+mismatched channel returns `400` with an `error` naming the channelId (and,
+when relevant, both types) — nothing is stored, nothing is sent:
+```json
+{
+  "error": "Unknown channel 0885fd1e-...: no telegram channel with that id is registered for this session. Refused — nothing was sent. Registered channels: telegram \"@real_bot\" (0885fd1e-...)."
+}
+```
+The same check runs on the WebSocket `reply` message: a failed check answers
+`{"type": "reply_ack", "ok": false, "error": "..."}` instead of a false
+`ok: true`.
 
 ---
 

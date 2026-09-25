@@ -763,29 +763,51 @@ paths:
               content: "Here is the agent's response."
       responses:
         "200":
-          description: Reply sent successfully.
+          description: >
+            Reply accepted. `channel` names the channel the relay actually
+            resolved and dispatched against — clients must confirm against
+            this field, never against their own request echo.
           content:
             application/json:
               schema:
                 type: object
+                required: [ok, responseId, channel]
                 properties:
                   ok:
                     type: boolean
                     example: true
-                  channelType:
+                  responseId:
                     type: string
-                    example: "telegram"
-                  channelId:
-                    type: string
-                    example: "ch_abc123"
+                    description: Id of the stored reply (retrievable via GET /responses/:channelId).
+                    example: "b1a2c3d4-..."
+                  channel:
+                    type: object
+                    description: The registered channel the reply was resolved to.
+                    required: [id, type, label]
+                    properties:
+                      id:
+                        type: string
+                        example: "ch_abc123"
+                      type:
+                        type: string
+                        enum: [telegram, discord, email, webhook, slack]
+                        example: "telegram"
+                      label:
+                        type: string
+                        description: Human-readable label (channel name, bot handle, or address; falls back to the id).
+                        example: "@my_bot"
         "400":
-          description: Missing required fields or invalid content.
+          description: >
+            Missing required fields, invalid content, or a failed channel
+            check: `channelId` naming no channel registered to this session
+            is refused by name (nothing is stored or sent), as is a
+            `channelType` that contradicts the channel's registered type.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
-                error: "Missing channelId or content"
+                error: "Unknown channel 0885fd1e-...: no telegram channel with that id is registered for this session. Refused — nothing was sent. Registered channels: telegram \"@real_bot\" (0885fd1e-...)."
         "401":
           description: Unauthorized.
           content:

@@ -315,10 +315,24 @@ Send a reply to a channel message.
 ```json
 {
   "ok": true,
-  "channelType": "telegram",
-  "channelId": "ch_123"
+  "responseId": "b1a2c3d4-...",
+  "channel": {
+    "id": "ch_123",
+    "type": "telegram",
+    "label": "@my_bot"
+  }
 }
 ```
+
+`channel` names the registered channel the relay actually resolved the reply
+against (id, type, human label). Clients confirm against that observation,
+not against their echoed request fields.
+
+**Channel check:** the `channelId` must name a channel registered to this
+session and `channelType` (when provided) must match its type, or the reply
+is refused with `400` and an `error` naming the channel — nothing is stored
+or sent. Over WebSocket, a failed check answers `reply_ack` with
+`ok: false` and the same `error`.
 
 For Telegram channels, the server calls the Telegram Bot API `sendMessage` endpoint. For webhook channels, the response is stored for retrieval via `GET /responses/:channelId`.
 

@@ -1318,10 +1318,20 @@ Deno.serve(serveOptions, async (req: Request) => {
       }
 
       const result = await handleReply(session.userId, payload);
+      if (!result.ok) {
+        // Refused by name: the channelId matched no registered channel (or
+        // matched one of a different type). Nothing was stored or sent.
+        logger.warn("server", "Reply refused", {
+          userId: session.userId,
+          channelId: payload.channelId,
+          error: result.error,
+        });
+        return error(result.error, 400);
+      }
       logger.info("server", "Reply sent", {
         userId: session.userId,
-        channelId: payload.channelId,
-        channelType: payload.channelType,
+        channelId: result.channel.id,
+        channelType: result.channel.type,
       });
       return json(result);
     } catch {
@@ -1669,6 +1679,9 @@ Deno.serve(serveOptions, async (req: Request) => {
       };
       const channel: ChannelConfig = {
         id: body.id || crypto.randomUUID(),
+        ...(typeof body.name === "string" && body.name.trim()
+          ? { name: body.name.trim().slice(0, 80) }
+          : {}),
         type: channelType,
         direction: (body.direction || directionMap[channelType] ||
           "inbound") as ChannelConfig["direction"],

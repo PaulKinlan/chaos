@@ -32,6 +32,18 @@ on [Keep a Changelog](https://keepachangelog.com/), and the project aims to foll
   `npx chaos-relay-server` wrapper, alongside the Docker image.
 
 ### Fixed
+- **`POST /reply` (and the WebSocket `reply` frame) now refuse unknown
+  channels by name.** A `channelId` that matches no channel registered to
+  the session was stored under an orphan key and answered `ok: true` — a
+  mistyped id was indistinguishable from delivery and the reply went
+  nowhere silently. Such replies now fail closed with `400` /
+  `reply_ack ok:false` naming the channel, and so does a `channelType` that
+  contradicts the registered type. A successful reply now carries
+  `channel: {id, type, label}` — the channel the relay actually resolved —
+  so a client's confirmation is an observation, not a request echo. The
+  `name` field of `POST /channels` is honored (it was documented but
+  dropped), so labels are meaningful. Covered by
+  `tests/conformance/reply-channel-validation_test.ts`.
 - **Duplicate agent execution across shared-identity clients.** When several
   clients connected with the same key, each ran its own `kv.watch`, so every
   inbound message fired on every connection and the same command ran N times.

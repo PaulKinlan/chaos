@@ -1,6 +1,7 @@
 // Response delivery handler
 // When the extension sends a reply, route it to the appropriate channel
 
+import type { ChannelConfig } from "@chaos/shared";
 import { addResponse, type StoredMessage } from "../store.ts";
 import { getSessionByUserId } from "../auth.ts";
 import { sendTelegramReply } from "./telegram.ts";
@@ -78,10 +79,113 @@ export function decodeAttachment(a: ReplyAttachment): Uint8Array {
   return bytes;
 }
 
+/**
+ * The channel a reply was actually resolved against. The success result
+ * carries this so a client's confirmation is an observation of what the
+ * relay dispatched to — not an echo of the ids the client already had.
+ */
+export interface ResolvedReplyChannel {
+  id: string;
+  type: ChannelConfig["type"];
+  label: string;
+}
+
+export type ReplyChannelCheck =
+  | { ok: true; channel: ResolvedReplyChannel }
+  | { ok: false; error: string };
+
+/** Best human-facing label for a channel: name, then a identifying metadata
+ * value, then the id as a last resort (so the label is never empty). */
+export function channelLabel(ch: ChannelConfig): string {
+  const meta = ch.metadata ?? {};
+  for (
+    const key of ["botUsername", "inboundAddress", "webhookName", "address"]
+  ) {
+    const v = meta[key];
+    if (typeof v === "string" && v.trim()) {
+      const display = key === "botUsername" ? `@${v.replace(/^@/, "")}` : v;
+      return ch.name ? `${ch.name} (${display})` : display;
+    }
+  }
+  return ch.name ?? ch.id;
+}
+
+/**
+ * Resolve a reply's target against the session's registered channels.
+ *
+ * THE GUARD (journal-xk4): a channelId that names no registered channel must
+ * be refused BY NAME, before anything is stored or sent. Without this, an
+ * accepted send to a non-existent channel is indistinguishable from delivery,
+ * and a mistyped id silently swallows the reply. An id that exists under a
+ * different type is refused too — that is the near-miss typo shape. A missing
+ * session fails closed: nothing is verified, so nothing may be reported as
+ * accepted.
+ */
+export function checkReplyChannel(
+  channels: ChannelConfig[],
+  payload: Pick<ReplyPayload, "channelType" | "channelId">,
+): ReplyChannelCheck {
+  const channel = channels.find((ch) => ch.id === payload.channelId);
+  if (!channel) {
+    const known = channels.slice(0, 10).map((ch) =>
+      `${ch.type} "${channelLabel(ch)}" (${ch.id})`
+    );
+    const listing = known.length
+      ? ` Registered channels: ${known.join("; ")}`
+      : " This session has no registered channels";
+    return {
+      ok: false,
+      error:
+        `Unknown channel ${payload.channelId}: no ${
+          payload.channelType || "any-type"
+        } channel with that id is registered for this session.` +
+        ` Refused — nothing was sent.${listing}`,
+    };
+  }
+  if (payload.channelType && payload.channelType !== channel.type) {
+    return {
+      ok: false,
+      error:
+        `Channel type mismatch on ${channel.id}: requested channelType "${payload.channelType}" ` +
+        `but the registered channel is type "${channel.type}" ("${
+          channelLabel(channel)
+        }"). Refused — nothing was sent.`,
+    };
+  }
+  return {
+    ok: true,
+    channel: {
+      id: channel.id,
+      type: channel.type,
+      label: channelLabel(channel),
+    },
+  };
+}
+
 export async function handleReply(
   userId: string,
   payload: ReplyPayload,
-): Promise<{ ok: boolean; responseId: string }> {
+): Promise<
+  { ok: true; responseId: string; channel: ResolvedReplyChannel } | {
+    ok: false;
+    error: string;
+  }
+> {
+  const session = await getSessionByUserId(userId);
+  const check = checkReplyChannel(session?.channels ?? [], payload);
+  if (!check.ok) {
+    logger.warn("responder", "Reply refused: channel check failed", {
+      userId,
+      channelId: payload.channelId,
+      channelType: payload.channelType,
+      error: check.error,
+    });
+    return { ok: false, error: check.error };
+  }
+  // Keep records consistent with what was verified; an absent channelType is
+  // filled from the resolved channel rather than stored as "".
+  payload.channelType = check.channel.type;
+
   const response: StoredMessage = {
     id: crypto.randomUUID(),
     userId,
@@ -125,7 +229,7 @@ export async function handleReply(
     sendEmailReplyAsync(userId, payload);
   }
 
-  return { ok: true, responseId: response.id };
+  return { ok: true, responseId: response.id, channel: check.channel };
 }
 
 async function sendTelegramReplyAsync(
